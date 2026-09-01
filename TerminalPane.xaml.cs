@@ -26,6 +26,7 @@ public partial class TerminalPane : UserControl
     private readonly List<byte[]> _pending = new();
 
     private DateTime _lastOutput = DateTime.UtcNow;
+    private readonly Queue<DateTime> _recent = new();
     private readonly System.Windows.Threading.DispatcherTimer _idleTimer;
     private PaneStatus _status = PaneStatus.Starting;
 
@@ -53,18 +54,33 @@ public partial class TerminalPane : UserControl
         _plan = plan;
         SessionId = plan.ExpectedSessionId ?? sessionId;
 
-        // "Working" vs "idle" without parsing anything: if bytes stopped arriving,
-        // Claude is waiting on you. Crude, and good enough to be useful.
+        // Working vs waiting-for-you, from the shape of the output stream alone.
+        //
+        // "Any output means working" is wrong: measured over a 30 s idle session, Claude
+        // Code still emits the odd redraw — one chunk after 8 s of silence — which flipped
+        // the light to "running" for two seconds at a time while nothing was happening.
+        //
+        // So the two transitions use different tests. Going quiet is enough to call it
+        // waiting. Claiming it is working needs *sustained* output, which a lone redraw
+        // cannot fake. Between the two the previous state stands, so the light is steady
+        // rather than strobing.
         _idleTimer = new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(700)
+            Interval = TimeSpan.FromMilliseconds(400)
         };
         _idleTimer.Tick += (_, __) =>
         {
             if (Status == PaneStatus.Exited) return;
-            Status = (DateTime.UtcNow - _lastOutput).TotalMilliseconds > 1200
-                ? PaneStatus.Idle
-                : PaneStatus.Working;
+
+            var now = DateTime.UtcNow;
+            var quietFor = (now - _lastOutput).TotalMilliseconds;
+
+            int burst;
+            lock (_recent)
+                burst = _recent.Count(t => (now - t).TotalMilliseconds < 900);
+
+            if (quietFor > 1500) Status = PaneStatus.Idle;
+            else if (burst >= 3) Status = PaneStatus.Working;
         };
 
         Loaded += OnLoaded;
@@ -139,7 +155,13 @@ public partial class TerminalPane : UserControl
     {
         _pty.OutputReceived += bytes =>
         {
-            _lastOutput = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            _lastOutput = now;
+            lock (_recent)
+            {
+                _recent.Enqueue(now);
+                while (_recent.Count > 12) _recent.Dequeue();
+            }
             Dispatcher.BeginInvoke(() => Push(bytes));
         };
 

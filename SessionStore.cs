@@ -16,7 +16,18 @@ public sealed class SessionInfo
         ? n
         : ProjectDir;
 
+    /// <summary>First human prompt. Fallback only — <see cref="AiTitle"/> is the good name.</summary>
     public string Preview { get; set; } = "";
+
+    /// <summary>
+    /// The title Claude Code generates for the session — the same text the `claude --resume`
+    /// picker shows. Null on the handful of transcripts too short to have earned one.
+    /// </summary>
+    public string? AiTitle { get; set; }
+
+    /// <summary>Most recent prompt, for the second line of the row.</summary>
+    public string? LastPrompt { get; set; }
+
     public DateTime LastActivity { get; set; }
     public long SizeBytes { get; set; }
 }
@@ -56,6 +67,7 @@ public sealed class SessionStore
             // Roughly 40 of the 217 files under the tree are these.
             if (string.Equals(Path.GetFileName(Path.GetDirectoryName(file)), "subagents",
                               StringComparison.OrdinalIgnoreCase)) continue;
+
             FileInfo fi;
             try { fi = new FileInfo(file); }
             catch { continue; }
@@ -124,6 +136,8 @@ public sealed class SessionStore
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
 
+        var (aiTitle, lastPrompt) = ReadTail(fi);
+
         // Session id falls back to the filename, which is the uuid.
         sessionId ??= Path.GetFileNameWithoutExtension(fi.Name);
 
@@ -140,9 +154,70 @@ public sealed class SessionStore
             TranscriptPath = fi.FullName,
             ProjectDir = cwd,
             Preview = preview.Length > 0 ? preview : "(no prompt yet)",
+            AiTitle = aiTitle,
+            LastPrompt = lastPrompt,
             LastActivity = fi.LastWriteTime,
             SizeBytes = fi.Length
         };
+    }
+
+    /// <summary>
+    /// ai-title and last-prompt are rewritten as the conversation grows, so the useful copy is
+    /// the last one. Transcripts run to a few MB, so read a window off the end rather than the
+    /// whole file: measured across 177 real transcripts, every one that has a title has it
+    /// inside the final 96 KB.
+    /// </summary>
+    private static (string? aiTitle, string? lastPrompt) ReadTail(FileInfo fi, int window = 96 * 1024)
+    {
+        string? title = null;
+        string? prompt = null;
+
+        try
+        {
+            using var fs = new FileStream(fi.FullName, FileMode.Open, FileAccess.Read,
+                                          FileShare.ReadWrite | FileShare.Delete);
+            long start = Math.Max(0, fs.Length - window);
+            fs.Seek(start, SeekOrigin.Begin);
+
+            using var reader = new StreamReader(fs, Encoding.UTF8);
+
+            // Seeking lands mid-line and mid-UTF-8. Throw the fragment away.
+            if (start > 0) reader.ReadLine();
+
+            string? line;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                if (line.Length == 0) continue;
+
+                // Substring test first — JSON-parsing every line of a 96 KB window is wasteful
+                // when only a handful are the two types we want.
+                bool maybeTitle = line.Contains("\"ai-title\"", StringComparison.Ordinal);
+                bool maybePrompt = line.Contains("\"last-prompt\"", StringComparison.Ordinal);
+                if (!maybeTitle && !maybePrompt) continue;
+
+                JsonElement el;
+                try { el = JsonDocument.Parse(line).RootElement; }
+                catch (JsonException) { continue; }
+
+                switch (GetString(el, "type"))
+                {
+                    case "ai-title":
+                        title = GetString(el, "aiTitle") ?? title;
+                        break;
+                    case "last-prompt":
+                        prompt = GetString(el, "lastPrompt") ?? prompt;
+                        break;
+                }
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
+        var cleanTitle = Clean(title ?? "");
+        var cleanPrompt = Clean(prompt ?? "");
+
+        return (cleanTitle.Length > 0 ? Shorten(cleanTitle, 90) : null,
+                cleanPrompt.Length > 0 ? Shorten(cleanPrompt, 120) : null);
     }
 
     private static string? GetString(JsonElement el, string name) =>

@@ -18,6 +18,10 @@
     <SolidColorBrush x:Key="TextFaint"   Color="#565E6B" />
     <SolidColorBrush x:Key="Working"     Color="#D4A24C" />
     <SolidColorBrush x:Key="Idle"        Color="#4E5765" />
+    <!-- The three states the sidebar has to convey at a glance: Claude is busy,
+         Claude is waiting on you, the session has ended. Green reads as "your turn". -->
+    <SolidColorBrush x:Key="NeedsInput"  Color="#6BBF8A" />
+    <SolidColorBrush x:Key="Dormant"     Color="#39404B" />
     <SolidColorBrush x:Key="Ended"       Color="#7A4F4F" />
 
     <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
@@ -277,5 +281,30 @@
       </Setter>
     </Style>
 
+
+    <!-- Inline rename field. Sized to sit exactly where the label was, so the row
+         does not jump when you start editing. -->
+    <Style x:Key="RenameBox" TargetType="TextBox">
+      <Setter Property="Background" Value="{StaticResource TerminalBg}" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="CaretBrush" Value="{StaticResource Working}" />
+      <Setter Property="SelectionBrush" Value="#2F3947" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Padding" Value="3,1" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{StaticResource Working}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </Application.Resources>
 </Application>
