@@ -76,6 +76,38 @@ Worth knowing, because it changes the design:
   uuid and found **zero** groups. Nothing on disk records that session B was branched from
   session A. **Clayo has to own that graph itself.**
 
+## Where Claude actually keeps sessions
+
+`~/.claude/projects` is not the only store, and not the cheapest one to read.
+
+| Path | What it holds | Use for Clayo |
+|---|---|---|
+| `~/.claude/projects/**/*.jsonl` | 217 files, 177 real sessions + ~40 `subagents/`. Full message history, `cwd`, `ai-title`, `last-prompt` | Source of truth for a session's content |
+| **`~/.claude/history.jsonl`** | **1.8 MB flat log of every prompt ever typed**, one JSON object per line | **Best sidebar index — see below** |
+| `~/.claude/sessions/` | Two files only (`<id>.key`, `<id>.json`) | Session *state*, not history. Not useful here |
+| `~/.claude/stats-cache.json` | Aggregate usage counters | Not useful here |
+
+`history.jsonl` lines look like:
+
+```json
+{"display":"I need to setup ssh key for this laptop...",
+ "pastedContents":{},
+ "timestamp":1776779177334,
+ "project":"C:\Users\yoges\Desktop\HELLO AGAIN",
+ "sessionId":"2f9ad0c6-b4f7-4a8e-8b18-0fa3efd20223"}
+```
+
+This is almost certainly what `/insights` reads — it is the only place where prompt,
+timestamp, project and session id are already flattened together, with no directory walk
+and no per-file JSONL parsing.
+
+For Clayo that means: **read `history.jsonl` to build the session index, and open the
+matching transcript only when a session is actually selected.** One sequential read of one
+file beats parsing 177, and it gives project grouping and recency for free.
+
+It does **not** change the branching conclusion. `history.jsonl` has no parent/fork field
+either, so Clayo still has to own the branch graph itself.
+
 ## Gaps against what you asked for
 
 | You asked for | Status |

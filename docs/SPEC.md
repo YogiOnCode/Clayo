@@ -76,6 +76,8 @@ The app builds but the right pane is dead. Nothing else matters until a session 
 - [ ] Live-only default; historical transcripts hidden behind a toggle
 - [ ] Titles from the transcript's **last** `ai-title` line, falling back to `last-prompt`
 - [ ] Skip `subagents/**` in `SessionStore.Scan()`
+- [ ] Build the index from `~/.claude/history.jsonl` (one sequential read) instead of parsing
+      177 transcripts; open a transcript only when its session is selected
 - **Done when:** branch a session twice, and both children appear indented under the parent,
   each with its own title, each independently resumable.
 
