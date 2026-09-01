@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>terminal</title>
+
+<!-- Vendored for offline use in production; see README. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #14171c;
+  }
+  #term {
+    height: 100%;
+    width: 100%;
+    padding: 10px 4px 6px 12px;
+    box-sizing: border-box;
+  }
+  .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+  .xterm-viewport::-webkit-scrollbar-thumb {
+    background: #333a45;
+    border-radius: 5px;
+    border: 3px solid #14171c;
+  }
+  .xterm-viewport::-webkit-scrollbar-thumb:hover { background: #464f5d; }
+</style>
+</head>
+<body>
+<div id="term"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+
+<script>
+(function () {
+  "use strict";
+
+  const host = window.chrome && window.chrome.webview;
+
+  const term = new Terminal({
+    fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
+    fontSize: 13,
+    lineHeight: 1.25,
+    letterSpacing: 0,
+    cursorBlink: true,
+    cursorStyle: "bar",
+    scrollback: 20000,
+    // Claude Code paints its own colours; this palette only fills the gaps.
+    theme: {
+      background: "#14171c",
+      foreground: "#c8cdd6",
+      cursor: "#d4a24c",
+      cursorAccent: "#14171c",
+      selectionBackground: "#2f3947",
+      black: "#14171c",
+      brightBlack: "#5a6472"
+    }
+  });
+
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById("term"));
+
+  // --- base64 <-> bytes -------------------------------------------------
+  // Raw bytes cross the bridge, never decoded text. A PTY read can split a
+  // UTF-8 character or an escape sequence in half; xterm reassembles them.
+
+  function toBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function toBase64(bytes) {
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  const encoder = new TextEncoder();
+
+  function send(msg) {
+    if (host) host.postMessage(JSON.stringify(msg));
+  }
+
+  // --- host -> terminal -------------------------------------------------
+
+  if (host) {
+    host.addEventListener("message", function (e) {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch (_) { return; }
+
+      switch (msg.t) {
+        case "o":                       // output bytes
+          term.write(toBytes(msg.d));
+          break;
+        case "clear":
+          term.clear();
+          break;
+        case "focus":
+          term.focus();
+          break;
+        case "notice":                  // host-side message, e.g. process exit
+          term.writeln("\r\n\x1b[38;5;244m" + msg.d + "\x1b[0m");
+          break;
+      }
+    });
+  }
+
+  // --- terminal -> host -------------------------------------------------
+
+  term.onData(function (data) {
+    send({ t: "i", d: toBase64(encoder.encode(data)) });
+  });
+
+  // Mouse reporting, bracketed paste and friends come through onBinary.
+  term.onBinary(function (data) {
+    const bytes = new Uint8Array(data.length);
+    for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 255;
+    send({ t: "i", d: toBase64(bytes) });
+  });
+
+  let lastCols = 0, lastRows = 0;
+
+  function doFit() {
+    try { fit.fit(); } catch (_) { return; }
+    if (term.cols !== lastCols || term.rows !== lastRows) {
+      lastCols = term.cols;
+      lastRows = term.rows;
+      send({ t: "r", cols: term.cols, rows: term.rows });
+    }
+  }
+
+  // Coalesce resizes: dragging the splitter otherwise fires ResizePseudoConsole
+  // dozens of times a second and the TUI redraws garbage.
+  let resizeTimer = null;
+  const ro = new ResizeObserver(function () {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(doFit, 60);
+  });
+  ro.observe(document.getElementById("term"));
+
+  window.addEventListener("load", function () {
+    doFit();
+    term.focus();
+    send({ t: "ready", cols: term.cols, rows: term.rows });
+  });
+
+  // Ctrl+Shift+C / Ctrl+Shift+V, since Ctrl+C belongs to the child process.
+  term.attachCustomKeyEventHandler(function (ev) {
+    if (ev.type !== "keydown") return true;
+    if (ev.ctrlKey && ev.shiftKey && ev.code === "KeyC") {
+      const sel = term.getSelection();
+      if (sel) navigator.clipboard.writeText(sel);
+      return false;
+    }
+    if (ev.ctrlKey && ev.shiftKey && ev.code === "KeyV") {
+      navigator.clipboard.readText().then(function (text) {
+        if (text) send({ t: "i", d: toBase64(encoder.encode(text)) });
+      });
+      return false;
+    }
+    return true;
+  });
+
+  window.ccxFit = doFit;
+})();
+</script>
+</body>
+</html>
