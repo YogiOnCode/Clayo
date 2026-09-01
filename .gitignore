@@ -7,9 +7,6 @@ obj/
 publish/
 *.pubxml.user
 
-# Vendored browser assets (restored by npm, see docs/SPEC.md M0)
-Assets/xterm/
-
 # Editor / OS
 .vs/
 .idea/
