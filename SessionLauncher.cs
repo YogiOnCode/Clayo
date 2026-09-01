@@ -41,7 +41,11 @@ public static class SessionLauncher
         switch (mode)
         {
             case LaunchMode.New:
-                command = "claude";
+                // Allocate the id up front rather than letting claude pick one. Without it a
+                // brand-new pane has nothing to key on until its transcript appears on disk,
+                // so it cannot be renamed, tracked, or told apart from another new pane.
+                expectedId = Guid.NewGuid().ToString();
+                command = $"claude --session-id {expectedId}";
                 break;
 
             case LaunchMode.Resume:
