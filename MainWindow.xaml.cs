@@ -51,7 +51,11 @@ public partial class MainWindow : Window
         {
             RefreshSessions();
             _store.StartWatching();
-            Filter.Focus();
+
+            // Opening Clayo in a folder should land you in a live session, not an
+            // empty pane. Same thing the Explorer handoff does in AdoptFolder.
+            StartPane(SessionLauncher.Plan(LaunchMode.New, _folder), sessionId: null,
+                      title: $"new · {Path.GetFileName(_folder.TrimEnd('\\'))}");
         };
     }
 
