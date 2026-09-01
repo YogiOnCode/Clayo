@@ -52,6 +52,10 @@ public sealed class SessionStore
 
         foreach (var file in Directory.EnumerateFiles(_root, "*.jsonl", SearchOption.AllDirectories))
         {
+            // subagents/agent-*.jsonl are tool transcripts, not sessions you can resume.
+            // Roughly 40 of the 217 files under the tree are these.
+            if (string.Equals(Path.GetFileName(Path.GetDirectoryName(file)), "subagents",
+                              StringComparison.OrdinalIgnoreCase)) continue;
             FileInfo fi;
             try { fi = new FileInfo(file); }
             catch { continue; }
