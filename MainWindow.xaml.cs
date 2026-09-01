@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Interop;
 using System.Windows.Media;
 using CcxShell.Core;
 using CcxShell.UI;
@@ -13,9 +15,26 @@ namespace CcxShell;
 public sealed class SessionRow
 {
     public required SessionInfo Info { get; init; }
+
     public string Preview => Info.Preview;
     public string Project => Info.ProjectName;
+    public DateTime When => Info.LastActivity;
     public string Age => Relative(Info.LastActivity);
+    public string Tip => $"{Info.Preview}\n{Info.ProjectDir}\n{Info.SessionId}";
+
+    /// <summary>Today's work stays open; everything older folds away under "Earlier".</summary>
+    public string Bucket => Info.LastActivity.Date == DateTime.Today ? "Today" : "Earlier";
+
+    /// <summary>Groups form in item order, so sorting on this is what puts Today first.</summary>
+    public int BucketOrder => Info.LastActivity.Date == DateTime.Today ? 0 : 1;
+
+    /// <summary>
+    /// Newest activity anywhere in this row's folder. Sorting on it before the folder name
+    /// makes the folder groups themselves fall in recency order, which is what you want
+    /// from "sort by date" — otherwise a folder last touched in June sits at the top
+    /// because its name starts with an A.
+    /// </summary>
+    public DateTime FolderRank { get; set; }
 
     private static string Relative(DateTime when)
     {
@@ -59,6 +78,24 @@ public partial class MainWindow : Window
         };
     }
 
+    // ------------------------------------------------------------- title bar
+
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        // A white system title bar above a near-black app reads as a bug. This is the
+        // supported way to darken it without taking over the whole non-client area.
+        var hwnd = new WindowInteropHelper(this).Handle;
+        int on = 1;
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
+    }
+
     // ------------------------------------------------------------------ folder
 
     public void AdoptFolder(string folder)
@@ -90,6 +127,14 @@ public partial class MainWindow : Window
         foreach (var s in _store.Scan())
             _all.Add(new SessionRow { Info = s });
 
+        // Stamp every row with its folder's newest activity, so folder groups can be
+        // ordered by recency rather than alphabetically.
+        foreach (var byFolder in _all.GroupBy(r => r.Project, StringComparer.OrdinalIgnoreCase))
+        {
+            var newest = byFolder.Max(r => r.When);
+            foreach (var row in byFolder) row.FolderRank = newest;
+        }
+
         ApplyFilter();
 
         if (selected is not null)
@@ -116,12 +161,66 @@ public partial class MainWindow : Window
                 r.Info.SessionId.StartsWith(q, StringComparison.OrdinalIgnoreCase));
         }
 
+        bool byFolder = GroupBy.SelectedIndex == 0;
+        int sort = SortBy.SelectedIndex;   // 0 newest, 1 oldest, 2 name
+
         var view = new CollectionViewSource { Source = rows.ToList() };
-        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SessionRow.Project)));
+
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SessionRow.Bucket)));
+        if (byFolder)
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SessionRow.Project)));
+
+        // Order matters: every group key has to be sorted before the keys nested inside it,
+        // or WPF splits one logical group into several.
+        view.SortDescriptions.Add(new SortDescription(nameof(SessionRow.BucketOrder), ListSortDirection.Ascending));
+
+        if (byFolder)
+        {
+            if (sort == 2)
+            {
+                view.SortDescriptions.Add(new SortDescription(nameof(SessionRow.Project), ListSortDirection.Ascending));
+            }
+            else
+            {
+                view.SortDescriptions.Add(new SortDescription(nameof(SessionRow.FolderRank),
+                    sort == 1 ? ListSortDirection.Ascending : ListSortDirection.Descending));
+                // Tie-break, or two folders touched in the same tick interleave.
+                view.SortDescriptions.Add(new SortDescription(nameof(SessionRow.Project), ListSortDirection.Ascending));
+            }
+        }
+
+        view.SortDescriptions.Add(sort switch
+        {
+            1 => new SortDescription(nameof(SessionRow.When), ListSortDirection.Ascending),
+            2 => new SortDescription(nameof(SessionRow.Preview), ListSortDirection.Ascending),
+            _ => new SortDescription(nameof(SessionRow.When), ListSortDirection.Descending)
+        });
+
         Sessions.ItemsSource = view.View;
+
+        // Rebuilding the view can leave the ScrollViewer parked mid-list, which hides the
+        // Today header. Put it back at the top.
+        Sessions.Dispatcher.BeginInvoke(() =>
+        {
+            if (VisualTreeHelper.GetChildrenCount(Sessions) == 0) return;
+            var border = VisualTreeHelper.GetChild(Sessions, 0);
+            if (VisualTreeHelper.GetChildrenCount(border) == 0) return;
+            (VisualTreeHelper.GetChild(border, 0) as ScrollViewer)?.ScrollToTop();
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
-    private void Filter_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+    private void Filter_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        SearchHint.Visibility = Filter.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ApplyFilter();
+    }
+
+    private void View_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        // Fires during InitializeComponent, before the rest of the sidebar exists.
+        if (!IsLoaded || Filter is null) return;
+        ApplyFilter();
+    }
 
     private void Sessions_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -138,7 +237,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Resume_Click(object sender, RoutedEventArgs e)
+    /// <summary>Double-click is how you open things in Explorer, so it opens them here too.</summary>
+    private void Sessions_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (Sessions.SelectedItem is SessionRow) OpenSelected();
+    }
+
+    private void Resume_Click(object sender, RoutedEventArgs e) => OpenSelected();
+
+    private void OpenSelected()
     {
         if (Sessions.SelectedItem is not SessionRow row) return;
 
