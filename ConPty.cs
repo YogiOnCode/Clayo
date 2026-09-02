@@ -102,9 +102,6 @@ internal static class Native
         out PROCESS_INFORMATION lpProcessInformation);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
 }
@@ -129,8 +126,6 @@ public sealed class PtyProcess : IDisposable
 
     /// <summary>Fired once when the child exits or the output pipe closes.</summary>
     public event Action? Exited;
-
-    public bool IsRunning => _pi.hProcess != IntPtr.Zero && !_disposed;
 
     public void Start(string commandLine, string workingDirectory, short cols, short rows)
     {
