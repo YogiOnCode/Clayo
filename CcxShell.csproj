@@ -9,6 +9,7 @@
     <AssemblyName>clayo</AssemblyName>
     <RootNamespace>CcxShell</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>clayo.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

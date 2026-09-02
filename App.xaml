@@ -66,6 +66,68 @@
       </Setter>
     </Style>
 
+    <!-- The two sidebar actions are the only things in the chrome you go looking for, so
+         they get a raised face instead of an outline: vertical gradient, a lit top edge,
+         a brighter rim. Deliberately not amber — that stays reserved for "this session is
+         doing something", and a permanently amber button would spend the one accent. -->
+    <LinearGradientBrush x:Key="GlassFace" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Offset="0" Color="#2C333D" />
+      <GradientStop Offset="1" Color="#1D222A" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="GlassFaceHover" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Offset="0" Color="#3A4350" />
+      <GradientStop Offset="1" Color="#252B34" />
+    </LinearGradientBrush>
+
+    <Style x:Key="GlassButton" TargetType="Button">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd"
+                    Background="{StaticResource GlassFace}"
+                    BorderBrush="#3B4453"
+                    BorderThickness="1"
+                    CornerRadius="5"
+                    SnapsToDevicePixels="True">
+              <Grid>
+                <!-- Catches the light along the top edge the way a raised glass face does.
+                     Taller than the line itself so the corner curve stays smooth. -->
+                <Border x:Name="Gloss"
+                        Height="8" VerticalAlignment="Top"
+                        BorderBrush="#24FFFFFF" BorderThickness="0,1,0,0"
+                        CornerRadius="5,5,0,0" />
+                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource GlassFaceHover}" />
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#4A5566" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#191E25" />
+                <Setter TargetName="Gloss" Property="Visibility" Value="Collapsed" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Background" Value="Transparent" />
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Hairline}" />
+                <Setter TargetName="Gloss" Property="Visibility" Value="Collapsed" />
+                <Setter Property="Foreground" Value="{StaticResource TextFaint}" />
+                <Setter Property="Cursor" Value="Arrow" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="SearchBox" TargetType="TextBox">
       <Setter Property="Background" Value="{StaticResource TerminalBg}" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
@@ -283,6 +345,30 @@
       </Setter>
     </Style>
 
+
+    <!-- Rows in the folder picker. Same hover colour as the combo items, so the two
+         popups read as the same surface. No selected state: picking one closes the
+         popup, so a persistent highlight would only ever flash. -->
+    <Style x:Key="FolderItem" TargetType="ListBoxItem">
+      <Setter Property="Padding" Value="7,5" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="Bd" Background="Transparent" CornerRadius="3"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#2B313C" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
 
     <!-- The divider you drag. A 1px splitter is correct on paper and unhittable in
          practice, so the band is 7px of transparent grab area with the hairline drawn
