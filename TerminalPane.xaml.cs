@@ -21,9 +21,7 @@ public partial class TerminalPane : UserControl
 
     private readonly PtyProcess _pty = new();
     private readonly LaunchPlan _plan;
-    private bool _ready;
     private bool _typedCommand;
-    private readonly List<byte[]> _pending = new();
 
     private DateTime _lastOutput = DateTime.UtcNow;
     private readonly Queue<DateTime> _recent = new();
@@ -48,11 +46,11 @@ public partial class TerminalPane : UserControl
 
     public event EventHandler<PaneStatus>? StatusChanged;
 
-    public TerminalPane(LaunchPlan plan, string? sessionId)
+    public TerminalPane(LaunchPlan plan)
     {
         InitializeComponent();
         _plan = plan;
-        SessionId = plan.ExpectedSessionId ?? sessionId;
+        SessionId = plan.ExpectedSessionId;
 
         // Working vs waiting-for-you, from the shape of the output stream alone.
         //
@@ -131,11 +129,9 @@ public partial class TerminalPane : UserControl
         switch (type)
         {
             case "ready":
-                _ready = true;
                 StartPty(
                     (short)(msg.TryGetProperty("cols", out var c) ? c.GetInt32() : 80),
                     (short)(msg.TryGetProperty("rows", out var r) ? r.GetInt32() : 24));
-                FlushPending();
                 break;
 
             case "i":
@@ -162,7 +158,7 @@ public partial class TerminalPane : UserControl
                 _recent.Enqueue(now);
                 while (_recent.Count > 12) _recent.Dequeue();
             }
-            Dispatcher.BeginInvoke(() => Push(bytes));
+            Dispatcher.BeginInvoke(() => Post(new { t = "o", d = Convert.ToBase64String(bytes) }));
         };
 
         _pty.Exited += () => Dispatcher.BeginInvoke(() =>
@@ -198,22 +194,6 @@ public partial class TerminalPane : UserControl
             _pty.Write(_plan.ClaudeCommand + "\r");
         };
         delay.Start();
-    }
-
-    private void Push(byte[] bytes)
-    {
-        if (!_ready)
-        {
-            _pending.Add(bytes);
-            return;
-        }
-        Post(new { t = "o", d = Convert.ToBase64String(bytes) });
-    }
-
-    private void FlushPending()
-    {
-        foreach (var chunk in _pending) Push(chunk);
-        _pending.Clear();
     }
 
     private void Post(object payload)

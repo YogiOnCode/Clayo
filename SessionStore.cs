@@ -7,7 +7,6 @@ namespace CcxShell.Core;
 public sealed class SessionInfo
 {
     public required string SessionId { get; init; }
-    public required string TranscriptPath { get; init; }
 
     /// <summary>Working directory read from the transcript, not un-mangled from the folder name.</summary>
     public required string ProjectDir { get; init; }
@@ -29,7 +28,6 @@ public sealed class SessionInfo
     public string? LastPrompt { get; set; }
 
     public DateTime LastActivity { get; set; }
-    public long SizeBytes { get; set; }
 }
 
 /// <summary>
@@ -91,15 +89,6 @@ public sealed class SessionStore
         return results.OrderByDescending(s => s.LastActivity).ToList();
     }
 
-    /// <summary>Sidebar grouping: project directory -> its sessions, newest project first.</summary>
-    public IReadOnlyList<IGrouping<string, SessionInfo>> ScanGrouped()
-    {
-        return Scan()
-            .GroupBy(s => s.ProjectDir, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(g => g.Max(s => s.LastActivity))
-            .ToList();
-    }
-
     private static SessionInfo? Parse(FileInfo fi)
     {
         string? cwd = null;
@@ -151,13 +140,11 @@ public sealed class SessionStore
         return new SessionInfo
         {
             SessionId = sessionId,
-            TranscriptPath = fi.FullName,
             ProjectDir = cwd,
             Preview = preview.Length > 0 ? preview : "(no prompt yet)",
             AiTitle = aiTitle,
             LastPrompt = lastPrompt,
-            LastActivity = fi.LastWriteTime,
-            SizeBytes = fi.Length
+            LastActivity = fi.LastWriteTime
         };
     }
 
@@ -292,7 +279,7 @@ public sealed class SessionStore
         _watcher.Changed += Bump;
         _watcher.Created += Bump;
         _watcher.Deleted += Bump;
-        _watcher.Renamed += (_, __) => _debounce?.Change(600, Timeout.Infinite);
+        _watcher.Renamed += Bump;
     }
 
     public void StopWatching()

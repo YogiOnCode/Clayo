@@ -224,7 +224,7 @@
                 Style="{StaticResource QuietButton}"
                 Margin="8,0,0,0" IsEnabled="False"
                 ToolTip="Open the selected session. Double-click does the same. F2 renames."
-                Click="Resume_Click" />
+                Click="Open_Click" />
       </StackPanel>
     </Grid>
 
