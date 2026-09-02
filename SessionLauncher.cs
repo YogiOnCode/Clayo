@@ -33,6 +33,34 @@ public static class SessionLauncher
             : "powershell.exe -NoLogo";
     }
 
+    /// <summary>
+    /// Claude Code marks its child processes with session-scoped variables. Panes inherit
+    /// our environment (ConPty passes a null environment block), so if clayo was itself
+    /// started from inside a Claude Code session those markers reach the claude we spawn.
+    /// CLAUDE_CODE_CHILD_SESSION alone switches transcript saving off, which leaves the new
+    /// session invisible to both the sidebar and --resume.
+    ///
+    /// ponytail: clearing them in our own process is the whole fix. Windows hands a child a
+    /// copy of the current block, so there is no environment block to marshal. Configuration
+    /// variables (ANTHROPIC_*, CLAUDE_EFFORT) are deliberately left alone.
+    /// </summary>
+    public static void ScrubInheritedSession()
+    {
+        foreach (var name in new[]
+                 {
+                     "CLAUDECODE",
+                     "CLAUDE_CODE_CHILD_SESSION",
+                     "CLAUDE_CODE_ENTRYPOINT",
+                     "CLAUDE_CODE_SESSION_ID",
+                     "CLAUDE_CODE_MESSAGING_SOCKET",
+                     "CLAUDE_CODE_MESSAGING_TOKEN",
+                     "CLAUDE_PID"
+                 })
+        {
+            Environment.SetEnvironmentVariable(name, null);
+        }
+    }
+
     public static LaunchPlan Plan(LaunchMode mode, string workingDirectory, string? sessionId = null)
     {
         string command;

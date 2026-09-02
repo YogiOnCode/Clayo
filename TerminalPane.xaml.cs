@@ -11,7 +11,17 @@ public enum PaneStatus
 {
     Starting,
     Working,
-    Idle,
+
+    /// <summary>Claude asked something and is blocked until you answer.</summary>
+    NeedsInput,
+
+    /// <summary>Quiet with nothing outstanding — the turn is over.</summary>
+    Done,
+
+    /// <summary>Claude Code printed an API failure.</summary>
+    Error,
+
+    /// <summary>The shell itself closed.</summary>
     Exited
 }
 
@@ -58,10 +68,13 @@ public partial class TerminalPane : UserControl
         // Code still emits the odd redraw — one chunk after 8 s of silence — which flipped
         // the light to "running" for two seconds at a time while nothing was happening.
         //
-        // So the two transitions use different tests. Going quiet is enough to call it
-        // waiting. Claiming it is working needs *sustained* output, which a lone redraw
+        // So the two transitions use different tests. Going quiet is enough to call the
+        // turn over. Claiming it is working needs *sustained* output, which a lone redraw
         // cannot fake. Between the two the previous state stands, so the light is steady
         // rather than strobing.
+        //
+        // Silence cannot tell "finished" from "waiting on you", so those two do not come
+        // from timing at all — see Scan.
         _idleTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(400)
@@ -77,8 +90,12 @@ public partial class TerminalPane : UserControl
             lock (_recent)
                 burst = _recent.Count(t => (now - t).TotalMilliseconds < 900);
 
-            if (quietFor > 1500) Status = PaneStatus.Idle;
-            else if (burst >= 3) Status = PaneStatus.Working;
+            // Sustained output means work resumed, which clears a question or an error.
+            if (burst >= 3) Status = PaneStatus.Working;
+            // ponytail: a question or an error outlives the silence behind it. Without this,
+            // going quiet would immediately repaint both of them as "done".
+            else if (Status is PaneStatus.NeedsInput or PaneStatus.Error) return;
+            else if (quietFor > 1500) Status = PaneStatus.Done;
         };
 
         Loaded += OnLoaded;
@@ -158,7 +175,12 @@ public partial class TerminalPane : UserControl
                 _recent.Enqueue(now);
                 while (_recent.Count > 12) _recent.Dequeue();
             }
-            Dispatcher.BeginInvoke(() => Post(new { t = "o", d = Convert.ToBase64String(bytes) }));
+            var seen = Scan(bytes, ref _carry);
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (seen is { } s) Status = s;
+                Post(new { t = "o", d = Convert.ToBase64String(bytes) });
+            });
         };
 
         _pty.Exited += () => Dispatcher.BeginInvoke(() =>
@@ -194,6 +216,33 @@ public partial class TerminalPane : UserControl
             _pty.Write(_plan.ClaudeCommand + "\r");
         };
         delay.Start();
+    }
+
+    // ponytail: two ASCII literals, not a parser. Verified against the transcripts and
+    // the CLI binary on this machine: every API failure Claude Code prints begins
+    // "API Error:", and every permission prompt asks "Do you want to ...". ASCII bytes
+    // never occur inside a multi-byte UTF-8 sequence, so the raw stream can be scanned
+    // without decoding it.
+    private static readonly byte[] ErrorMark = "API Error:"u8.ToArray();
+    private static readonly byte[] AskMark = "Do you want to"u8.ToArray();
+
+    private byte[] _carry = [];
+
+    /// <summary>
+    /// The status a chunk implies, or null if it says nothing new. <paramref name="carry"/>
+    /// holds the tail of the previous chunk so a marker straddling two pipe reads still
+    /// matches. Called from the pty read thread only.
+    /// </summary>
+    public static PaneStatus? Scan(byte[] chunk, ref byte[] carry)
+    {
+        byte[] buf = carry.Length == 0 ? chunk : [.. carry, .. chunk];
+        int keep = Math.Max(ErrorMark.Length, AskMark.Length) - 1;
+        carry = buf.Length <= keep ? buf : buf[^keep..];
+
+        var span = buf.AsSpan();
+        if (span.IndexOf(ErrorMark) >= 0) return PaneStatus.Error;
+        if (span.IndexOf(AskMark) >= 0) return PaneStatus.NeedsInput;
+        return null;
     }
 
     private void Post(object payload)
