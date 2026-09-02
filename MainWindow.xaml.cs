@@ -10,8 +10,12 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using CcxShell.Core;
 using CcxShell.UI;
+using Microsoft.Win32;
 
 namespace CcxShell;
+
+/// <summary>One row in the folder picker: the leaf to read, the full path to launch in.</summary>
+public sealed record FolderChoice(string Name, string FullPath);
 
 /// <summary>
 /// One row in the sidebar. Backed by a transcript, a live pane, or both — a session you
@@ -51,6 +55,7 @@ public sealed class SessionRow : INotifyPropertyChanged
 
     public string Tip =>
         $"{Name}\n{(Info?.ProjectDir ?? Folder)}\n{SessionId}"
+        + (BranchOf is { Length: > 0 } b ? $"\n\nBranched from: {b}" : "")
         + (Info?.LastPrompt is { Length: > 0 } lp ? $"\n\nLast: {lp}" : "");
 
     public string Project =>
@@ -92,6 +97,36 @@ public sealed class SessionRow : INotifyPropertyChanged
     /// name starts with an A.
     /// </summary>
     public DateTime FolderRank { get; set; }
+
+    // ----------------------------------------------------------------- branches
+
+    /// <summary>Session this one was branched from. Null for a top-level session.</summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>Parent's label, for the tooltip. Null when the parent is not in the list.</summary>
+    public string? BranchOf { get; set; }
+
+    /// <summary>
+    /// Branch hops from the top-level session, and so how far the row indents. Counts only
+    /// links whose parent is actually in the list: a branch whose parent transcript is gone
+    /// keeps its marker but has nothing to indent under.
+    /// </summary>
+    public int Depth { get; set; }
+
+    public bool IsBranch => ParentId is not null;
+
+    public Thickness Indent => new(Depth * 15, 0, 0, 0);
+
+    public Visibility BranchMarkVisibility => IsBranch ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// Sort key that lands a branch directly beneath the session it came from. A parent's
+    /// key is a prefix of every child's, and a prefix sorts first, so one ascending string
+    /// comparison yields the whole tree in reading order. The leading timestamp is what
+    /// orders threads against each other; the direction is baked into it, so this is sorted
+    /// ascending whether you asked for newest or oldest first.
+    /// </summary>
+    public string ThreadOrder { get; set; } = "";
 
     // ------------------------------------------------------------------ status
 
@@ -192,6 +227,7 @@ public partial class MainWindow : Window
 {
     private readonly SessionStore _store = new();
     private readonly SessionNames _names = new();
+    private readonly SessionParents _parents = new();
 
     // Panes stay alive when you switch away, so switching back is instant and the
     // process keeps working in the background. PaneHost.Children is the set of them.
@@ -225,6 +261,12 @@ public partial class MainWindow : Window
     // ------------------------------------------------------------- title bar
 
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMWA_BORDER_COLOR = 34;
+    private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+
+    /// <summary>Acrylic: blurs whatever is behind the window. Mica is 2, which tints
+    /// from the wallpaper instead and is far subtler — swap this if that reads better.</summary>
+    private const int DWMSBT_TRANSIENTWINDOW = 3;
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
@@ -238,6 +280,101 @@ public partial class MainWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         int on = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
+
+        // Glass in the caption. Every Grid in MainWindow paints an opaque brush, so the
+        // client area is unaffected and only the non-client strip DWM draws itself picks
+        // the material up — glass at the top edge, the terminal below untouched.
+        int backdrop = DWMSBT_TRANSIENTWINDOW;
+        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+
+        // Default border is light, and against glass it draws a bright rim. COLORREF is
+        // 0x00BBGGRR, so Hairline #262C35 goes in byte-reversed.
+        int border = 0x00352C26;
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref border, sizeof(int));
+
+        // No return values checked on purpose: dwmapi answers E_INVALIDARG for an
+        // attribute the running build doesn't know, so anything older than 22H2 keeps
+        // the plain dark title bar instead of failing.
+
+        PlaceOnPrimary(hwnd);
+    }
+
+    // -------------------------------------------------------------- placement
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X, Y; }
+
+    /// <summary>
+    /// Point-based, not window-based. MonitorFromWindow's MONITOR_DEFAULTTOPRIMARY is only a
+    /// fallback for a window that intersects no monitor at all — given a window already
+    /// touching a screen it returns that screen and ignores the flag, which is exactly the
+    /// case we are trying to correct. The primary monitor's origin is (0,0) by definition,
+    /// so asking about that point names it unambiguously.
+    /// </summary>
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT point, int flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private const int MONITOR_DEFAULTTOPRIMARY = 1;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+
+    /// <summary>
+    /// Open centred on the primary monitor, at a size that fits there.
+    ///
+    /// This is what WindowStartupLocation="CenterScreen" is supposed to do and, on a desktop
+    /// whose monitors run at different scaling, does not. Measured on a 2880x1800 primary at
+    /// 200% next to a 1920x1080 secondary at 100%, it produced a 2560x1640 window — sized at
+    /// the primary's scale — placed at 2560,-304: title bar above the desktop, body straddling
+    /// both screens and running off the right edge. Nothing about that is recoverable with the
+    /// mouse, because the bar you would drag it back by is the part that is off-screen.
+    ///
+    /// Nothing to do with the title bar; it reproduces with the stock system caption. So this
+    /// stays regardless of what the chrome looks like.
+    ///
+    /// Measured against the work area, not the monitor bounds, so the taskbar cannot end up
+    /// covering the caption.
+    /// </summary>
+    private static void PlaceOnPrimary(IntPtr hwnd)
+    {
+        if (!GetWindowRect(hwnd, out var win)) return;
+
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        var monitor = MonitorFromPoint(default, MONITOR_DEFAULTTOPRIMARY);
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return;
+
+        var work = info.rcWork;
+        int workWidth = work.Right - work.Left;
+        int workHeight = work.Bottom - work.Top;
+
+        int width = Math.Min(win.Right - win.Left, workWidth);
+        int height = Math.Min(win.Bottom - win.Top, workHeight);
+
+        int x = work.Left + (workWidth - width) / 2;
+        int y = work.Top + (workHeight - height) / 2;
+
+        SetWindowPos(hwnd, IntPtr.Zero, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     // ------------------------------------------------------------------ folder
@@ -328,6 +465,8 @@ public partial class MainWindow : Window
         bool byFolder = GroupBy.SelectedIndex == 0;
         int sort = SortBy.SelectedIndex;   // 0 newest, 1 oldest, 2 name
 
+        LinkThreads(newestFirst: sort != 1);
+
         var view = new CollectionViewSource { Source = rows.ToList() };
 
         view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SessionRow.Bucket)));
@@ -353,12 +492,12 @@ public partial class MainWindow : Window
             }
         }
 
-        view.SortDescriptions.Add(sort switch
-        {
-            1 => new SortDescription(nameof(SessionRow.When), ListSortDirection.Ascending),
-            2 => new SortDescription(nameof(SessionRow.Name), ListSortDirection.Ascending),
-            _ => new SortDescription(nameof(SessionRow.When), ListSortDirection.Descending)
-        });
+        // Sorting by name is alphabetical and nothing else, so a branch keeps its marker
+        // and indent but sits wherever its name falls. Both date orders thread instead:
+        // ThreadOrder already carries the direction, hence ascending either way.
+        view.SortDescriptions.Add(sort == 2
+            ? new SortDescription(nameof(SessionRow.Name), ListSortDirection.Ascending)
+            : new SortDescription(nameof(SessionRow.ThreadOrder), ListSortDirection.Ascending));
 
         Sessions.ItemsSource = view.View;
 
@@ -379,11 +518,67 @@ public partial class MainWindow : Window
         }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
+    /// <summary>Deep enough for any real branching, and the thing that stops a parents.json
+    /// describing a cycle from spinning the walk below forever.</summary>
+    private const int MaxBranchDepth = 8;
+
+    /// <summary>
+    /// Hangs every branch off the session it came from: the depth its row indents by, and
+    /// the key that keeps it directly beneath its parent once the view sorts.
+    /// </summary>
+    private void LinkThreads(bool newestFirst)
+    {
+        foreach (var row in _rows.Values)
+        {
+            row.ParentId = _parents.Get(row.SessionId);
+            row.BranchOf = row.ParentId is { } pid && _rows.TryGetValue(pid, out var parent)
+                ? parent.Name
+                : null;
+        }
+
+        foreach (var row in _rows.Values)
+        {
+            // Climb to the top-level session, collecting the line of descent. Stops early
+            // on a parent that is not in the list, which leaves the row at depth 0.
+            var chain = new List<SessionRow> { row };
+            var walk = row;
+
+            while (chain.Count <= MaxBranchDepth
+                   && walk.ParentId is { } pid
+                   && _rows.TryGetValue(pid, out var parent))
+            {
+                chain.Add(parent);
+                walk = parent;
+            }
+
+            chain.Reverse();
+            row.Depth = chain.Count - 1;
+            row.ThreadOrder = string.Concat(
+                chain.Select(r => Stamp(r.When, newestFirst) + r.SessionId + "/"));
+        }
+    }
+
+    /// <summary>Fixed width, so comparing the strings orders them the way the numbers do.</summary>
+    private static string Stamp(DateTime when, bool newestFirst) =>
+        (newestFirst ? DateTime.MaxValue.Ticks - when.Ticks : when.Ticks).ToString("D19");
+
     private void Filter_TextChanged(object sender, TextChangedEventArgs e)
     {
-        SearchHint.Visibility = Filter.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SyncSearchHint();
         ApplyFilter();
     }
+
+    private void Filter_FocusChanged(object sender, RoutedEventArgs e) => SyncSearchHint();
+
+    /// <summary>
+    /// The hint gets out of the way as soon as the caret lands, not only once you have
+    /// typed something — a placeholder sitting behind a live caret reads as real text you
+    /// have to delete. It comes back on blur if the box was left empty.
+    /// </summary>
+    private void SyncSearchHint() =>
+        SearchHint.Visibility = Filter.Text.Length == 0 && !Filter.IsKeyboardFocusWithin
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
     private void View_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -437,9 +632,74 @@ public partial class MainWindow : Window
 
     private void NewSession_Click(object sender, RoutedEventArgs e)
     {
-        StartPane(SessionLauncher.Plan(LaunchMode.New, _folder),
-                  title: $"new · {Path.GetFileName(_folder.TrimEnd('\\'))}");
+        RecentFolders.ItemsSource = RecentFolderList(8);
+
+        // Cleared so the next pick raises SelectionChanged even if it is the same row
+        // the last one was, and so nothing sits pre-highlighted.
+        RecentFolders.SelectedIndex = -1;
+        FolderPopup.IsOpen = true;
     }
+
+    /// <summary>
+    /// Folders we already have sessions in, most recently touched first, with wherever
+    /// this window is pointed pinned to the top. Read off the rows already in memory
+    /// rather than <see cref="SessionStore.Scan"/>, which re-reads every transcript.
+    /// </summary>
+    private List<FolderChoice> RecentFolderList(int max)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var choices = new List<FolderChoice>();
+
+        void Add(string folder)
+        {
+            if (choices.Count >= max) return;
+            if (folder.Length == 0 || !seen.Add(folder)) return;
+            if (!Directory.Exists(folder)) return;
+            choices.Add(new FolderChoice(FolderLeaf(folder), folder));
+        }
+
+        Add(_folder);
+        foreach (var row in _rows.Values.OrderByDescending(r => r.When)) Add(row.Folder);
+
+        return choices;
+    }
+
+    private void RecentFolder_Selected(object sender, SelectionChangedEventArgs e)
+    {
+        if (RecentFolders.SelectedItem is FolderChoice choice) SpawnIn(choice.FullPath);
+    }
+
+    private void BrowseFolder_Click(object sender, RoutedEventArgs e)
+    {
+        FolderPopup.IsOpen = false;
+
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Start a session in",
+            InitialDirectory = Directory.Exists(_folder) ? _folder : ""
+        };
+
+        if (dialog.ShowDialog(this) == true) SpawnIn(dialog.FolderName);
+    }
+
+    /// <summary>
+    /// Starts a session in <paramref name="folder"/> and points the window at it, so the
+    /// header and the next new session agree with where you just launched.
+    /// </summary>
+    private void SpawnIn(string folder)
+    {
+        FolderPopup.IsOpen = false;
+        if (!Directory.Exists(folder)) return;
+
+        _folder = folder;
+        ShowFolder(folder);
+
+        StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
+                  title: $"new · {FolderLeaf(folder)}");
+    }
+
+    private static string FolderLeaf(string folder) =>
+        Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : folder;
 
     private void Fork_Click(object sender, RoutedEventArgs e)
     {
@@ -448,6 +708,10 @@ public partial class MainWindow : Window
 
         var cwd = _active!.WorkingDirectory;
         var plan = SessionLauncher.Plan(LaunchMode.Fork, cwd, parentId);
+
+        // Record the link now: the fork rewrites sessionId on every line it copies, so
+        // once this returns there is nothing left anywhere that says the two are related.
+        if (plan.ExpectedSessionId is { } childId) _parents.Set(childId, parentId);
 
         // The child's id was allocated by us, so the branch is addressable before
         // the transcript for it exists on disk.
