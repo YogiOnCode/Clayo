@@ -18,7 +18,7 @@
   <Grid>
     <Grid.ColumnDefinitions>
       <ColumnDefinition x:Name="SidebarColumn" Width="310" MinWidth="240" MaxWidth="520" />
-      <ColumnDefinition Width="1" />
+      <ColumnDefinition Width="7" />
       <ColumnDefinition Width="*" MinWidth="360" />
     </Grid.ColumnDefinitions>
 
@@ -229,9 +229,10 @@
     </Grid>
 
     <GridSplitter Grid.Column="1"
-                  Width="1"
+                  Style="{StaticResource PaneSplitter}"
                   HorizontalAlignment="Stretch"
-                  Background="{StaticResource Hairline}"
+                  VerticalAlignment="Stretch"
+                  ResizeDirection="Columns"
                   ResizeBehavior="PreviousAndNext" />
 
     <!-- ========================== terminal side ========================= -->

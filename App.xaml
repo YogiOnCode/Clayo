@@ -17,11 +17,14 @@
     <SolidColorBrush x:Key="TextMuted"   Color="#7A828F" />
     <SolidColorBrush x:Key="TextFaint"   Color="#565E6B" />
     <SolidColorBrush x:Key="Working"     Color="#D4A24C" />
-    <!-- The three states the sidebar has to convey at a glance: Claude is busy,
-         Claude is waiting on you, the session has ended. Green reads as "your turn". -->
-    <SolidColorBrush x:Key="NeedsInput"  Color="#6BBF8A" />
+    <!-- Conventional reading, so the sidebar needs no legend: amber is in progress,
+         blue is the ball in your court, green finished cleanly, red failed. Nothing
+         but a real failure is allowed to be red. -->
+    <SolidColorBrush x:Key="NeedsInput"  Color="#5AA9E6" />
+    <SolidColorBrush x:Key="Done"        Color="#6BBF8A" />
+    <SolidColorBrush x:Key="Failed"      Color="#D2605F" />
+    <SolidColorBrush x:Key="Ended"       Color="#5A6472" />
     <SolidColorBrush x:Key="Dormant"     Color="#39404B" />
-    <SolidColorBrush x:Key="Ended"       Color="#7A4F4F" />
 
     <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
@@ -280,6 +283,36 @@
       </Setter>
     </Style>
 
+
+    <!-- The divider you drag. A 1px splitter is correct on paper and unhittable in
+         practice, so the band is 7px of transparent grab area with the hairline drawn
+         down the middle of it. Transparent still hit-tests in WPF; null would not.
+         Hover brightens the line, so the grab point announces itself instead of having
+         to be hunted for. -->
+    <Style x:Key="PaneSplitter" TargetType="GridSplitter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Cursor" Value="SizeWE" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="GridSplitter">
+            <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+              <Rectangle x:Name="Line" Width="1" HorizontalAlignment="Center"
+                         Fill="{StaticResource Hairline}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Line" Property="Width" Value="2" />
+                <Setter TargetName="Line" Property="Fill" Value="{StaticResource Working}" />
+              </Trigger>
+              <Trigger Property="IsDragging" Value="True">
+                <Setter TargetName="Line" Property="Width" Value="2" />
+                <Setter TargetName="Line" Property="Fill" Value="{StaticResource Working}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
 
     <!-- Inline rename field. Sized to sit exactly where the label was, so the row
          does not jump when you start editing. -->
