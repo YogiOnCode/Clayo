@@ -1,7 +1,8 @@
 <Window x:Class="CcxShell.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ccx"
+        xmlns:local="clr-namespace:CcxShell"
+        Title="Clayo"
         Height="820" Width="1280"
         MinHeight="420" MinWidth="760"
         WindowStartupLocation="CenterScreen"
@@ -10,9 +11,13 @@
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
 
+  <Window.Resources>
+    <local:BrushKeyConverter x:Key="BrushKey" />
+  </Window.Resources>
+
   <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition x:Name="SidebarColumn" Width="300" MinWidth="220" MaxWidth="520" />
+      <ColumnDefinition x:Name="SidebarColumn" Width="310" MinWidth="240" MaxWidth="520" />
       <ColumnDefinition Width="1" />
       <ColumnDefinition Width="*" MinWidth="360" />
     </Grid.ColumnDefinitions>
@@ -20,6 +25,7 @@
     <!-- ============================ sidebar ============================ -->
     <Grid Grid.Column="0" Background="{StaticResource SurfaceBg}">
       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
@@ -38,23 +44,116 @@
                    TextTrimming="CharacterEllipsis" />
       </StackPanel>
 
-      <TextBox x:Name="Filter" Grid.Row="1"
-               Style="{StaticResource SearchBox}"
-               Margin="14,0,14,10"
-               TextChanged="Filter_TextChanged" />
+      <!-- Search. The hint is a sibling TextBlock, toggled in code-behind — a
+           converter for something this small is not worth the indirection. -->
+      <Grid Grid.Row="1" Margin="14,0,14,6">
+        <TextBox x:Name="Filter"
+                 Style="{StaticResource SearchBox}"
+                 TextChanged="Filter_TextChanged" />
+        <TextBlock x:Name="SearchHint"
+                   Text="Search sessions"
+                   Foreground="{StaticResource TextFaint}"
+                   FontSize="12"
+                   Margin="9,0,0,0"
+                   VerticalAlignment="Center"
+                   IsHitTestVisible="False" />
+      </Grid>
 
-      <ListBox x:Name="Sessions" Grid.Row="2"
+      <!-- Group / sort, the Explorer idiom. -->
+      <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="10,0,10,4">
+        <ComboBox x:Name="GroupBy"
+                  Style="{StaticResource TinyCombo}"
+                  ItemContainerStyle="{StaticResource TinyComboItem}"
+                  SelectedIndex="0"
+                  SelectionChanged="View_Changed">
+          <ComboBoxItem Content="Group: Folder" />
+          <ComboBoxItem Content="Group: None" />
+        </ComboBox>
+        <ComboBox x:Name="SortBy"
+                  Style="{StaticResource TinyCombo}"
+                  ItemContainerStyle="{StaticResource TinyComboItem}"
+                  SelectedIndex="0"
+                  Margin="4,0,0,0"
+                  SelectionChanged="View_Changed">
+          <ComboBoxItem Content="Newest" />
+          <ComboBoxItem Content="Oldest" />
+          <ComboBoxItem Content="Name" />
+        </ComboBox>
+      </StackPanel>
+
+      <ListBox x:Name="Sessions" Grid.Row="3"
                Background="Transparent"
                BorderThickness="0"
                ItemContainerStyle="{StaticResource SessionItem}"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-               SelectionChanged="Sessions_SelectionChanged">
+               VirtualizingPanel.IsVirtualizing="False"
+               SelectionChanged="Sessions_SelectionChanged"
+               MouseDoubleClick="Sessions_DoubleClick"
+               KeyDown="Sessions_KeyDown">
+
+        <ListBox.Resources>
+          <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}" />
+        </ListBox.Resources>
+
+        <ListBox.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Open" Click="Open_Click" />
+            <MenuItem Header="Rename                 F2" Click="Rename_Click" />
+            <Separator />
+            <MenuItem Header="Reset name" Click="ResetName_Click" />
+          </ContextMenu>
+        </ListBox.ContextMenu>
 
         <ListBox.GroupStyle>
+
+          <!-- Level 0: Open / Today / Earlier. The first two stay expanded. -->
+          <GroupStyle>
+            <GroupStyle.ContainerStyle>
+              <Style TargetType="GroupItem">
+                <Setter Property="Template">
+                  <Setter.Value>
+                    <ControlTemplate TargetType="GroupItem">
+                      <Expander x:Name="Ex"
+                                Style="{StaticResource SectionExpander}"
+                                IsExpanded="False">
+                        <Expander.Header>
+                          <Grid>
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="*" />
+                              <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Name}"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       FontSize="11.5" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding ItemCount}"
+                                       Foreground="{StaticResource TextFaint}"
+                                       FontSize="11" Margin="8,0,2,0" />
+                          </Grid>
+                        </Expander.Header>
+                        <ItemsPresenter />
+                      </Expander>
+                      <ControlTemplate.Triggers>
+                        <DataTrigger Binding="{Binding Name}" Value="Open">
+                          <Setter TargetName="Ex" Property="IsExpanded" Value="True" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Name}" Value="Today">
+                          <Setter TargetName="Ex" Property="IsExpanded" Value="True" />
+                        </DataTrigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </GroupStyle.ContainerStyle>
+          </GroupStyle>
+
+          <!-- Level 1: folder. Only present when Group: Folder is selected. -->
           <GroupStyle>
             <GroupStyle.HeaderTemplate>
               <DataTemplate>
-                <Grid Margin="14,14,10,5">
+                <Grid Margin="26,10,10,4">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -62,7 +161,7 @@
                   <TextBlock Grid.Column="0"
                              Text="{Binding Name}"
                              Foreground="{StaticResource TextMuted}"
-                             FontSize="11" FontWeight="SemiBold"
+                             FontSize="11"
                              TextTrimming="CharacterEllipsis" />
                   <TextBlock Grid.Column="1"
                              Text="{Binding ItemCount}"
@@ -72,32 +171,60 @@
               </DataTemplate>
             </GroupStyle.HeaderTemplate>
           </GroupStyle>
+
         </ListBox.GroupStyle>
 
         <ListBox.ItemTemplate>
           <DataTemplate>
-            <StackPanel>
-              <TextBlock Text="{Binding Preview}"
-                         Foreground="{StaticResource TextPrimary}"
-                         FontSize="12.5"
-                         TextTrimming="CharacterEllipsis"
-                         ToolTip="{Binding Preview}" />
-              <TextBlock Text="{Binding Age}"
-                         Foreground="{StaticResource TextFaint}"
-                         FontSize="10.5" Margin="0,3,0,0" />
-            </StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+
+              <!-- Status light. Live sessions get a real colour; everything else a
+                   near-invisible dot, so the eye lands only on what is running. -->
+              <Ellipse Grid.Column="0"
+                       Width="7" Height="7"
+                       Fill="{Binding StatusBrush, Converter={StaticResource BrushKey}}"
+                       VerticalAlignment="Top" Margin="0,4,0,0"
+                       ToolTip="{Binding StatusText}" />
+
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="{Binding Name}"
+                           Visibility="{Binding LabelVisibility}"
+                           Foreground="{StaticResource TextPrimary}"
+                           FontSize="12.5"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Tip}" />
+
+                <!-- Rename box. Lives in the row so editing happens where you are looking. -->
+                <TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                         Visibility="{Binding EditorVisibility}"
+                         Style="{StaticResource RenameBox}"
+                         Loaded="RenameBox_Loaded"
+                         KeyDown="RenameBox_KeyDown"
+                         LostFocus="RenameBox_LostFocus" />
+
+                <TextBlock Text="{Binding Subtitle}"
+                           Foreground="{StaticResource TextFaint}"
+                           FontSize="10.5" Margin="0,3,0,0"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </Grid>
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
 
-      <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="14,10,14,14">
+      <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="14,10,14,14">
         <Button x:Name="NewButton" Content="New session"
                 Style="{StaticResource QuietButton}"
                 Click="NewSession_Click" />
-        <Button x:Name="ResumeButton" Content="Resume"
+        <Button x:Name="ResumeButton" Content="Open"
                 Style="{StaticResource QuietButton}"
                 Margin="8,0,0,0" IsEnabled="False"
-                Click="Resume_Click" />
+                ToolTip="Open the selected session. Double-click does the same. F2 renames."
+                Click="Open_Click" />
       </StackPanel>
     </Grid>
 
@@ -121,11 +248,12 @@
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
           <Ellipse x:Name="StatusDot" Grid.Column="0"
                    Width="7" Height="7"
-                   Fill="{StaticResource Idle}"
+                   Fill="{StaticResource Dormant}"
                    VerticalAlignment="Center" />
 
           <TextBlock x:Name="PaneTitle" Grid.Column="1"
@@ -142,6 +270,15 @@
                   IsEnabled="False"
                   ToolTip="Copies this conversation into a new session. The original is untouched."
                   Click="Fork_Click" />
+
+          <Button x:Name="CloseButton" Grid.Column="3"
+                  Content="✕"
+                  Style="{StaticResource QuietButton}"
+                  VerticalAlignment="Center"
+                  Margin="8,0,0,0" Padding="9,4"
+                  IsEnabled="False"
+                  ToolTip="Close this session. It drops back into the list below Open."
+                  Click="ClosePane_Click" />
         </Grid>
       </Border>
 
