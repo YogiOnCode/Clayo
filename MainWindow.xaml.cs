@@ -104,21 +104,23 @@ public sealed class SessionRow : INotifyPropertyChanged
         {
             if (_status == value) return;
             _status = value;
-            Raise(nameof(Status));
             Raise(nameof(StatusBrush));
             Raise(nameof(StatusText));
             Raise(nameof(Subtitle));
         }
     }
 
-    public string StatusBrush => Status switch
+    /// <summary>Status to brush key. Shared with the pane header's dot, which paints the
+    /// same three states. Null means no pane, so nothing to report.</summary>
+    public static string BrushKeyFor(PaneStatus? status) => status switch
     {
-        PaneStatus.Working => "Working",
+        PaneStatus.Working or PaneStatus.Starting => "Working",
         PaneStatus.Idle => "NeedsInput",
         PaneStatus.Exited => "Ended",
-        PaneStatus.Starting => "Working",
         _ => "Dormant"
     };
+
+    public string StatusBrush => BrushKeyFor(Status);
 
     public string StatusText => Status switch
     {
@@ -164,7 +166,6 @@ public sealed class SessionRow : INotifyPropertyChanged
         Raise(nameof(Name));
         Raise(nameof(Subtitle));
         Raise(nameof(Tip));
-        Raise(nameof(Age));
         Raise(nameof(StatusBrush));
         Raise(nameof(StatusText));
     }
@@ -174,7 +175,7 @@ public sealed class SessionRow : INotifyPropertyChanged
 }
 
 /// <summary>Turns the brush key on a row into the actual brush.</summary>
-public sealed class BrushKeyConverter : System.Windows.Data.IValueConverter
+public sealed class BrushKeyConverter : IValueConverter
 {
     public object Convert(object value, Type t, object p, System.Globalization.CultureInfo c) =>
         Application.Current?.TryFindResource(value as string ?? "Dormant") ?? Brushes.Transparent;
@@ -189,8 +190,7 @@ public partial class MainWindow : Window
     private readonly SessionNames _names = new();
 
     // Panes stay alive when you switch away, so switching back is instant and the
-    // process keeps working in the background.
-    private readonly Dictionary<string, TerminalPane> _panes = new(StringComparer.OrdinalIgnoreCase);
+    // process keeps working in the background. PaneHost.Children is the set of them.
 
     // Rows are kept, not rebuilt, so a live status light does not flicker every time the
     // transcript watcher fires.
@@ -416,7 +416,6 @@ public partial class MainWindow : Window
     }
 
     private void Open_Click(object sender, RoutedEventArgs e) => OpenSelected();
-    private void Resume_Click(object sender, RoutedEventArgs e) => OpenSelected();
 
     private void OpenSelected()
     {
@@ -467,15 +466,11 @@ public partial class MainWindow : Window
 
         pane.Close();
         PaneHost.Children.Remove(pane);
-        if (id is not null)
+        if (id is not null && _rows.TryGetValue(id, out var row))
         {
-            _panes.Remove(id);
-            if (_rows.TryGetValue(id, out var row))
-            {
-                row.Pane = null;
-                row.Status = null;
-                row.Refresh();
-            }
+            row.Pane = null;
+            row.Status = null;
+            row.Refresh();
         }
 
         _active = PaneHost.Children.OfType<TerminalPane>().LastOrDefault();
@@ -565,9 +560,8 @@ public partial class MainWindow : Window
 
     private void StartPane(LaunchPlan plan, string title)
     {
-        var pane = new TerminalPane(plan, plan.ExpectedSessionId);
+        var pane = new TerminalPane(plan);
         var id = pane.SessionId ?? Guid.NewGuid().ToString();
-        _panes[id] = pane;
 
         // Give the session a row immediately, before any transcript exists, so it shows
         // up under Open the instant it starts.
@@ -613,23 +607,15 @@ public partial class MainWindow : Window
         pane.FocusTerminal();
     }
 
-    private void PaintStatus(PaneStatus status)
-    {
-        StatusDot.Fill = (Brush)FindResource(status switch
-        {
-            PaneStatus.Working => "Working",
-            PaneStatus.Idle => "NeedsInput",
-            PaneStatus.Exited => "Ended",
-            _ => "Working"
-        });
-    }
+    private void PaintStatus(PaneStatus status) =>
+        StatusDot.Fill = (Brush)FindResource(SessionRow.BrushKeyFor(status));
 
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
 
     protected override void OnClosing(CancelEventArgs e)
     {
         _store.StopWatching();
-        foreach (var pane in _panes.Values) pane.Close();
+        foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.Close();
         base.OnClosing(e);
     }
 }

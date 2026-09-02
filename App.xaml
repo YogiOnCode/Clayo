@@ -17,7 +17,6 @@
     <SolidColorBrush x:Key="TextMuted"   Color="#7A828F" />
     <SolidColorBrush x:Key="TextFaint"   Color="#565E6B" />
     <SolidColorBrush x:Key="Working"     Color="#D4A24C" />
-    <SolidColorBrush x:Key="Idle"        Color="#4E5765" />
     <!-- The three states the sidebar has to convey at a glance: Claude is busy,
          Claude is waiting on you, the session has ended. Green reads as "your turn". -->
     <SolidColorBrush x:Key="NeedsInput"  Color="#6BBF8A" />

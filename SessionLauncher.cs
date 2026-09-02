@@ -26,7 +26,7 @@ public static class SessionLauncher
     /// We spawn a shell and type the claude command into it, rather than spawning claude
     /// directly. When claude exits you land on a prompt instead of the pane dying.
     /// </summary>
-    public static string ResolveShell()
+    private static string ResolveShell()
     {
         return FindOnPath("pwsh.exe") is { } pwsh
             ? $"\"{pwsh}\" -NoLogo"
@@ -67,7 +67,9 @@ public static class SessionLauncher
                 throw new ArgumentOutOfRangeException(nameof(mode));
         }
 
-        return new LaunchPlan(ResolveShell(), workingDirectory, command, expectedId);
+        // Resume allocates nothing — the id already exists, and it is the one the pane
+        // has to be keyed on, or the sidebar row for it never learns it is open.
+        return new LaunchPlan(ResolveShell(), workingDirectory, command, expectedId ?? sessionId);
     }
 
     private static string? FindOnPath(string exe)
