@@ -18,26 +18,25 @@ Needs the .NET 8 SDK and the WebView2 runtime (already present on current Window
 dotnet build -c Release
 ```
 
-The output is `ccx.exe`.
+The output is `clayo.exe`.
 
 ## Launching it the way you launch PowerShell
 
 1. Publish somewhere stable:
-   `dotnet publish -c Release -r win-x64 --self-contained false -o C:\Tools\ccx`
-2. Add `C:\Tools\ccx` to your user `PATH`.
-3. Type `ccx` in any folder's Explorer address bar.
+   `dotnet publish -c Release -r win-x64 --self-contained false -o %USERPROFILE%\.local\clayo`
+2. Add that folder to your user `PATH`. Set it with
+   `[Environment]::SetEnvironmentVariable('PATH', ..., 'User')`, not `setx` — `setx`
+   truncates `PATH` at 1024 characters.
+3. Type `clayo` in any folder's Explorer address bar.
 
 Explorer runs the command with that folder as its working directory, which is what
-`App.OnStartup` reads. A second `ccx` in a different folder hands the path to the window
-you already have and exits, instead of opening another window.
+`App.OnStartup` reads, and the window opens on a new session in it. A second `clayo` in
+a different folder hands the path to the window you already have and exits, adding a
+session there instead of opening a second window.
 
-To also launch from a PowerShell prompt without blocking it, drop a `ccx.cmd` next to
-the exe:
-
-```bat
-@echo off
-start "" "%~dp0ccx.exe" %*
-```
+The publish folder has to hold `Assets\` as well: `TerminalPane` maps
+`AppContext.BaseDirectory\Assets` as the WebView2 virtual host, so the exe cannot sit
+loose in a shared `bin` directory.
 
 ## How it works
 

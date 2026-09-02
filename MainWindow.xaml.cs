@@ -115,7 +115,9 @@ public sealed class SessionRow : INotifyPropertyChanged
     public static string BrushKeyFor(PaneStatus? status) => status switch
     {
         PaneStatus.Working or PaneStatus.Starting => "Working",
-        PaneStatus.Idle => "NeedsInput",
+        PaneStatus.NeedsInput => "NeedsInput",
+        PaneStatus.Done => "Done",
+        PaneStatus.Error => "Failed",
         PaneStatus.Exited => "Ended",
         _ => "Dormant"
     };
@@ -125,8 +127,10 @@ public sealed class SessionRow : INotifyPropertyChanged
     public string StatusText => Status switch
     {
         PaneStatus.Working => "running",
-        PaneStatus.Idle => "needs you",
-        PaneStatus.Exited => "finished",
+        PaneStatus.NeedsInput => "needs you",
+        PaneStatus.Done => "done",
+        PaneStatus.Error => "api error",
+        PaneStatus.Exited => "shell closed",
         PaneStatus.Starting => "starting",
         _ => Age
     };
