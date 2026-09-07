@@ -154,18 +154,36 @@
     send({ t: "ready", cols: term.cols, rows: term.rows });
   });
 
-  // Ctrl+Shift+C / Ctrl+Shift+V, since Ctrl+C belongs to the child process.
+  // Copy and paste.
+  //
+  // Left to xterm's own key handling, Ctrl+C is the child's interrupt (^C) and
+  // Ctrl+V a bare ^V, and both cancel the DOM event -- so Ctrl+C threw away
+  // whatever you had typed in Claude Code and yanked the viewport back to the
+  // prompt, and Ctrl+V never reached the clipboard.
+  //
+  // Copy has to be done by hand. The selection here is the terminal's own, not a
+  // DOM one -- xterm's hidden textarea stays empty on Windows -- and Chromium
+  // only raises a copy event when the focused field has a real selection, so
+  // there is no native copy to fall back on. Paste is the opposite: let the
+  // browser do it, because xterm's own paste handler wraps the text in bracketed
+  // paste, and a multi-line paste then arrives as one block instead of a line
+  // per Enter. Ctrl+C only interrupts when nothing is selected, which is how
+  // Windows Terminal and VS Code behave; the Ctrl+Shift+ variants come here too.
   term.attachCustomKeyEventHandler(function (ev) {
-    if (ev.type !== "keydown") return true;
-    if (ev.ctrlKey && ev.shiftKey && ev.code === "KeyC") {
-      const sel = term.getSelection();
-      if (sel) navigator.clipboard.writeText(sel);
+    if (ev.type !== "keydown" || !ev.ctrlKey || ev.altKey || ev.metaKey) return true;
+    if (ev.code === "KeyC" && term.hasSelection()) {
+      navigator.clipboard.writeText(term.getSelection());
+      // Dropped so the next Ctrl+C interrupts rather than copying the same thing.
+      term.clearSelection();
       return false;
     }
-    if (ev.ctrlKey && ev.shiftKey && ev.code === "KeyV") {
-      navigator.clipboard.readText().then(function (text) {
-        if (text) send({ t: "i", d: toBase64(encoder.encode(text)) });
-      });
+    if (ev.code === "KeyV") {
+      // A file copied in Explorer sits on the clipboard as a file, never as text, so
+      // the browser's paste inserts nothing at all. Only the host can see the paths --
+      // a pasted File has a name and nothing else -- so ask it, and it types them in
+      // the way Windows Terminal pastes a copied file. A text paste still belongs to
+      // the browser: the host answers with nothing when the clipboard holds text.
+      send({ t: "paste" });
       return false;
     }
     return true;

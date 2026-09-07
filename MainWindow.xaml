@@ -114,7 +114,9 @@
 
         <ListBox.GroupStyle>
 
-          <!-- Level 0: Open / Today / Earlier. The first two stay expanded. -->
+          <!-- Level 0: Open / Today / Earlier. The first two start expanded; whatever you
+               toggle is remembered in _sectionOpen, because the containers here are thrown
+               away and rebuilt on every refresh. -->
           <GroupStyle>
             <GroupStyle.ContainerStyle>
               <Style TargetType="GroupItem">
@@ -123,7 +125,10 @@
                     <ControlTemplate TargetType="GroupItem">
                       <Expander x:Name="Ex"
                                 Style="{StaticResource SectionExpander}"
-                                IsExpanded="False">
+                                Tag="{Binding Name}"
+                                Loaded="Section_Loaded"
+                                Expanded="Section_Toggled"
+                                Collapsed="Section_Toggled">
                         <Expander.Header>
                           <Grid>
                             <Grid.ColumnDefinitions>
@@ -142,14 +147,6 @@
                         </Expander.Header>
                         <ItemsPresenter />
                       </Expander>
-                      <ControlTemplate.Triggers>
-                        <DataTrigger Binding="{Binding Name}" Value="Open">
-                          <Setter TargetName="Ex" Property="IsExpanded" Value="True" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding Name}" Value="Today">
-                          <Setter TargetName="Ex" Property="IsExpanded" Value="True" />
-                        </DataTrigger>
-                      </ControlTemplate.Triggers>
                     </ControlTemplate>
                   </Setter.Value>
                 </Setter>
@@ -327,6 +324,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
           <Ellipse x:Name="StatusDot" Grid.Column="0"
@@ -341,7 +339,16 @@
                      VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
 
-          <Button x:Name="ForkButton" Grid.Column="2"
+          <Button x:Name="AttachButton" Grid.Column="2"
+                  Content="Attach files…"
+                  Style="{StaticResource QuietButton}"
+                  VerticalAlignment="Center"
+                  Margin="0,0,8,0"
+                  IsEnabled="False"
+                  ToolTip="Puts the paths of the files you pick at the prompt, for Claude to read. Ctrl+V does the same for files copied in Explorer."
+                  Click="Attach_Click" />
+
+          <Button x:Name="ForkButton" Grid.Column="3"
                   Content="Branch from here"
                   Style="{StaticResource QuietButton}"
                   VerticalAlignment="Center"
@@ -349,7 +356,7 @@
                   ToolTip="Copies this conversation into a new session. The original is untouched."
                   Click="Fork_Click" />
 
-          <Button x:Name="CloseButton" Grid.Column="3"
+          <Button x:Name="CloseButton" Grid.Column="4"
                   Content="✕"
                   Style="{StaticResource QuietButton}"
                   VerticalAlignment="Center"
