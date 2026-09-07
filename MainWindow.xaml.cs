@@ -400,6 +400,24 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- sessions
 
+    // ApplyFilter hands the ListBox a brand-new view, so every section GroupItem is
+    // discarded and rebuilt. The expanded state therefore cannot live on the Expander:
+    // it has to be kept out here and put back when the container reappears.
+    private readonly Dictionary<string, bool> _sectionOpen =
+        new(StringComparer.Ordinal) { ["Open"] = true, ["Today"] = true };
+
+    private void Section_Loaded(object sender, RoutedEventArgs e)
+    {
+        var ex = (Expander)sender;
+        ex.IsExpanded = _sectionOpen.TryGetValue(ex.Tag as string ?? "", out var open) && open;
+    }
+
+    private void Section_Toggled(object sender, RoutedEventArgs e)
+    {
+        var ex = (Expander)sender;
+        _sectionOpen[ex.Tag as string ?? ""] = ex.IsExpanded;
+    }
+
     private void RefreshSessions()
     {
         // Fold the transcripts into the rows we already have, so live panes keep their
@@ -701,6 +719,30 @@ public partial class MainWindow : Window
     private static string FolderLeaf(string folder) =>
         Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : folder;
 
+    /// <summary>
+    /// Hands Claude the files you pick by typing their paths at the prompt — it reads a
+    /// path it is given, so there is nothing to upload. Ctrl+V over files copied in
+    /// Explorer does the same thing, in the pane itself.
+    /// </summary>
+    private void Attach_Click(object sender, RoutedEventArgs e)
+    {
+        if (_active is null) return;
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "Attach files",
+            Multiselect = true,
+            InitialDirectory = Directory.Exists(_active.WorkingDirectory)
+                ? _active.WorkingDirectory
+                : ""
+        };
+
+        if (dialog.ShowDialog(this) != true) return;
+
+        _active.InsertPaths(dialog.FileNames);
+        _active.FocusTerminal();
+    }
+
     private void Fork_Click(object sender, RoutedEventArgs e)
     {
         var parentId = _active?.SessionId;
@@ -754,6 +796,7 @@ public partial class MainWindow : Window
         {
             PaneTitle.Text = "";
             ForkButton.IsEnabled = false;
+            AttachButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
             StatusDot.Fill = (Brush)FindResource("Dormant");
             EmptyState.Visibility = Visibility.Visible;
@@ -869,6 +912,7 @@ public partial class MainWindow : Window
         _active = pane;
         PaneTitle.Text = title;
         ForkButton.IsEnabled = pane.SessionId is not null;
+        AttachButton.IsEnabled = true;
         CloseButton.IsEnabled = true;
         EmptyState.Visibility = Visibility.Collapsed;
         PaintStatus(pane.Status);
