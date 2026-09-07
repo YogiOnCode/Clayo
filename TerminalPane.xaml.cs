@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -161,7 +162,36 @@ public partial class TerminalPane : UserControl
                     (short)(msg.TryGetProperty("cols", out var rc) ? rc.GetInt32() : 80),
                     (short)(msg.TryGetProperty("rows", out var rr) ? rr.GetInt32() : 24));
                 break;
+
+            case "paste":
+                PasteFilesFromClipboard();
+                break;
         }
+    }
+
+    /// <summary>
+    /// Windows Terminal pastes the paths when the clipboard holds files rather than text,
+    /// and Claude Code reads a path it is given in a prompt. The browser cannot do this:
+    /// a File on the clipboard carries a name and no path, so its own paste inserts
+    /// nothing at all. Runs on every Ctrl+V and does nothing unless the clipboard is
+    /// files with no text, which leaves an ordinary text paste to the browser as before.
+    /// </summary>
+    private void PasteFilesFromClipboard()
+    {
+        if (Clipboard.ContainsText() || !Clipboard.ContainsFileDropList()) return;
+        InsertPaths(Clipboard.GetFileDropList().Cast<string>());
+    }
+
+    /// <summary>
+    /// Types paths at the prompt, space separated and quoted when one contains a space,
+    /// with a trailing space so you can carry on typing. Deliberately no Enter: the
+    /// prompt stays yours to send, so you can say what to do with the files first.
+    /// </summary>
+    public void InsertPaths(IEnumerable<string> paths)
+    {
+        var text = string.Join(" ", paths.Select(p => p.Contains(' ') ? $"\"{p}\"" : p));
+        if (text.Length == 0) return;
+        _pty.Write(Encoding.UTF8.GetBytes(text + " "));
     }
 
     private void StartPty(short cols, short rows)
