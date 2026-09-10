@@ -51,7 +51,9 @@
     letterSpacing: 0,
     cursorBlink: true,
     cursorStyle: "bar",
-    scrollback: 20000,
+    // 20000 lines cost ~29 MB of buffer per pane at this width. Claude Code's own
+    // transcript is the durable record — this only needs to cover live scrollback.
+    scrollback: 5000,
     // Claude Code paints its own colours; this palette only fills the gaps.
     theme: {
       background: "#14171c",
