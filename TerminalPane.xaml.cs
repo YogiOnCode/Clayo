@@ -33,6 +33,7 @@ public partial class TerminalPane : UserControl
     private readonly PtyProcess _pty = new();
     private readonly LaunchPlan _plan;
     private bool _typedCommand;
+    private bool _closed;
 
     private DateTime _lastOutput = DateTime.UtcNow;
     private readonly Queue<DateTime> _recent = new();
@@ -113,7 +114,9 @@ public partial class TerminalPane : UserControl
         Directory.CreateDirectory(userData);
 
         var env = await CoreWebView2Environment.CreateAsync(null, userData);
+        if (_closed) return;
         await Web.EnsureCoreWebView2Async(env);
+        if (_closed) return;
 
         var core = Web.CoreWebView2;
         core.Settings.AreDefaultContextMenusEnabled = false;
@@ -277,6 +280,7 @@ public partial class TerminalPane : UserControl
 
     private void Post(object payload)
     {
+        if (_closed) return;
         var core = Web.CoreWebView2;
         if (core is null) return;
         try { core.PostWebMessageAsString(JsonSerializer.Serialize(payload)); }
@@ -291,7 +295,15 @@ public partial class TerminalPane : UserControl
 
     public void Close()
     {
+        if (_closed) return;
+        _closed = true;
         _idleTimer.Stop();
         _pty.Dispose();
+
+        // Dropping the pane out of the visual tree does not end its WebView2. The
+        // renderer survives until clayo exits: measured with four panes removed and
+        // garbage collected, 560 MB of msedgewebview2 was still resident, and fell
+        // to 0 the moment Dispose was called. Nothing else reclaims it.
+        Web.Dispose();
     }
 }
