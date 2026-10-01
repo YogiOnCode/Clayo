@@ -107,4 +107,4 @@ switching to an open pane rather than starting a duplicate.
 
 ## Third-party
 
-xterm.js and `@xterm/addon-fit` are MIT. Nothing else is vendored.
+xterm.js, `@xterm/addon-fit` and `@xterm/addon-webgl` are MIT. Nothing else is vendored.

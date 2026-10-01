@@ -40,6 +40,12 @@ public partial class TerminalPane : UserControl
     private readonly System.Windows.Threading.DispatcherTimer _idleTimer;
     private PaneStatus _status = PaneStatus.Starting;
 
+    // Output waiting to cross the bridge. Written on the pty read thread, drained on the UI thread.
+    private readonly object _outLock = new();
+    private readonly MemoryStream _out = new();
+    private bool _flushQueued;
+    private readonly System.Windows.Threading.DispatcherTimer _flushTimer;
+
     /// <summary>Session id once known. For a fork this is set before the child exists.</summary>
     public string? SessionId { get; }
 
@@ -99,6 +105,12 @@ public partial class TerminalPane : UserControl
             else if (Status is PaneStatus.NeedsInput or PaneStatus.Error) return;
             else if (quietFor > 1500) Status = PaneStatus.Done;
         };
+
+        _flushTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(8)
+        };
+        _flushTimer.Tick += (_, __) => FlushOutput();
 
         Loaded += OnLoaded;
     }
@@ -209,15 +221,24 @@ public partial class TerminalPane : UserControl
                 while (_recent.Count > 12) _recent.Dequeue();
             }
             var seen = Scan(bytes, ref _carry);
-            Dispatcher.BeginInvoke(() =>
+            if (seen is { } s) Dispatcher.BeginInvoke(() => Status = s);
+
+            // ConPTY hands over one redraw in several reads. Posted one by one, xterm can
+            // paint between them and show a half-drawn screen, which is the flicker. So
+            // output is held for about a frame and crosses the bridge as one message.
+            bool schedule;
+            lock (_outLock)
             {
-                if (seen is { } s) Status = s;
-                Post(new { t = "o", d = Convert.ToBase64String(bytes) });
-            });
+                _out.Write(bytes);
+                schedule = !_flushQueued;
+                _flushQueued = true;
+            }
+            if (schedule) Dispatcher.BeginInvoke(() => _flushTimer.Start());
         };
 
         _pty.Exited += () => Dispatcher.BeginInvoke(() =>
         {
+            FlushOutput();
             Status = PaneStatus.Exited;
             _idleTimer.Stop();
             Post(new { t = "notice", d = "[shell exited]" });
@@ -278,6 +299,19 @@ public partial class TerminalPane : UserControl
         return null;
     }
 
+    private void FlushOutput()
+    {
+        _flushTimer.Stop();
+        byte[] bytes;
+        lock (_outLock)
+        {
+            bytes = _out.ToArray();
+            _out.SetLength(0);
+            _flushQueued = false;
+        }
+        if (bytes.Length > 0) Post(new { t = "o", d = Convert.ToBase64String(bytes) });
+    }
+
     private void Post(object payload)
     {
         if (_closed) return;
@@ -298,6 +332,7 @@ public partial class TerminalPane : UserControl
         if (_closed) return;
         _closed = true;
         _idleTimer.Stop();
+        _flushTimer.Stop();
         _pty.Dispose();
 
         // Dropping the pane out of the visual tree does not end its WebView2. The
