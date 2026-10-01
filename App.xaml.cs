@@ -7,6 +7,7 @@ namespace CcxShell;
 public partial class App : Application
 {
     private SingleInstance? _instance;
+    private IslandWindow? _island;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -44,6 +45,10 @@ public partial class App : Application
             window.Dispatcher.BeginInvoke(() => window.AdoptFolder(path));
 
         window.Show();
+
+        // After MainWindow is set, so this window does not become the one whose closing ends
+        // the app. ShutdownMode is OnMainWindowClose, so it never keeps the process alive.
+        _island = new IslandWindow(window);
     }
 
     protected override void OnExit(ExitEventArgs e)
