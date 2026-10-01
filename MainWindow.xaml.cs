@@ -239,6 +239,9 @@ public partial class MainWindow : Window
     private TerminalPane? _active;
     private string _folder;
 
+    /// <summary>Sessions with a live pane in this window. The island shows it when it peeks.</summary>
+    public int OpenSessionCount => PaneHost.Children.OfType<TerminalPane>().Count();
+
     public MainWindow(string folder)
     {
         InitializeComponent();

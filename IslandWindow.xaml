@@ -1,0 +1,30 @@
+<Window x:Class="CcxShell.IslandWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Clayo island"
+        WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False"
+        FontFamily="{StaticResource UiFont}"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+  <!-- The window is a few px taller than the pill so the spring's overshoot is not clipped.
+       That slack is fully transparent, and a layered window lets clicks through alpha-0
+       pixels, so it never covers what is underneath. For the same reason there is no drop
+       shadow yet: a soft shadow is partly opaque and would eat clicks on the tab strip. -->
+  <Border x:Name="Pill" Height="52" VerticalAlignment="Top"
+          Background="#000000" CornerRadius="0,0,24,24" Cursor="Hand"
+          MouseLeftButtonUp="Pill_Click">
+    <Border.RenderTransform>
+      <TranslateTransform x:Name="Slide" />
+    </Border.RenderTransform>
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="22,0">
+      <Ellipse Width="7" Height="7" Fill="#FFBA8C" VerticalAlignment="Center" Margin="0,0,12,0" />
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Text="clayo" Foreground="#ECEEF1" FontSize="13" FontWeight="SemiBold" />
+        <TextBlock x:Name="Sub" Foreground="#8B919A" FontSize="12" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>
