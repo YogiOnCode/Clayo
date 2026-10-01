@@ -22,14 +22,6 @@
     padding: 10px 4px 6px 12px;
     box-sizing: border-box;
   }
-  .xterm-viewport::-webkit-scrollbar { width: 10px; }
-  .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
-  .xterm-viewport::-webkit-scrollbar-thumb {
-    background: #333a45;
-    border-radius: 5px;
-    border: 3px solid #14171c;
-  }
-  .xterm-viewport::-webkit-scrollbar-thumb:hover { background: #464f5d; }
 </style>
 </head>
 <body>
@@ -37,6 +29,7 @@
 
 <script src="xterm/xterm.js"></script>
 <script src="xterm/addon-fit.js"></script>
+<script src="xterm/addon-webgl.js"></script>
 
 <script>
 (function () {
@@ -62,13 +55,26 @@
       cursorAccent: "#14171c",
       selectionBackground: "#2f3947",
       black: "#14171c",
-      brightBlack: "#5a6472"
+      brightBlack: "#5a6472",
+      // xterm 6 draws its own scrollbar, so it is styled here rather than in CSS.
+      scrollbarSliderBackground: "#333a45",
+      scrollbarSliderHoverBackground: "#464f5d",
+      scrollbarSliderActiveBackground: "#464f5d"
     }
   });
 
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(document.getElementById("term"));
+
+  // The default DOM renderer is slow enough that Claude Code's full-screen redraws
+  // show half-painted frames. WebGL paints a frame in one go. If the GPU context is
+  // lost, dropping the addon falls back to the DOM renderer instead of a blank pane.
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(function () { webgl.dispose(); });
+    term.loadAddon(webgl);
+  } catch (_) { /* no WebGL: DOM renderer */ }
 
   // --- base64 <-> bytes -------------------------------------------------
   // Raw bytes cross the bridge, never decoded text. A PTY read can split a
