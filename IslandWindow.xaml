@@ -1,6 +1,7 @@
 <Window x:Class="CcxShell.IslandWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:CcxShell.UI"
         Title="Clayo island"
         WindowStyle="None" ResizeMode="NoResize"
         AllowsTransparency="True" Background="Transparent"
@@ -19,8 +20,9 @@
     <Border.RenderTransform>
       <TranslateTransform x:Name="Slide" />
     </Border.RenderTransform>
-    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="22,0">
-      <Ellipse Width="7" Height="7" Fill="#FFBA8C" VerticalAlignment="Center" Margin="0,0,12,0" />
+    <!-- The prototype's header: 8 px in, the 44 px mascot, a 10 px gap, then the text. -->
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,22,0">
+      <ui:ClayoMascot x:Name="Mascot" Width="44" Height="44" Margin="0,0,10,0" />
       <StackPanel VerticalAlignment="Center">
         <TextBlock Text="clayo" Foreground="#ECEEF1" FontSize="13" FontWeight="SemiBold" />
         <TextBlock x:Name="Sub" Foreground="#8B919A" FontSize="12" />
