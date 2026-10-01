@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using CcxShell.Core;
+using CcxShell.UI;
 
 namespace CcxShell;
 
@@ -24,6 +25,7 @@ public partial class IslandWindow : Window
     private readonly MainWindow _main;
     private readonly IslandTrigger _trigger = new();
     private readonly DispatcherTimer _poll;
+    private readonly DispatcherTimer _waveStop;
 
     private bool _busy;
     // Not long.MinValue: now - MinValue overflows negative and the check would never run.
@@ -49,6 +51,10 @@ public partial class IslandWindow : Window
 
         _poll = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Background,
                                     Tick, Dispatcher);
+
+        // Hello on each peek, then back to breathing, as the prototype does.
+        _waveStop = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1400) };
+        _waveStop.Tick += (_, _) => { _waveStop.Stop(); Mascot.Play(MascotMove.Idle); };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -67,6 +73,7 @@ public partial class IslandWindow : Window
         // Shutdown closes this window while the dispatcher can still run a tick, and Show on a
         // closed window throws.
         _poll.Stop();
+        _waveStop.Stop();
         base.OnClosed(e);
     }
 
@@ -109,7 +116,9 @@ public partial class IslandWindow : Window
             pt.X, pt.Y, bounds, scale,
             ButtonDown: PrimaryButtonDown(),
             MovingOrSizing: InMoveSize(),
-            Busy: _busy,
+            // With Clayo itself in front the sidebar already shows every session, so the
+            // island would only repeat it. Behind the browser it is needed again.
+            Busy: _busy || _main.IsActive,
             OverIsland: IsVisible && _placed.Contains(pt.X, pt.Y),
             NowMs: now));
 
@@ -162,6 +171,10 @@ public partial class IslandWindow : Window
         Place();
         if (!IsVisible) Show();
         Place();
+
+        Mascot.Play(MascotMove.Wave);
+        _waveStop.Stop();
+        _waveStop.Start();
 
         Slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(450))
         {
