@@ -466,6 +466,9 @@ public partial class MainWindow : Window
             EmptyState.Text = "No transcripts found under ~\\.claude\\projects.\nStart a session and it will show up here.";
     }
 
+    /// <summary>Rows, order and grouping the ListBox currently shows. See ApplyFilter.</summary>
+    private string? _shownLayout;
+
     private void ApplyFilter()
     {
         var selected = (Sessions.SelectedItem as SessionRow)?.SessionId;
@@ -516,6 +519,16 @@ public partial class MainWindow : Window
         view.SortDescriptions.Add(sort == 2
             ? new SortDescription(nameof(SessionRow.Name), ListSortDirection.Ascending)
             : new SortDescription(nameof(SessionRow.ThreadOrder), ListSortDirection.Ascending));
+
+        // The transcript watcher lands here every few seconds while Claude works. Handing
+        // the ListBox a new view rebuilds every row and section and jumps the list to the
+        // top, so the sidebar blinked on each write. Row text and status lights already
+        // update in place, so only swap the view when the rows, their order, or their
+        // grouping differ from what is on screen.
+        var layout = string.Join("\n", view.View.Cast<SessionRow>().Select(r =>
+            $"{r.SessionId}|{r.Bucket}|{(byFolder ? r.Project : "")}|{r.Depth}|{r.ParentId}"));
+        if (layout == _shownLayout) return;
+        _shownLayout = layout;
 
         Sessions.ItemsSource = view.View;
 
