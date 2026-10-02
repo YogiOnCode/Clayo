@@ -29,10 +29,13 @@ public sealed class IslandGlow : Window
     public static readonly Color Green = Color.FromRgb(60, 214, 160);
 
     private readonly SolidColorBrush _tint = new(Warm);
+    private readonly SolidColorBrush _coreTint = new(Lift(Warm));
+    private readonly SolidColorBrush _auraTint = new(Aura(Warm));
     private readonly TranslateTransform _drop = new();
     // Narrower under the small peek pill than under a notification, from the centre out.
     private readonly ScaleTransform _spread = new(1, 1, GlowWidth / 2, 0);
-    private readonly Rectangle _light;
+    private readonly Grid _light;
+    private readonly Rectangle _core;
     private readonly Grid _breath;
     private readonly Rectangle _bar;
 
@@ -52,10 +55,23 @@ public sealed class IslandGlow : Window
         Width = GlowWidth;
         Height = GlowHeight;
 
-        // The colour sits in a plain brush and the shape in a fixed mask, so a change of state
-        // is one colour animation.
-        _light = new Rectangle { Fill = _tint, OpacityMask = Falloff(), Opacity = 0,
-                              RenderTransform = new TransformGroup { Children = { _spread, _drop } } };
+        // The colour sits in plain brushes and the shape in fixed masks, so a change of state
+        // is a colour animation. Three layers: a faint, wide aura in a neighbouring hue, a soft
+        // halo in the state's colour, and a tight, paler core hugging the pill's lower edge. A
+        // single tint over a dark tab strip reads as a grey smudge; the bright core is what
+        // makes it look like light, and the hue drifting outwards is what makes it rich.
+        _core = new Rectangle { Fill = _coreTint, OpacityMask = Falloff(.95, 5, .27, .2, .25) };
+        _light = new Grid
+        {
+            Opacity = 0,
+            RenderTransform = new TransformGroup { Children = { _spread, _drop } },
+            Children =
+            {
+                new Rectangle { Fill = _auraTint, OpacityMask = Falloff(.3, 2.2, .5, .8, .2) },
+                new Rectangle { Fill = _tint, OpacityMask = Falloff(.5, 3.6, .45, .55, .2) },
+                _core,
+            },
+        };
         _breath = new Grid { Children = { _light } };
         _bar = new Rectangle
         {
@@ -93,24 +109,43 @@ public sealed class IslandGlow : Window
         _fading = false;
         Put(monitor, scale, island);
 
+        // Scaled by the pill's width alone, the light under the small pill was a fifth as wide
+        // but just as tall and bright: a beam, not a glow. So the width shrinks by less than the
+        // pill, the height shrinks too, and the core dims, keeping it a soft oval at every size.
+        double wide = .35 + .65 * spread, tall = .55 + .45 * spread, core = .5 + .5 * spread;
+
         if (fresh)
         {
             // From nothing there is no old colour to ease from.
             _tint.BeginAnimation(SolidColorBrush.ColorProperty, null);
             _tint.Color = color;
+            _coreTint.BeginAnimation(SolidColorBrush.ColorProperty, null);
+            _coreTint.Color = Lift(color);
+            _auraTint.BeginAnimation(SolidColorBrush.ColorProperty, null);
+            _auraTint.Color = Aura(color);
             _spread.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            _spread.ScaleX = spread;
+            _spread.ScaleX = wide;
+            _spread.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            _spread.ScaleY = tall;
+            _coreTint.BeginAnimation(Brush.OpacityProperty, null);
+            _coreTint.Opacity = core;
         }
         else
         {
-            _tint.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(color, TimeSpan.FromMilliseconds(500))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
-            });
-            _spread.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(spread, TimeSpan.FromMilliseconds(400))
-            {
-                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 },
-            });
+            var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
+            _tint.BeginAnimation(SolidColorBrush.ColorProperty,
+                new ColorAnimation(color, TimeSpan.FromMilliseconds(500)) { EasingFunction = ease });
+            _coreTint.BeginAnimation(SolidColorBrush.ColorProperty,
+                new ColorAnimation(Lift(color), TimeSpan.FromMilliseconds(500)) { EasingFunction = ease });
+            _auraTint.BeginAnimation(SolidColorBrush.ColorProperty,
+                new ColorAnimation(Aura(color), TimeSpan.FromMilliseconds(500)) { EasingFunction = ease });
+            var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 };
+            _spread.BeginAnimation(ScaleTransform.ScaleXProperty,
+                new DoubleAnimation(wide, TimeSpan.FromMilliseconds(400)) { EasingFunction = spring });
+            _spread.BeginAnimation(ScaleTransform.ScaleYProperty,
+                new DoubleAnimation(tall, TimeSpan.FromMilliseconds(400)) { EasingFunction = spring });
+            _coreTint.BeginAnimation(Brush.OpacityProperty,
+                new DoubleAnimation(core, TimeSpan.FromMilliseconds(400)) { EasingFunction = ease });
         }
 
         // The pill's slide, so the light comes down with it.
@@ -120,15 +155,14 @@ public sealed class IslandGlow : Window
         });
         _light.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(450)));
 
-        // Slow and shallow: noticeable only as the light being alive. None when Windows has
-        // animations turned off.
+        // A slow breath, a little under 6 s in and out. The core runs on a slightly different
+        // period from the whole, so the two drift in and out of step and it never settles into
+        // a mechanical blink. None when Windows has animations turned off.
         if (SystemParameters.ClientAreaAnimation && !_breath.HasAnimatedProperties)
-            _breath.BeginAnimation(OpacityProperty, new DoubleAnimation(1, .72, TimeSpan.FromSeconds(1.8))
-            {
-                AutoReverse = true,
-                RepeatBehavior = RepeatBehavior.Forever,
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
-            });
+        {
+            _breath.BeginAnimation(OpacityProperty, Breath(.6, 2.8));
+            _core.BeginAnimation(OpacityProperty, Breath(.7, 3.7));
+        }
     }
 
     /// <summary>Slides and fades out with the pill, then hides the window unless a dwell needs it.</summary>
@@ -148,6 +182,7 @@ public sealed class IslandGlow : Window
             if (_lit || !_fading) return;
             _fading = false;
             _breath.BeginAnimation(OpacityProperty, null);
+            _core.BeginAnimation(OpacityProperty, null);
             HideIfIdle();
         };
         _light.BeginAnimation(OpacityProperty, fade);
@@ -211,28 +246,47 @@ public sealed class IslandGlow : Window
     }
 
     /// <summary>
-    /// The light's shape: an ellipse centred a little below the top, as wide as the window,
-    /// fading on a Gaussian so there is no visible rim. The tail is subtracted so it reaches
-    /// exactly 0 at the ellipse, and everything outside it is 0 too.
+    /// A layer's shape: an ellipse centred at (.5, cy), fading on a Gaussian so there is no
+    /// visible rim. The tail is subtracted so it reaches exactly 0 at the ellipse, and
+    /// everything outside it is 0 too. Enough stops that no rings show on a light tab strip.
     /// </summary>
-    private static Brush Falloff()
+    private static Brush Falloff(double peak, double k, double rx, double ry, double cy)
     {
-        const double peak = .45, k = 3.2;
         var brush = new RadialGradientBrush
         {
-            Center = new Point(.5, .18), GradientOrigin = new Point(.5, .18),
-            RadiusX = .5, RadiusY = .66,
+            Center = new Point(.5, cy), GradientOrigin = new Point(.5, cy),
+            RadiusX = rx, RadiusY = ry,
         };
         double tail = Math.Exp(-k);
-        for (int s = 0; s <= 12; s++)
+        for (int s = 0; s <= 32; s++)
         {
-            double r = s / 12.0;
+            double r = s / 32.0;
             double a = peak * (Math.Exp(-k * r * r) - tail) / (1 - tail);
             brush.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(a * 255), 0, 0, 0), r));
         }
         brush.Freeze();
         return brush;
     }
+
+    /// <summary>The core's colour: the state's colour taken halfway to white.</summary>
+    private static Color Lift(Color c) =>
+        Color.FromRgb((byte)((c.R + 255) / 2), (byte)((c.G + 255) / 2), (byte)((c.B + 255) / 2));
+
+    /// <summary>The aura's colour: each state's colour leaning to a neighbouring hue.</summary>
+    private static Color Aura(Color c) =>
+        c == Blue ? Color.FromRgb(160, 130, 255)    // to violet
+        : c == Amber ? Color.FromRgb(255, 120, 120) // to rose
+        : c == Green ? Color.FromRgb(70, 200, 235)  // to teal
+        : c == Warm ? Color.FromRgb(255, 150, 180)  // to pink
+        : c;
+
+    private static DoubleAnimation Breath(double low, double seconds) =>
+        new(1, low, TimeSpan.FromSeconds(seconds))
+        {
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+        };
 
     private static Brush BarBrush()
     {

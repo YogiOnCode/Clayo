@@ -19,13 +19,24 @@
   <Border x:Name="Pill" Height="52" Width="300" VerticalAlignment="Top" HorizontalAlignment="Center"
           Background="#000000" CornerRadius="0,0,24,24" Cursor="Hand"
           MouseLeftButtonUp="Pill_Click">
+    <!-- Closing the main window only hides it, so this is where Clayo ends. -->
+    <Border.ContextMenu>
+      <ContextMenu x:Name="Menu" Opened="Menu_Opened">
+        <MenuItem x:Name="LoginItem" Header="Start at login" IsCheckable="True" Click="Login_Click" />
+        <Separator />
+        <MenuItem Header="Quit Clayo" Click="Quit_Click" />
+      </ContextMenu>
+    </Border.ContextMenu>
     <Border.RenderTransform>
       <TranslateTransform x:Name="Slide" />
     </Border.RenderTransform>
     <!-- The prototype's header: 8 px in, the 44 px mascot, a 10 px gap, then the text. -->
     <DockPanel VerticalAlignment="Center" Margin="8,0,22,0">
       <ui:ClayoMascot x:Name="Mascot" Width="44" Height="44" Margin="0,0,10,0" DockPanel.Dock="Left" />
-      <StackPanel VerticalAlignment="Center">
+      <!-- The compact pill's status dot, in the working glow's blue; it replaces the text. -->
+      <Ellipse x:Name="Dot" Width="8" Height="8" Fill="#78A5FF" VerticalAlignment="Center"
+               DockPanel.Dock="Left" Visibility="Collapsed" />
+      <StackPanel x:Name="Text" VerticalAlignment="Center">
         <TextBlock x:Name="Head" Foreground="#ECEEF1" FontSize="13" TextTrimming="CharacterEllipsis">
           <Run x:Name="HeadName" Text="clayo" FontWeight="SemiBold" /><Run x:Name="HeadRest" Foreground="#8B919A" />
         </TextBlock>
