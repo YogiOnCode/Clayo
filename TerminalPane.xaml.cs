@@ -53,27 +53,12 @@ public partial class TerminalPane : UserControl
 
     public string WorkingDirectory => _plan.WorkingDirectory;
 
-    // DEBUG (temporary): why a minimized pane never reaches Done. Remove once diagnosed.
-    private long _debugBytes;
-    private static readonly string DebugPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clayo", "status-debug.log");
-    private void DebugLog(string line)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(DebugPath)!);
-            File.AppendAllText(DebugPath, $"{DateTime.Now:HH:mm:ss.fff} [{GetHashCode():x}] {line}{Environment.NewLine}");
-        }
-        catch (IOException) { }
-    }
-
     public PaneStatus Status
     {
         get => _status;
         private set
         {
             if (_status == value) return;
-            DebugLog($"status {_status} -> {value}");
             _status = value;
             StatusChanged?.Invoke(this, value);
         }
@@ -114,10 +99,6 @@ public partial class TerminalPane : UserControl
             int burst;
             lock (_recent)
                 burst = _recent.Count(t => (now - t).TotalMilliseconds < 900);
-
-            if (Status == PaneStatus.Working)
-                DebugLog($"tick working burst={burst} quietMs={quietFor:0} " +
-                         $"window={Window.GetWindow(this)?.WindowState} bytesSinceTick={Interlocked.Exchange(ref _debugBytes, 0)}");
 
             // Sustained output means work resumed, which clears a question or an error.
             if (burst >= 3) Status = PaneStatus.Working;
@@ -194,7 +175,6 @@ public partial class TerminalPane : UserControl
                 break;
 
             case "r":
-                DebugLog($"resize {msg.GetRawText()} window={Window.GetWindow(this)?.WindowState}");
                 // A minimized window still gets the odd layout pass (a title change is enough),
                 // measured against a client area that is not the real one: seen as 124 -> 105
                 // cols with nothing on screen. Passed on, Claude Code repaints at the wrong width,
@@ -243,7 +223,6 @@ public partial class TerminalPane : UserControl
     {
         _pty.OutputReceived += bytes =>
         {
-            Interlocked.Add(ref _debugBytes, bytes.Length);
             var now = DateTime.UtcNow;
             _lastOutput = now;
             // A resize makes Claude Code repaint the whole screen at once. Counted, that reads

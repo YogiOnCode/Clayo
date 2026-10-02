@@ -10,8 +10,14 @@ namespace CcxShell.Core;
 /// </summary>
 public sealed class SingleInstance : IDisposable
 {
+#if DEBUG
+    // A dev build runs beside the installed (Release) Clayo instead of handing its folder over.
+    private const string MutexName = @"Local\CcxShell.SingleInstance.Dev";
+    private const string PipeName = "CcxShell.Handoff.Dev";
+#else
     private const string MutexName = @"Local\CcxShell.SingleInstance";
     private const string PipeName = "CcxShell.Handoff";
+#endif
 
     private Mutex? _mutex;
     private CancellationTokenSource? _cts;
