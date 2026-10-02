@@ -3,10 +3,9 @@ namespace CcxShell.Core;
 /// <summary>
 /// Compact is the small pill the island shows by itself while a session works: only the mascot
 /// and a status dot, and click-through, so it never stands between you and the tabs under it.
-/// Drop is the "Drop here" target a file drag brings out. Held is what a drop leads to (the
-/// folder choice or a chat): it stays until the island lets it go.
+/// Drop is the "Drop here" target a file drag brings out.
 /// </summary>
-public enum IslandState { Hidden, Compact, Peek, Notify, Drop, Held }
+public enum IslandState { Hidden, Compact, Peek, Notify, Drop }
 
 /// <summary>What a session wants you to know. NeedsYou and Error block the session, Done does not.</summary>
 public enum NoteKind { NeedsYou, Error, Done }
@@ -58,6 +57,15 @@ public sealed class IslandTrigger
 
     public const long DwellMs = 600;
     public const long LeaveMs = 400;
+
+    // A file drag gets a bigger, quicker target than a resting cursor: carrying a file you aim
+    // at the top of the screen, not at its first two rows, and only an OLE drag counts, so the
+    // looser zone cannot bring the island out while you browse. Overshooting while aiming is
+    // forgiven for longer than the cursor's leave.
+    public const double DragZoneWidth = 480;
+    public const double DragZoneHeight = 40;
+    public const long DragDwellMs = 250;
+    public const long DragLeaveMs = 1500;
     public const long DoneMs = 4000;
 
     /// <summary>At most one self-peek in this long, so a busy afternoon does not keep popping it up.</summary>
@@ -86,6 +94,11 @@ public sealed class IslandTrigger
     // at the edge would bring it straight back 600 ms later.
     private bool _mustLeaveFirst;
 
+    // The drag counterpart: the drag going on when the island was sent away (Esc cancels both
+    // at once) is ignored until it ends. A new drag is deliberate, so it may bring the island
+    // straight back, wherever the cursor has been.
+    private bool _dragEndFirst;
+
     // Every note not yet dealt with, the one showing included. At most one per session: a
     // session has one status, so a newer note from it replaces the older one.
     private readonly List<(IslandNote note, long seq)> _notes = [];
@@ -112,6 +125,9 @@ public sealed class IslandTrigger
     /// <summary>0..1 through the dwell at the edge, for the dwell bar. 0 when not dwelling.</summary>
     public double DwellProgress { get; private set; }
 
+    /// <summary>How long that dwell is in all: shorter for a file drag, so the bar fills in time.</summary>
+    public long DwellLengthMs { get; private set; } = DwellMs;
+
     /// <summary>The compact pill on screen is the login greeting, not a session at work.</summary>
     public bool Greeting => State == IslandState.Compact && _greeting;
 
@@ -121,6 +137,14 @@ public sealed class IslandTrigger
         double centre = (m.Left + m.Right) / 2.0;
         return i.CursorY >= m.Top && i.CursorY < m.Top + EdgePx
             && Math.Abs(i.CursorX - centre) <= ZoneWidth * i.Scale / 2;
+    }
+
+    public static bool InDragZone(in IslandInput i)
+    {
+        var m = i.Monitor;
+        double centre = (m.Left + m.Right) / 2.0;
+        return i.CursorY >= m.Top && i.CursorY < m.Top + DragZoneHeight * i.Scale
+            && Math.Abs(i.CursorX - centre) <= DragZoneWidth * i.Scale / 2;
     }
 
     /// <summary>Queues a note. It shows on the next Update unless something is busy.</summary>
@@ -158,11 +182,8 @@ public sealed class IslandTrigger
     {
         bool zone = InZone(i);
         if (!zone) _mustLeaveFirst = false;
+        if (!i.Dragging) _dragEndFirst = false;
         DwellProgress = 0;
-
-        // A chat you are in outranks everything, a fullscreen app included: it is yours, and
-        // only you close it. Notes wait behind it.
-        if (State == IslandState.Held) return State;
 
         if (_greetPending)
         {
@@ -183,8 +204,9 @@ public sealed class IslandTrigger
             return State;
         }
 
-        if (State == IslandState.Drop) return Drop(i, zone);
-        if (DragDwell(i, zone)) return State;
+        bool dragZone = InDragZone(i);
+        if (State == IslandState.Drop) return Drop(i, dragZone);
+        if (DragDwell(i, dragZone)) return State;
 
         if (ShowNote(i)) return State;
         if (State == IslandState.Notify) Hide();
@@ -221,7 +243,11 @@ public sealed class IslandTrigger
             _dwellSince = null;
             _awaySince = null;
         }
-        else DwellProgress = (double)dwelt / DwellMs;
+        else
+        {
+            DwellProgress = (double)dwelt / DwellMs;
+            DwellLengthMs = DwellMs;
+        }
         return State;
     }
 
@@ -232,16 +258,17 @@ public sealed class IslandTrigger
     /// </summary>
     private bool DragDwell(in IslandInput i, bool zone)
     {
-        if (!i.Dragging || i.MovingOrSizing || !zone || _mustLeaveFirst)
+        if (!i.Dragging || i.MovingOrSizing || !zone || _dragEndFirst)
         {
             _dragSince = null;
             return false;
         }
         _dragSince ??= i.NowMs;
         long dwelt = i.NowMs - _dragSince.Value;
-        if (dwelt < DwellMs)
+        if (dwelt < DragDwellMs)
         {
-            DwellProgress = (double)dwelt / DwellMs;
+            DwellProgress = (double)dwelt / DragDwellMs;
+            DwellLengthMs = DragDwellMs;
             return false;
         }
         Hide();
@@ -250,32 +277,30 @@ public sealed class IslandTrigger
     }
 
     /// <summary>
-    /// The target stays while the drag goes on over it or the edge, and leaves 400 ms after the
-    /// drag moves away or ends elsewhere. A drop on it calls Hold before the drag ends.
+    /// The target stays while the drag goes on over it or the drag zone. A drag that wanders
+    /// off has 1.5 s to come back; one that ended elsewhere has nothing left to aim, so it goes
+    /// after the usual 400 ms. A drop on it calls Release before the drag ends.
     /// </summary>
-    private IslandState Drop(in IslandInput i, bool zone)
+    private IslandState Drop(in IslandInput i, bool dragZone)
     {
-        if (i.Dragging && (zone || i.OverIsland)) _awaySince = null;
+        if (i.Dragging && (dragZone || i.OverIsland)) _awaySince = null;
         else
         {
             _awaySince ??= i.NowMs;
-            if (i.NowMs - _awaySince >= LeaveMs) Hide();
+            if (i.NowMs - _awaySince >= (i.Dragging ? DragLeaveMs : LeaveMs)) Hide();
         }
         return State;
     }
 
-    /// <summary>Something was dropped: keep the island open for the folder choice or the chat.</summary>
-    public void Hold()
-    {
-        Hide();
-        State = IslandState.Held;
-    }
-
-    /// <summary>The chat or the choice is over. Hidden, and not back until the cursor leaves the edge.</summary>
+    /// <summary>
+    /// Something was dropped. Hidden, and not back until the cursor leaves the edge, or a new
+    /// drag starts.
+    /// </summary>
     public void Release()
     {
         Hide();
         _mustLeaveFirst = true;
+        _dragEndFirst = true;
     }
 
     /// <summary>
@@ -388,6 +413,7 @@ public sealed class IslandTrigger
         if (Note is { } n) Resolve(n.Source);
         Hide();
         _mustLeaveFirst = true;
+        _dragEndFirst = true;
     }
 
     private void Hide()

@@ -192,7 +192,7 @@ public sealed class IslandGlow : Window
     /// The dwell bar: grows from the centre of the top edge to the zone's full width over the
     /// rest of the dwell, and vanishes the moment progress is back to 0.
     /// </summary>
-    public void Dwell(PxRect monitor, double scale, double progress)
+    public void Dwell(PxRect monitor, double scale, double progress, long lengthMs)
     {
         if (_closed) return;
         if (progress <= 0)
@@ -212,7 +212,7 @@ public sealed class IslandGlow : Window
         // grows smoothly. It starts where the dwell already is: the first poll that sees it.
         double zone = IslandTrigger.ZoneWidth;
         _bar.BeginAnimation(WidthProperty, new DoubleAnimation(progress * zone, zone,
-            TimeSpan.FromMilliseconds((1 - progress) * IslandTrigger.DwellMs)));
+            TimeSpan.FromMilliseconds((1 - progress) * lengthMs)));
     }
 
     /// <summary>Closes with the island, unless shutdown already closed it first.</summary>

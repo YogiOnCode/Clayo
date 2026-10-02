@@ -33,6 +33,7 @@ public partial class TerminalPane : UserControl
     private readonly PtyProcess _pty = new();
     private readonly LaunchPlan _plan;
     private bool _typedCommand;
+    private DateTime _typedAt = DateTime.MaxValue;
     private bool _closed;
 
     private DateTime _lastOutput = DateTime.UtcNow;
@@ -52,6 +53,13 @@ public partial class TerminalPane : UserControl
     public string? SessionId { get; }
 
     public string WorkingDirectory => _plan.WorkingDirectory;
+
+    /// <summary>
+    /// Text to type into Claude's input once, without Enter, so you finish the prompt and
+    /// send it yourself. Typed on the pane's first quiet after the claude command (see
+    /// TypePrefill).
+    /// </summary>
+    public string? Prefill { get; set; }
 
     public PaneStatus Status
     {
@@ -105,7 +113,11 @@ public partial class TerminalPane : UserControl
             // ponytail: a question or an error outlives the silence behind it. Without this,
             // going quiet would immediately repaint both of them as "done".
             else if (Status is PaneStatus.NeedsInput or PaneStatus.Error) return;
-            else if (quietFor > 1500) Status = PaneStatus.Done;
+            else if (quietFor > 1500)
+            {
+                Status = PaneStatus.Done;
+                TypePrefill();
+            }
         };
 
         _flushTimer = new System.Windows.Threading.DispatcherTimer
@@ -282,9 +294,24 @@ public partial class TerminalPane : UserControl
             delay.Stop();
             if (_typedCommand) return;
             _typedCommand = true;
+            _typedAt = DateTime.UtcNow;
             _pty.Write(_plan.ClaudeCommand + "\r");
         };
         delay.Start();
+    }
+
+    /// <summary>
+    /// Claude has drawn its input box once the output after the typed command goes quiet: the
+    /// same 1.5 s of silence that marks a turn over. The output must be newer than the command,
+    /// or a pane that was silent while WebView2 loaded would type into PowerShell first. A
+    /// claude slow enough to load in silence for 1.5 s gets the text a little early, in the
+    /// console's input buffer, which it reads as typeahead once it starts.
+    /// </summary>
+    private void TypePrefill()
+    {
+        if (Prefill is not { } text || _lastOutput <= _typedAt) return;
+        Prefill = null;
+        _pty.Write(Encoding.UTF8.GetBytes(text));
     }
 
     // ponytail: two ASCII literals, not a parser. Verified against the transcripts and

@@ -10,67 +10,6 @@
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
 
-  <Window.Resources>
-    <!-- The prototype's .btn: a pill, the dark face for the second choice and a light one
-         for the first. -->
-    <Style x:Key="IslandButton" TargetType="Button">
-      <Setter Property="Background" Value="#16191D" />
-      <Setter Property="BorderBrush" Value="#2A2E34" />
-      <Setter Property="Foreground" Value="#ECEEF1" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="Padding" Value="16,0" />
-      <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd" CornerRadius="17" BorderThickness="1"
-                    Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}">
-              <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style x:Key="IslandPrimary" TargetType="Button" BasedOn="{StaticResource IslandButton}">
-      <Setter Property="Background" Value="#F2F3F5" />
-      <Setter Property="BorderBrush" Value="#F2F3F5" />
-      <Setter Property="Foreground" Value="#0B0C0E" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <!-- The header's .iconbtn: 30 px, quiet until hovered. -->
-    <Style x:Key="IconButton" TargetType="Button">
-      <Setter Property="Width" Value="30" />
-      <Setter Property="Height" Value="30" />
-      <Setter Property="Foreground" Value="#8B919A" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd" CornerRadius="8" Background="{TemplateBinding Background}">
-              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#16191D" />
-                <Setter Property="Foreground" Value="#ECEEF1" />
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-  </Window.Resources>
-
   <!-- The window is a few px taller than the pill so the spring's overshoot is not clipped,
        and as wide as the widest pill so a notification can grow the pill without moving the
        window. That slack is fully transparent, and a layered window lets clicks through
@@ -100,15 +39,6 @@
         <!-- The compact pill's status dot, in the working glow's blue; it replaces the text. -->
         <Ellipse x:Name="Dot" Width="8" Height="8" Fill="#78A5FF" VerticalAlignment="Center"
                  DockPanel.Dock="Left" Visibility="Collapsed" />
-        <!-- Only once something was dropped. 12 px from the edge, as in the prototype. -->
-        <StackPanel x:Name="HeadButtons" Orientation="Horizontal" DockPanel.Dock="Right"
-                    Margin="8,0,-10,0" Visibility="Collapsed">
-          <Button Style="{StaticResource IconButton}" ToolTip="Close (Esc)" Click="CloseHeld_Click">
-            <Path Data="M6,6 L18,18 M18,6 L6,18" Width="12" Height="12" Stretch="Uniform"
-                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                  StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
-          </Button>
-        </StackPanel>
         <StackPanel x:Name="Text" VerticalAlignment="Center">
           <TextBlock x:Name="Head" Foreground="#ECEEF1" FontSize="13" TextTrimming="CharacterEllipsis">
             <Run x:Name="HeadName" Text="clayo" FontWeight="SemiBold" /><Run x:Name="HeadRest" Foreground="#8B919A" />
@@ -125,17 +55,10 @@
         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
           <TextBlock Text="Drop here" Foreground="#ECEEF1" FontSize="14" FontWeight="SemiBold"
                      HorizontalAlignment="Center" Margin="0,0,0,2" />
-          <TextBlock Text="Chat about a file or a folder · or open the folder in Clayo"
+          <TextBlock Text="A file to ask about it · a folder to open it in Clayo"
                      Foreground="#8B919A" FontSize="12.5" />
         </StackPanel>
       </Grid>
-
-      <!-- A dropped folder: chat about it here, or a full session. -->
-      <StackPanel x:Name="FolderBody" Orientation="Horizontal" Margin="14,0,14,14" Visibility="Collapsed">
-        <Button Style="{StaticResource IslandPrimary}" Content="Chat here" Click="ChatHere_Click" />
-        <Button Style="{StaticResource IslandButton}" Content="Open in Clayo" Margin="8,0,0,0"
-                Click="OpenFolder_Click" />
-      </StackPanel>
     </StackPanel>
   </Border>
 </Window>
