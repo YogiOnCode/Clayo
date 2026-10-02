@@ -242,6 +242,12 @@ public partial class MainWindow : Window
     /// <summary>Sessions with a live pane in this window. The island shows it when it peeks.</summary>
     public int OpenSessionCount => PaneHost.Children.OfType<TerminalPane>().Count();
 
+    /// <summary>
+    /// A pane entered a state worth telling you about (NeedsYou, Error, Done), or, with a null
+    /// kind, moved on so whatever it said before is stale. The island listens.
+    /// </summary>
+    public event Action<TerminalPane, string, NoteKind?>? SessionNotice;
+
     public MainWindow(string folder)
     {
         InitializeComponent();
@@ -792,6 +798,8 @@ public partial class MainWindow : Window
 
         pane.Close();
         PaneHost.Children.Remove(pane);
+        // Nothing left to jump to, so a pending note about it would only mislead.
+        SessionNotice?.Invoke(pane, "", null);
         if (id is not null && _rows.TryGetValue(id, out var row))
         {
             row.Pane = null;
@@ -911,13 +919,36 @@ public partial class MainWindow : Window
 
         pane.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>
         {
+            var was = row.Status;
             row.Status = status;
             if (ReferenceEquals(pane, _active)) PaintStatus(status);
+
+            // StatusChanged only fires on a real change, so a repeat cannot notify twice.
+            // Done counts only after work: the first settle out of Starting is the shell or a
+            // resumed session reaching its prompt, which is nothing you are waiting for. A
+            // question or an error is worth knowing whenever it comes, a trust prompt at
+            // launch included. Any other state means the session moved on.
+            NoteKind? kind = status switch
+            {
+                PaneStatus.NeedsInput => NoteKind.NeedsYou,
+                PaneStatus.Error => NoteKind.Error,
+                PaneStatus.Done when was == PaneStatus.Working => NoteKind.Done,
+                _ => null,
+            };
+            SessionNotice?.Invoke(pane, row.Name, kind);
         });
 
         PaneHost.Children.Add(pane);
         Activate(pane, row.Name);
         ApplyFilter();
+    }
+
+    /// <summary>Switches to this pane, for the island's click. Ignored if it was closed meanwhile.</summary>
+    public void ShowSession(TerminalPane pane)
+    {
+        if (!PaneHost.Children.Contains(pane)) return;
+        var row = _rows.Values.FirstOrDefault(r => ReferenceEquals(r.Pane, pane));
+        Activate(pane, row?.Name ?? "session");
     }
 
     private void Activate(TerminalPane pane, string title)

@@ -36,6 +36,8 @@ public partial class TerminalPane : UserControl
     private bool _closed;
 
     private DateTime _lastOutput = DateTime.UtcNow;
+    private DateTime _resizedAt = DateTime.MinValue;
+    private (short, short) _ptySize;
     private readonly Queue<DateTime> _recent = new();
     private readonly System.Windows.Threading.DispatcherTimer _idleTimer;
     private PaneStatus _status = PaneStatus.Starting;
@@ -51,12 +53,27 @@ public partial class TerminalPane : UserControl
 
     public string WorkingDirectory => _plan.WorkingDirectory;
 
+    // DEBUG (temporary): why a minimized pane never reaches Done. Remove once diagnosed.
+    private long _debugBytes;
+    private static readonly string DebugPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clayo", "status-debug.log");
+    private void DebugLog(string line)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DebugPath)!);
+            File.AppendAllText(DebugPath, $"{DateTime.Now:HH:mm:ss.fff} [{GetHashCode():x}] {line}{Environment.NewLine}");
+        }
+        catch (IOException) { }
+    }
+
     public PaneStatus Status
     {
         get => _status;
         private set
         {
             if (_status == value) return;
+            DebugLog($"status {_status} -> {value}");
             _status = value;
             StatusChanged?.Invoke(this, value);
         }
@@ -97,6 +114,10 @@ public partial class TerminalPane : UserControl
             int burst;
             lock (_recent)
                 burst = _recent.Count(t => (now - t).TotalMilliseconds < 900);
+
+            if (Status == PaneStatus.Working)
+                DebugLog($"tick working burst={burst} quietMs={quietFor:0} " +
+                         $"window={Window.GetWindow(this)?.WindowState} bytesSinceTick={Interlocked.Exchange(ref _debugBytes, 0)}");
 
             // Sustained output means work resumed, which clears a question or an error.
             if (burst >= 3) Status = PaneStatus.Working;
@@ -173,9 +194,18 @@ public partial class TerminalPane : UserControl
                 break;
 
             case "r":
-                _pty.Resize(
-                    (short)(msg.TryGetProperty("cols", out var rc) ? rc.GetInt32() : 80),
-                    (short)(msg.TryGetProperty("rows", out var rr) ? rr.GetInt32() : 24));
+                DebugLog($"resize {msg.GetRawText()} window={Window.GetWindow(this)?.WindowState}");
+                // A minimized window still gets the odd layout pass (a title change is enough),
+                // measured against a client area that is not the real one: seen as 124 -> 105
+                // cols with nothing on screen. Passed on, Claude Code repaints at the wrong width,
+                // then again on restore. The fit after restoring reports the true size, which the
+                // pty usually still has, and even a same-size resize makes ConPTY repaint.
+                var size = ((short)(msg.TryGetProperty("cols", out var rc) ? rc.GetInt32() : 80),
+                            (short)(msg.TryGetProperty("rows", out var rr) ? rr.GetInt32() : 24));
+                if (Window.GetWindow(this)?.WindowState == WindowState.Minimized || size == _ptySize) break;
+                _ptySize = size;
+                _resizedAt = DateTime.UtcNow;
+                _pty.Resize(size.Item1, size.Item2);
                 break;
 
             case "paste":
@@ -213,13 +243,18 @@ public partial class TerminalPane : UserControl
     {
         _pty.OutputReceived += bytes =>
         {
+            Interlocked.Add(ref _debugBytes, bytes.Length);
             var now = DateTime.UtcNow;
             _lastOutput = now;
-            lock (_recent)
-            {
-                _recent.Enqueue(now);
-                while (_recent.Count > 12) _recent.Dequeue();
-            }
+            // A resize makes Claude Code repaint the whole screen at once. Counted, that reads
+            // as sustained output and flips a finished pane to Working and back, which raises
+            // a Done for a turn that never happened. It still counts as output for going quiet.
+            if ((now - _resizedAt).TotalMilliseconds > 500)
+                lock (_recent)
+                {
+                    _recent.Enqueue(now);
+                    while (_recent.Count > 12) _recent.Dequeue();
+                }
             var seen = Scan(bytes, ref _carry);
             if (seen is { } s) Dispatcher.BeginInvoke(() => Status = s);
 
@@ -247,6 +282,7 @@ public partial class TerminalPane : UserControl
         try
         {
             _pty.Start(_plan.ShellCommandLine, _plan.WorkingDirectory, cols, rows);
+            _ptySize = (cols, rows);
         }
         catch (Exception ex)
         {

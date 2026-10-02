@@ -18,14 +18,26 @@ namespace CcxShell;
 /// </summary>
 public partial class IslandWindow : Window
 {
-    // Logical px. The extra height is slack for the spring overshoot, see the XAML.
-    private const double IslandWidth = 300;
+    // Logical px. A peek is the prototype's 's' pill, a notification its 'm' one, which has
+    // room for a session name. The window is always the wider one; see the XAML. The extra
+    // height is slack for the spring overshoot.
+    private const double PeekWidth = 300;
+    private const double NoteWidth = 420;
     private const double IslandHeight = 60;
 
     private readonly MainWindow _main;
     private readonly IslandTrigger _trigger = new();
+    private readonly IslandGlow _glow = new();
     private readonly DispatcherTimer _poll;
-    private readonly DispatcherTimer _waveStop;
+
+    // The second half of a two-part pose: wave then idle, alert then talk.
+    private readonly DispatcherTimer _poseTimer;
+    private MascotMove _poseAfter;
+
+    /// <summary>What is on screen, so a new note while showing is noticed as a change.</summary>
+    private IslandNote? _shown;
+    private PxRect _monitor;
+    private double _scale = 1;
 
     private bool _busy;
     // Not long.MinValue: now - MinValue overflows negative and the check would never run.
@@ -33,14 +45,17 @@ public partial class IslandWindow : Window
     private long _busyCheckedAt = -1000;
     private bool _escWasDown;
 
-    /// <summary>Where the island was last put, in physical px, for the over-the-island test.</summary>
+    /// <summary>Where the pill was last put, in physical px, for the over-the-island test.</summary>
     private PxRect _placed;
+
+    /// <summary>The whole window, as wide as the widest pill.</summary>
+    private PxRect _window;
 
     public IslandWindow(MainWindow main)
     {
         InitializeComponent();
         _main = main;
-        Width = IslandWidth;
+        Width = NoteWidth;
         Height = IslandHeight;
         Slide.Y = -IslandHeight;
 
@@ -52,9 +67,17 @@ public partial class IslandWindow : Window
         _poll = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Background,
                                     Tick, Dispatcher);
 
-        // Hello on each peek, then back to breathing, as the prototype does.
-        _waveStop = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1400) };
-        _waveStop.Tick += (_, _) => { _waveStop.Stop(); Mascot.Play(MascotMove.Idle); };
+        // Hello on each peek, then back to breathing, as the prototype does; a needs-you
+        // alerts first and then keeps talking.
+        _poseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1400) };
+        _poseTimer.Tick += (_, _) => { _poseTimer.Stop(); Mascot.Play(_poseAfter); };
+
+        // Only queued here; the next poll decides whether it may show (fullscreen, Clayo in front).
+        _main.SessionNotice += (pane, name, kind) =>
+        {
+            if (kind is { } k) _trigger.Notify(new IslandNote(pane, name, k));
+            else _trigger.Resolve(pane);
+        };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -73,7 +96,8 @@ public partial class IslandWindow : Window
         // Shutdown closes this window while the dispatcher can still run a tick, and Show on a
         // closed window throws.
         _poll.Stop();
-        _waveStop.Stop();
+        _poseTimer.Stop();
+        _glow.Retire();
         base.OnClosed(e);
     }
 
@@ -110,21 +134,31 @@ public partial class IslandWindow : Window
         _escWasDown = escDown;
 
         var was = _trigger.State;
-        if (was == IslandState.Peek && escPressed) _trigger.Dismiss();
+        if (was != IslandState.Hidden && escPressed) _trigger.Dismiss();
 
         var state = _trigger.Update(new IslandInput(
             pt.X, pt.Y, bounds, scale,
             ButtonDown: PrimaryButtonDown(),
             MovingOrSizing: InMoveSize(),
+            Busy: _busy,
+            OverIsland: IsVisible && _placed.Contains(pt.X, pt.Y),
+            NowMs: now,
             // With Clayo itself in front the sidebar already shows every session, so the
             // island would only repeat it. Behind the browser it is needed again.
-            Busy: _busy || _main.IsActive,
-            OverIsland: IsVisible && _placed.Contains(pt.X, pt.Y),
-            NowMs: now));
+            ClayoActive: _main.IsActive));
 
-        if (state == was) return;
-        if (state == IslandState.Peek) SlideIn(bounds, scale);
-        else SlideOut();
+        // A new note while one shows is a change too: same state, different content.
+        if (state != was || !ReferenceEquals(_trigger.Note, _shown))
+        {
+            // A note that replaces another stays on the island's monitor rather than following
+            // the cursor to another screen.
+            if (state == IslandState.Hidden) SlideOut();
+            else if (was == IslandState.Hidden) SlideIn(bounds, scale, fresh: true);
+            else SlideIn(_monitor, _scale, fresh: false);
+        }
+
+        // After SlideIn, so the glow window is already lit when the bar stops needing it.
+        _glow.Dwell(bounds, scale, _trigger.DwellProgress);
     }
 
     /// <summary>
@@ -153,15 +187,48 @@ public partial class IslandWindow : Window
 
     // -------------------------------------------------------------- show/hide
 
-    private void SlideIn(PxRect monitor, double scale)
+    /// <summary>
+    /// Shows the peek or the trigger's note. `fresh` is coming from hidden; otherwise the pill
+    /// is already there and only grows, changes its line, pose and light.
+    /// </summary>
+    private void SlideIn(PxRect monitor, double scale, bool fresh)
     {
-        int w = (int)Math.Round(IslandWidth * scale);
+        var note = _trigger.Note;
+        _shown = note;
+        _monitor = monitor;
+        _scale = scale;
+
+        double pillWidth = note is null ? PeekWidth : NoteWidth;
+        int w = (int)Math.Round(NoteWidth * scale);
         int h = (int)Math.Round(IslandHeight * scale);
         int x = (monitor.Left + monitor.Right) / 2 - w / 2;
-        _placed = new PxRect(x, monitor.Top, x + w, monitor.Top + h);
+        _window = new PxRect(x, monitor.Top, x + w, monitor.Top + h);
 
-        int n = _main.OpenSessionCount;
-        Sub.Text = n == 1 ? "1 session" : $"{n} sessions";
+        // Only the pill keeps a peek open, not the transparent rest of the window.
+        int pw = (int)Math.Round(pillWidth * scale);
+        int px = (monitor.Left + monitor.Right) / 2 - pw / 2;
+        _placed = new PxRect(px, monitor.Top, px + pw, monitor.Top + h);
+
+        if (note is null)
+        {
+            int n = _main.OpenSessionCount;
+            HeadName.Text = "clayo";
+            HeadRest.Text = "";
+            Sub.Text = n == 1 ? "1 session" : $"{n} sessions";
+            Sub.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            // One line, as the sidebar words it.
+            HeadName.Text = note.Name;
+            HeadRest.Text = note.Kind switch
+            {
+                NoteKind.NeedsYou => " · needs you",
+                NoteKind.Error => " · api error",
+                _ => " · finished",
+            };
+            Sub.Visibility = Visibility.Collapsed;
+        }
 
         // Placed by hand in physical px: Left/Top are in the units of whichever monitor the
         // window was last on, which is the wrong monitor whenever the cursor has moved to a
@@ -172,19 +239,52 @@ public partial class IslandWindow : Window
         if (!IsVisible) Show();
         Place();
 
-        Mascot.Play(MascotMove.Wave);
-        _waveStop.Stop();
-        _waveStop.Start();
-
-        Slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(450))
+        _poseTimer.Stop();
+        switch (note?.Kind)
         {
-            // The prototype's spring, cubic-bezier(.34,1.4,.64,1): out with a slight overshoot.
-            EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 },
+            case null: Pose(MascotMove.Wave, then: MascotMove.Idle); break;
+            case NoteKind.NeedsYou: Pose(MascotMove.Alert, then: MascotMove.Talk); break;
+            case NoteKind.Error: Pose(MascotMove.Alert); break;
+            case NoteKind.Done: Pose(MascotMove.Jump); break;
+        }
+
+        // The prototype's spring, cubic-bezier(.34,1.4,.64,1): out with a slight overshoot.
+        var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 };
+        if (fresh)
+        {
+            Pill.BeginAnimation(WidthProperty, null);
+            Pill.Width = pillWidth;
+        }
+        else Pill.BeginAnimation(WidthProperty, new DoubleAnimation(pillWidth, TimeSpan.FromMilliseconds(400))
+        {
+            EasingFunction = spring,
         });
+        Slide.BeginAnimation(TranslateTransform.YProperty,
+            new DoubleAnimation(0, TimeSpan.FromMilliseconds(450)) { EasingFunction = spring });
+
+        var light = note?.Kind switch
+        {
+            null => IslandGlow.Warm,
+            NoteKind.Done => IslandGlow.Green,
+            _ => IslandGlow.Amber,
+        };
+        _glow.Light(monitor, scale, new WindowInteropHelper(this).Handle, light, pillWidth / NoteWidth);
+    }
+
+    private void Pose(MascotMove now, MascotMove? then = null)
+    {
+        Mascot.Play(now);
+        if (then is not { } next) return;
+        _poseAfter = next;
+        _poseTimer.Start();
     }
 
     private void SlideOut()
     {
+        _shown = null;
+        _poseTimer.Stop();
+        _glow.Dim(IslandHeight);
+
         var anim = new DoubleAnimation(-IslandHeight, TimeSpan.FromMilliseconds(260))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
@@ -200,13 +300,14 @@ public partial class IslandWindow : Window
     private void Place()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
-        SetWindowPos(hwnd, IntPtr.Zero, _placed.Left, _placed.Top,
-                     _placed.Right - _placed.Left, _placed.Bottom - _placed.Top,
+        SetWindowPos(hwnd, IntPtr.Zero, _window.Left, _window.Top,
+                     _window.Right - _window.Left, _window.Bottom - _window.Top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     private void Pill_Click(object sender, MouseButtonEventArgs e)
     {
+        var note = _trigger.Note;
         _trigger.Dismiss();
         SlideOut();
 
@@ -216,6 +317,9 @@ public partial class IslandWindow : Window
         if (_main.WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(_main);
         _main.Show();
         _main.Activate();
+
+        // On the session that asked, not whichever pane was last in front.
+        if (note?.Source is TerminalPane pane) _main.ShowSession(pane);
     }
 
     // ---------------------------------------------------------------- interop
