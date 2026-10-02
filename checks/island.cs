@@ -518,11 +518,24 @@ var drag = rest with { ButtonDown = true, Dragging = true };
 
 {
     var t = new IslandTrigger();
-    Hold(t, drag, 0, 550);
-    Check("a file drag at the edge waits for the dwell", t.State, IslandState.Hidden);
+    Hold(t, drag, 0, 200);
+    Check("a file drag at the edge waits for the drag dwell", t.State, IslandState.Hidden);
     Check("and fills the dwell bar meanwhile", t.DwellProgress > 0.5, true);
-    Check("then shows the drop target", t.Update(drag with { NowMs = 600 }), IslandState.Drop);
+    Check("then shows the drop target after 250 ms", t.Update(drag with { NowMs = 250 }), IslandState.Drop);
 }
+
+// Carrying a file, you aim at the top of the screen, not at its first two rows: the drag
+// zone reaches 40 px down and 240 px either side of the centre.
+Check("a file drag 39 px down shows it",
+    Hold(new IslandTrigger(), drag with { CursorY = 39 }, 0, 300), IslandState.Drop);
+Check("a file drag 200 px off centre shows it",
+    Hold(new IslandTrigger(), drag with { CursorX = 1160 }, 0, 300), IslandState.Drop);
+Check("a file drag 40 px down does not",
+    Hold(new IslandTrigger(), drag with { CursorY = 40 }, 0, 2000), IslandState.Hidden);
+Check("a file drag 241 px off centre does not",
+    Hold(new IslandTrigger(), drag with { CursorX = 1201 }, 0, 2000), IslandState.Hidden);
+Check("the plain hover zone stays two rows",
+    Hold(new IslandTrigger(), rest with { CursorY = 20 }, 0, 2000), IslandState.Hidden);
 
 Check("a window drag never shows it (move/size mode)",
     Hold(new IslandTrigger(), rest with { ButtonDown = true, MovingOrSizing = true }, 0, 2000), IslandState.Hidden);
@@ -538,58 +551,75 @@ Check("busy never shows it",
 
 {
     var t = new IslandTrigger();
-    Hold(t, drag, 0, 600);
+    Hold(t, drag, 0, 250);
     var onTarget = drag with { CursorY = 120, OverIsland = true };
-    Check("moving down onto the target keeps it", Hold(t, onTarget, 650, 3000), IslandState.Drop);
+    Check("moving down onto the target keeps it", Hold(t, onTarget, 300, 3000), IslandState.Drop);
+    // Overshooting the target while aiming is forgiven for a moment and a half.
     var away = drag with { CursorY = 600 };
     t.Update(away with { NowMs = 3050 });
-    Check("dragging away keeps it 399 ms", t.Update(away with { NowMs = 3449 }), IslandState.Drop);
-    Check("then hides it", t.Update(away with { NowMs = 3450 }), IslandState.Hidden);
+    Check("dragging away keeps it 1.499 s", t.Update(away with { NowMs = 4549 }), IslandState.Drop);
+    Check("then hides it", t.Update(away with { NowMs = 4550 }), IslandState.Hidden);
 }
 
 {
-    // Released somewhere else, or Esc cancelled the drag: OLE gives the capture back.
     var t = new IslandTrigger();
-    Hold(t, drag, 0, 600);
-    t.Update(rest with { CursorY = 120, OverIsland = true, NowMs = 650 });
+    Hold(t, drag, 0, 250);
+    var away = drag with { CursorY = 600 };
+    Hold(t, away, 300, 1000);
+    Check("coming back within the grace keeps it", Hold(t, drag with { CursorY = 120, OverIsland = true }, 1050, 3000), IslandState.Drop);
+}
+
+{
+    // Released somewhere else, or Esc cancelled the drag: OLE gives the capture back, and
+    // there is nothing left to aim, so it goes after the usual leave time.
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 250);
+    t.Update(rest with { CursorY = 120, OverIsland = true, NowMs = 300 });
     Check("a drag that ended elsewhere hides it after the leave time",
-        Hold(t, rest with { CursorY = 120, OverIsland = true }, 700, 1050), IslandState.Hidden);
-}
-
-{
-    var t = new IslandTrigger();
-    Hold(t, drag, 0, 600);
-    t.Hold();
-    Check("a drop holds the island open", Hold(t, desk, 650, 400_000), IslandState.Held);
-    t.Notify(needsA);
-    Check("a note waits behind it", t.Update(desk with { NowMs = 400_050 }), IslandState.Held);
-    t.Release();
-    Check("released, the note shows", t.Update(desk with { NowMs = 400_100 }), IslandState.Notify);
-}
-
-{
-    var t = new IslandTrigger();
-    Hold(t, drag, 0, 600);
-    t.Hold();
-    Check("held through a fullscreen app", t.Update(desk with { Busy = true, NowMs = 650 }), IslandState.Held);
-    Check("and with Clayo in front", t.Update(desk with { ClayoActive = true, NowMs = 700 }), IslandState.Held);
+        Hold(t, rest with { CursorY = 120, OverIsland = true }, 350, 700), IslandState.Hidden);
 }
 
 {
     var t = new IslandTrigger();
     t.Notify(doneB);
     t.Update(desk with { NowMs = 0 });
-    Check("a file drag replaces a note on screen", Hold(t, drag, 50, 650), IslandState.Drop);
-    Hold(t, desk, 700, 1200);
+    Check("a file drag replaces a note on screen", Hold(t, drag, 50, 300), IslandState.Drop);
+    Hold(t, desk, 350, 1200);
     Check("which shows again after the drag", t.State, IslandState.Notify);
 }
 
 {
     var t = new IslandTrigger();
-    Hold(t, drag, 0, 600);
-    t.Hold();
+    Hold(t, drag, 0, 250);
     t.Release();
-    Check("released at the edge, it stays away", Hold(t, rest, 650, 3000), IslandState.Hidden);
+    Check("dropped at the edge, it stays away", Hold(t, rest, 300, 3000), IslandState.Hidden);
+}
+
+// A new drag is a deliberate act: after a drop or Esc it may come straight back,
+// without the cursor first leaving the edge. Only the drag that was going on when the
+// island closed is ignored, until it ends.
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 250);
+    t.Release();
+    Hold(t, rest, 300, 500);   // the drop ended that drag
+    Check("after a drop, a new drag at the edge brings it back", Hold(t, drag, 550, 900), IslandState.Drop);
+}
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 250);
+    t.Dismiss();               // Esc, which also cancels the drag
+    Check("the dismissed drag itself does not bring it back", Hold(t, drag, 300, 2000), IslandState.Hidden);
+    Hold(t, rest, 2050, 2200); // button up
+    Check("the next drag does", Hold(t, drag, 2250, 2600), IslandState.Drop);
+}
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 250);
+    Hold(t, drag with { CursorY = 600 }, 300, 2000);   // wandered off past the grace
+    Check("a drag that wandered off brings it back when it returns", Hold(t, drag, 2050, 2400), IslandState.Drop);
 }
 
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");

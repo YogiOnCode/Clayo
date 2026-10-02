@@ -28,9 +28,9 @@ public partial class IslandWindow : Window
     private const double CompactWidth = 92;
     private const double NoteWidth = 420;
     private const double IslandHeight = 60;
-    // While the drop target or the folder choice shows: the header, the 110 px target and its
-    // padding, and the spring's slack. The rest of the time the window is only as tall as the
-    // header, so the slack below it never reaches far over the page.
+    // While the drop target shows: the header, the 110 px target and its padding, and the
+    // spring's slack. The rest of the time the window is only as tall as the header, so the
+    // slack below it never reaches far over the page.
     private const double TallHeight = 190;
 
     private readonly MainWindow _main;
@@ -55,9 +55,6 @@ public partial class IslandWindow : Window
 
     /// <summary>Where the pill was last put, in physical px, for the over-the-island test.</summary>
     private PxRect _placed;
-
-    /// <summary>The folder dropped on the island, while it offers Chat here or Open in Clayo.</summary>
-    private string? _droppedFolder;
 
     /// <summary>The whole window, as wide as the widest pill.</summary>
     private PxRect _window;
@@ -149,8 +146,8 @@ public partial class IslandWindow : Window
         var was = _trigger.State;
         if (was != IslandState.Hidden && escPressed) _trigger.Dismiss();
 
-        // The pill grows downwards with the drop target or the folder choice, so its height is
-        // read again on every poll rather than when it was placed.
+        // The pill grows downwards with the drop target, so its height is read again on every
+        // poll rather than when it was placed.
         _placed = _placed with
         {
             Bottom = _placed.Top + (int)Math.Round(Math.Max(IslandHeight, Pill.ActualHeight) * _scale),
@@ -185,7 +182,7 @@ public partial class IslandWindow : Window
         ClickThrough(state is IslandState.Compact or IslandState.Hidden);
 
         // After SlideIn, so the glow window is already lit when the bar stops needing it.
-        _glow.Dwell(bounds, scale, _trigger.DwellProgress);
+        _glow.Dwell(bounds, scale, _trigger.DwellProgress, _trigger.DwellLengthMs);
     }
 
     /// <summary>
@@ -250,7 +247,9 @@ public partial class IslandWindow : Window
         Dot.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
         Dot.Fill = new SolidColorBrush(greeting ? IslandGlow.Warm : IslandGlow.Blue);
         Text.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        ShowBody(drop ? DropBody : null);
+        // Only a pill with nothing under it opens Clayo on a click.
+        DropBody.Visibility = drop ? Visibility.Visible : Visibility.Collapsed;
+        Pill.Cursor = drop ? Cursors.Arrow : Cursors.Hand;
         if (drop)
         {
             HeadName.Text = "clayo";
@@ -312,7 +311,7 @@ public partial class IslandWindow : Window
     private void Present(double pillWidth, bool fresh)
     {
         _pillWidth = pillWidth;
-        bool tall = _trigger.State is IslandState.Drop or IslandState.Held;
+        bool tall = _trigger.State == IslandState.Drop;
         int w = (int)Math.Round(NoteWidth * _scale);
         int h = (int)Math.Round((tall ? TallHeight : IslandHeight) * _scale);
         int x = (_monitor.Left + _monitor.Right) / 2 - w / 2;
@@ -352,19 +351,6 @@ public partial class IslandWindow : Window
     private void Light(Color color) =>
         _glow.Light(_monitor, _scale, new WindowInteropHelper(this).Handle, color,
                     Math.Min(1, _pillWidth / NoteWidth));
-
-    /// <summary>
-    /// Shows one of the panels under the header, or none. The header's buttons come with the
-    /// held panels; only a pill with nothing under it opens Clayo on a click.
-    /// </summary>
-    private void ShowBody(FrameworkElement? body)
-    {
-        foreach (var b in new FrameworkElement[] { DropBody, FolderBody })
-            b.Visibility = ReferenceEquals(b, body) ? Visibility.Visible : Visibility.Collapsed;
-        bool held = body is not null && !ReferenceEquals(body, DropBody);
-        HeadButtons.Visibility = held ? Visibility.Visible : Visibility.Collapsed;
-        Pill.Cursor = body is null ? Cursors.Hand : Cursors.Arrow;
-    }
 
     private void Pose(MascotMove now, MascotMove? then = null)
     {
@@ -416,8 +402,8 @@ public partial class IslandWindow : Window
 
     private void Pill_Click(object sender, MouseButtonEventArgs e)
     {
-        // A click on the drop target or the folder choice is meant for them, not a way into Clayo.
-        if (_trigger.State is IslandState.Drop or IslandState.Held) return;
+        // A click on the drop target is meant for it, not a way into Clayo.
+        if (_trigger.State == IslandState.Drop) return;
         var note = _trigger.Note;
         _trigger.Dismiss();
         SlideOut();
@@ -463,64 +449,26 @@ public partial class IslandWindow : Window
     }
 
     /// <summary>
-    /// A folder asks what next; a file starts a chat in its folder. Held from here on, so the
-    /// drag ending does not take the island away with it.
+    /// A full session in the dropped folder, the same as typing clayo in Explorer there. A
+    /// file gets one in its folder with @file already in the input, for you to ask about it.
     /// </summary>
     private void Pill_Drop(object sender, DragEventArgs e)
     {
         Pill_DragLeave(sender, e);
         if (_trigger.State != IslandState.Drop || Dropped(e) is not { } path) return;
         e.Handled = true;
-        _trigger.Hold();
-
-        if (Directory.Exists(path)) ShowFolderChoice(path);
-        else if (File.Exists(path)) StartChat(Path.GetDirectoryName(path)!, Path.GetFileName(path));
-        else CloseHeld();
-    }
-
-    private void ShowFolderChoice(string folder)
-    {
-        _droppedFolder = folder;
-        HeadName.Text = Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : folder;
-        HeadRest.Text = "";
-        Sub.Text = "folder · what next?";
-        Sub.Visibility = Visibility.Visible;
-        ShowBody(FolderBody);
-        Present(NoteWidth, fresh: false);
-        _poseTimer.Stop();
-        Pose(MascotMove.Wave, then: MascotMove.Idle);
-        Light(IslandGlow.Warm);
-    }
-
-    private void ChatHere_Click(object sender, RoutedEventArgs e)
-    {
-        if (_droppedFolder is { } folder) StartChat(folder, file: null);
-    }
-
-    /// <summary>A full session in the folder, the same as typing clayo in Explorer there.</summary>
-    private void OpenFolder_Click(object sender, RoutedEventArgs e)
-    {
-        var folder = _droppedFolder;
-        CloseHeld();
-        // The click went to this process, so Clayo may come to the front (see Pill_Click).
-        if (folder is not null) _main.AdoptFolder(folder);
-    }
-
-    private void CloseHeld_Click(object sender, RoutedEventArgs e) => CloseHeld();
-
-    /// <summary>
-    /// The island chat in this folder, about this file if one was dropped. Not built yet (the
-    /// next part of step 5), so for now the island only closes.
-    /// </summary>
-    private void StartChat(string folder, string? file) => CloseHeld();
-
-    /// <summary>Ends the folder choice or the chat and slides the island away.</summary>
-    private void CloseHeld()
-    {
-        _droppedFolder = null;
         _trigger.Release();
         SlideOut();
+
+        if (Directory.Exists(path)) _main.AdoptFolder(path);
+        else if (File.Exists(path)) _main.AdoptFolder(Path.GetDirectoryName(path)!, Mention(Path.GetFileName(path)));
     }
+
+    /// <summary>
+    /// Relative to the session's folder, which is the file's. Claude Code reads a quoted
+    /// @"..." for a name with a space in it. A trailing space so you can carry on typing.
+    /// </summary>
+    private static string Mention(string name) => (name.Contains(' ') ? $"@\"{name}\"" : $"@{name}") + " ";
 
     /// <summary>Clayo was started at login; the compact pill waves once on the next poll that allows it.</summary>
     public void Greet() => _trigger.Greet();

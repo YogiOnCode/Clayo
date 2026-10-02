@@ -392,7 +392,8 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------------ folder
 
-    public void AdoptFolder(string folder)
+    /// <param name="prefill">Typed into Claude's input once it is up, not sent (see TerminalPane.Prefill).</param>
+    public void AdoptFolder(string folder, string? prefill = null)
     {
         if (!Directory.Exists(folder)) return;
         _folder = folder;
@@ -400,7 +401,7 @@ public partial class MainWindow : Window
         Reveal();
 
         StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
-                  title: $"new · {Path.GetFileName(folder.TrimEnd('\\'))}");
+                  title: $"new · {Path.GetFileName(folder.TrimEnd('\\'))}").Prefill = prefill;
     }
 
     /// <summary>
