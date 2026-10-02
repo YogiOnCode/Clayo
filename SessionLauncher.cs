@@ -95,6 +95,11 @@ public static class SessionLauncher
                 throw new ArgumentOutOfRangeException(nameof(mode));
         }
 
+        // Clayo's status line relay, for this pane only (see StatusRelay). The user's own
+        // settings.json is never written. Single quotes, because the shell is PowerShell.
+        if (Environment.ProcessPath is { } exe && StatusRelay.WriteSettings(exe) is { } settings)
+            command += $" --settings '{settings.Replace("'", "''")}'";
+
         // Resume allocates nothing — the id already exists, and it is the one the pane
         // has to be keyed on, or the sidebar row for it never learns it is open.
         return new LaunchPlan(ResolveShell(), workingDirectory, command, expectedId ?? sessionId);

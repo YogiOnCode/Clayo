@@ -229,6 +229,11 @@ public partial class MainWindow : Window
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
+    // What each pane's status line was handed, and its folder's git state. Nothing shows them yet.
+    private readonly StatusStore _status = new();
+    private readonly GitInfo _git = new(TimeSpan.FromSeconds(3));
+    private readonly System.Windows.Threading.DispatcherTimer _gitPoll = new() { Interval = TimeSpan.FromSeconds(3) };
+
     // Panes stay alive when you switch away, so switching back is instant and the
     // process keeps working in the background. PaneHost.Children is the set of them.
 
@@ -262,6 +267,15 @@ public partial class MainWindow : Window
         {
             RefreshSessions();
             _store.StartWatching();
+            _status.Start();
+
+            // A hidden window shows no branch, so it reads none.
+            _gitPoll.Tick += (_, _) =>
+            {
+                if (!IsVisible) return;
+                foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) _git.Refresh(pane.WorkingDirectory);
+            };
+            _gitPoll.Start();
 
             // Opening Clayo in a folder should land you in a live session, not an
             // empty pane. Same thing the Explorer handoff does in AdoptFolder.
@@ -1075,6 +1089,8 @@ public partial class MainWindow : Window
             return;
         }
         _store.StopWatching();
+        _status.Dispose();
+        _gitPoll.Stop();
         foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.Close();
         base.OnClosing(e);
     }
