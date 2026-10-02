@@ -1,4 +1,6 @@
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -26,6 +28,10 @@ public partial class IslandWindow : Window
     private const double CompactWidth = 92;
     private const double NoteWidth = 420;
     private const double IslandHeight = 60;
+    // While the drop target or the folder choice shows: the header, the 110 px target and its
+    // padding, and the spring's slack. The rest of the time the window is only as tall as the
+    // header, so the slack below it never reaches far over the page.
+    private const double TallHeight = 190;
 
     private readonly MainWindow _main;
     private readonly IslandTrigger _trigger = new();
@@ -50,8 +56,12 @@ public partial class IslandWindow : Window
     /// <summary>Where the pill was last put, in physical px, for the over-the-island test.</summary>
     private PxRect _placed;
 
+    /// <summary>The folder dropped on the island, while it offers Chat here or Open in Clayo.</summary>
+    private string? _droppedFolder;
+
     /// <summary>The whole window, as wide as the widest pill.</summary>
     private PxRect _window;
+    private double _pillWidth = PeekWidth;
 
     public IslandWindow(MainWindow main)
     {
@@ -139,6 +149,13 @@ public partial class IslandWindow : Window
         var was = _trigger.State;
         if (was != IslandState.Hidden && escPressed) _trigger.Dismiss();
 
+        // The pill grows downwards with the drop target or the folder choice, so its height is
+        // read again on every poll rather than when it was placed.
+        _placed = _placed with
+        {
+            Bottom = _placed.Top + (int)Math.Round(Math.Max(IslandHeight, Pill.ActualHeight) * _scale),
+        };
+
         var state = _trigger.Update(new IslandInput(
             pt.X, pt.Y, bounds, scale,
             ButtonDown: PrimaryButtonDown(),
@@ -149,7 +166,8 @@ public partial class IslandWindow : Window
             NowMs: now,
             // With Clayo itself in front the sidebar already shows every session, so the
             // island would only repeat it. Behind the browser it is needed again.
-            ClayoActive: _main.IsActive));
+            ClayoActive: _main.IsActive,
+            Dragging: InOleDrag()));
 
         // A new note while one shows is a change too: same state, different content.
         if (state != was || !ReferenceEquals(_trigger.Note, _shown))
@@ -187,6 +205,21 @@ public partial class IslandWindow : Window
         return GetGUIThreadInfo(0, ref gti) && (gti.flags & GUI_INMOVESIZE) != 0;
     }
 
+    /// <summary>
+    /// An OLE drag (a file from Explorer, a link from the browser) is running on the foreground
+    /// thread. While one does, ole32's tracking window, CLIPBRDWNDCLASS, holds the mouse
+    /// capture. A window drag holds no capture of that class, and neither does a tab dragged
+    /// along the strip or a text selection, which only hold the button down.
+    /// </summary>
+    private static bool InOleDrag()
+    {
+        var gti = new GUITHREADINFO { cbSize = Marshal.SizeOf<GUITHREADINFO>() };
+        if (!GetGUIThreadInfo(0, ref gti) || gti.hwndCapture == IntPtr.Zero) return false;
+        var name = new StringBuilder(32);
+        return GetClassName(gti.hwndCapture, name, name.Capacity) > 0
+            && name.ToString() == "CLIPBRDWNDCLASS";
+    }
+
     private static bool IsBusy()
     {
         if (SHQueryUserNotificationState(out var state) != 0) return false;
@@ -204,20 +237,12 @@ public partial class IslandWindow : Window
     {
         var note = _trigger.Note;
         bool compact = _trigger.State == IslandState.Compact;
+        bool drop = _trigger.State == IslandState.Drop;
         _shown = note;
         _monitor = monitor;
         _scale = scale;
 
-        double pillWidth = compact ? CompactWidth : note is null ? PeekWidth : NoteWidth;
-        int w = (int)Math.Round(NoteWidth * scale);
-        int h = (int)Math.Round(IslandHeight * scale);
-        int x = (monitor.Left + monitor.Right) / 2 - w / 2;
-        _window = new PxRect(x, monitor.Top, x + w, monitor.Top + h);
-
-        // Only the pill keeps a peek open, not the transparent rest of the window.
-        int pw = (int)Math.Round(pillWidth * scale);
-        int px = (monitor.Left + monitor.Right) / 2 - pw / 2;
-        _placed = new PxRect(px, monitor.Top, px + pw, monitor.Top + h);
+        double pillWidth = compact ? CompactWidth : note is null && !drop ? PeekWidth : NoteWidth;
 
         // Compact shows only the mascot and the dot; the text under it is filled in regardless.
         // The greeting's dot is the warm hello, not the blue of work.
@@ -225,7 +250,15 @@ public partial class IslandWindow : Window
         Dot.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
         Dot.Fill = new SolidColorBrush(greeting ? IslandGlow.Warm : IslandGlow.Blue);
         Text.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        if (note is null)
+        ShowBody(drop ? DropBody : null);
+        if (drop)
+        {
+            HeadName.Text = "clayo";
+            HeadRest.Text = "";
+            Sub.Text = "drop to start";
+            Sub.Visibility = Visibility.Visible;
+        }
+        else if (note is null)
         {
             int n = _main.OpenSessionCount;
             HeadName.Text = "clayo";
@@ -246,18 +279,12 @@ public partial class IslandWindow : Window
             Sub.Visibility = Visibility.Collapsed;
         }
 
-        // Placed by hand in physical px: Left/Top are in the units of whichever monitor the
-        // window was last on, which is the wrong monitor whenever the cursor has moved to a
-        // screen at a different scale. Placed again after Show because crossing to such a
-        // screen raises WM_DPICHANGED, and WPF answers that by moving the window to the rect
-        // Windows suggests rather than where we put it.
-        Place();
-        if (!IsVisible) Show();
-        Place();
+        Present(pillWidth, fresh);
 
         _poseTimer.Stop();
         switch (note?.Kind)
         {
+            case null when drop: Pose(MascotMove.Peek); break;
             // The login hello waves until it leaves, a couple of seconds later.
             case null when greeting: Pose(MascotMove.Wave); break;
             // Walking while the work runs; ClayoMascot stops it when the island hides.
@@ -267,6 +294,44 @@ public partial class IslandWindow : Window
             case NoteKind.Error: Pose(MascotMove.Alert); break;
             case NoteKind.Done: Pose(MascotMove.Jump); break;
         }
+
+        var light = note?.Kind switch
+        {
+            null when compact && !greeting => IslandGlow.Blue,
+            null => IslandGlow.Warm,
+            NoteKind.Done => IslandGlow.Green,
+            _ => IslandGlow.Amber,
+        };
+        Light(light);
+    }
+
+    /// <summary>
+    /// Puts the window at the top of the island's monitor and brings the pill out at this
+    /// width, or grows it there when it is already out.
+    /// </summary>
+    private void Present(double pillWidth, bool fresh)
+    {
+        _pillWidth = pillWidth;
+        bool tall = _trigger.State is IslandState.Drop or IslandState.Held;
+        int w = (int)Math.Round(NoteWidth * _scale);
+        int h = (int)Math.Round((tall ? TallHeight : IslandHeight) * _scale);
+        int x = (_monitor.Left + _monitor.Right) / 2 - w / 2;
+        _window = new PxRect(x, _monitor.Top, x + w, _monitor.Top + h);
+
+        // Only the pill keeps a peek open, not the transparent rest of the window. The poll
+        // keeps its height up to date.
+        int pw = (int)Math.Round(pillWidth * _scale);
+        int px = (_monitor.Left + _monitor.Right) / 2 - pw / 2;
+        _placed = new PxRect(px, _monitor.Top, px + pw, _monitor.Top + (int)Math.Round(IslandHeight * _scale));
+
+        // Placed by hand in physical px: Left/Top are in the units of whichever monitor the
+        // window was last on, which is the wrong monitor whenever the cursor has moved to a
+        // screen at a different scale. Placed again after Show because crossing to such a
+        // screen raises WM_DPICHANGED, and WPF answers that by moving the window to the rect
+        // Windows suggests rather than where we put it.
+        Place();
+        if (!IsVisible) Show();
+        Place();
 
         // The prototype's spring, cubic-bezier(.34,1.4,.64,1): out with a slight overshoot.
         var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 };
@@ -281,15 +346,24 @@ public partial class IslandWindow : Window
         });
         Slide.BeginAnimation(TranslateTransform.YProperty,
             new DoubleAnimation(0, TimeSpan.FromMilliseconds(450)) { EasingFunction = spring });
+    }
 
-        var light = note?.Kind switch
-        {
-            null when compact && !greeting => IslandGlow.Blue,
-            null => IslandGlow.Warm,
-            NoteKind.Done => IslandGlow.Green,
-            _ => IslandGlow.Amber,
-        };
-        _glow.Light(monitor, scale, new WindowInteropHelper(this).Handle, light, pillWidth / NoteWidth);
+    /// <summary>The glow under the pill, as wide as the pill but never wider than under a note.</summary>
+    private void Light(Color color) =>
+        _glow.Light(_monitor, _scale, new WindowInteropHelper(this).Handle, color,
+                    Math.Min(1, _pillWidth / NoteWidth));
+
+    /// <summary>
+    /// Shows one of the panels under the header, or none. The header's buttons come with the
+    /// held panels; only a pill with nothing under it opens Clayo on a click.
+    /// </summary>
+    private void ShowBody(FrameworkElement? body)
+    {
+        foreach (var b in new FrameworkElement[] { DropBody, FolderBody })
+            b.Visibility = ReferenceEquals(b, body) ? Visibility.Visible : Visibility.Collapsed;
+        bool held = body is not null && !ReferenceEquals(body, DropBody);
+        HeadButtons.Visibility = held ? Visibility.Visible : Visibility.Collapsed;
+        Pill.Cursor = body is null ? Cursors.Hand : Cursors.Arrow;
     }
 
     private void Pose(MascotMove now, MascotMove? then = null)
@@ -306,7 +380,8 @@ public partial class IslandWindow : Window
         _poseTimer.Stop();
         _glow.Dim(IslandHeight);
 
-        var anim = new DoubleAnimation(-IslandHeight, TimeSpan.FromMilliseconds(260))
+        // All the way up, however far the drop target has grown it.
+        var anim = new DoubleAnimation(-Math.Max(IslandHeight, Pill.ActualHeight + 8), TimeSpan.FromMilliseconds(260))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
         };
@@ -341,6 +416,8 @@ public partial class IslandWindow : Window
 
     private void Pill_Click(object sender, MouseButtonEventArgs e)
     {
+        // A click on the drop target or the folder choice is meant for them, not a way into Clayo.
+        if (_trigger.State is IslandState.Drop or IslandState.Held) return;
         var note = _trigger.Note;
         _trigger.Dismiss();
         SlideOut();
@@ -351,6 +428,98 @@ public partial class IslandWindow : Window
 
         // On the session that asked, not whichever pane was last in front.
         if (note?.Source is TerminalPane pane) _main.ShowSession(pane);
+    }
+
+    // ------------------------------------------------------------------- drop
+
+    /// <summary>The first path of a file drop, or null for anything else (text, a browser image).</summary>
+    private static string? Dropped(DragEventArgs e) =>
+        e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths ? paths[0] : null;
+
+    /// <summary>
+    /// Only the drop target takes a drop. A peek or a note can be under a drag too, and saying
+    /// no there keeps a drag passing over the island from landing somewhere it means nothing.
+    /// </summary>
+    private void Pill_DragOver(object sender, DragEventArgs e)
+    {
+        bool take = _trigger.State == IslandState.Drop && Dropped(e) is not null;
+        e.Effects = take ? DragDropEffects.Copy : DragDropEffects.None;
+        DropFrame.Fill = take ? DropOver : DropIdle;
+        e.Handled = true;
+    }
+
+    private void Pill_DragLeave(object sender, DragEventArgs e) => DropFrame.Fill = DropIdle;
+
+    // The warm light, faint at rest and brighter while a drag is over the target. Shared, since
+    // DragOver fires on every move of the drag.
+    private static readonly Brush DropIdle = Tint(0x0F), DropOver = Tint(0x29);
+
+    private static Brush Tint(byte alpha)
+    {
+        var c = IslandGlow.Warm;
+        var brush = new SolidColorBrush(Color.FromArgb(alpha, c.R, c.G, c.B));
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>
+    /// A folder asks what next; a file starts a chat in its folder. Held from here on, so the
+    /// drag ending does not take the island away with it.
+    /// </summary>
+    private void Pill_Drop(object sender, DragEventArgs e)
+    {
+        Pill_DragLeave(sender, e);
+        if (_trigger.State != IslandState.Drop || Dropped(e) is not { } path) return;
+        e.Handled = true;
+        _trigger.Hold();
+
+        if (Directory.Exists(path)) ShowFolderChoice(path);
+        else if (File.Exists(path)) StartChat(Path.GetDirectoryName(path)!, Path.GetFileName(path));
+        else CloseHeld();
+    }
+
+    private void ShowFolderChoice(string folder)
+    {
+        _droppedFolder = folder;
+        HeadName.Text = Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : folder;
+        HeadRest.Text = "";
+        Sub.Text = "folder · what next?";
+        Sub.Visibility = Visibility.Visible;
+        ShowBody(FolderBody);
+        Present(NoteWidth, fresh: false);
+        _poseTimer.Stop();
+        Pose(MascotMove.Wave, then: MascotMove.Idle);
+        Light(IslandGlow.Warm);
+    }
+
+    private void ChatHere_Click(object sender, RoutedEventArgs e)
+    {
+        if (_droppedFolder is { } folder) StartChat(folder, file: null);
+    }
+
+    /// <summary>A full session in the folder, the same as typing clayo in Explorer there.</summary>
+    private void OpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = _droppedFolder;
+        CloseHeld();
+        // The click went to this process, so Clayo may come to the front (see Pill_Click).
+        if (folder is not null) _main.AdoptFolder(folder);
+    }
+
+    private void CloseHeld_Click(object sender, RoutedEventArgs e) => CloseHeld();
+
+    /// <summary>
+    /// The island chat in this folder, about this file if one was dropped. Not built yet (the
+    /// next part of step 5), so for now the island only closes.
+    /// </summary>
+    private void StartChat(string folder, string? file) => CloseHeld();
+
+    /// <summary>Ends the folder choice or the chat and slides the island away.</summary>
+    private void CloseHeld()
+    {
+        _droppedFolder = null;
+        _trigger.Release();
+        SlideOut();
     }
 
     /// <summary>Clayo was started at login; the compact pill waves once on the next poll that allows it.</summary>
@@ -409,6 +578,9 @@ public partial class IslandWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetGUIThreadInfo(uint threadId, ref GUITHREADINFO info);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
 
     [DllImport("shell32.dll")]
     private static extern int SHQueryUserNotificationState(out int state);

@@ -511,5 +511,86 @@ var onPill = desk with { CursorY = 30, OverIsland = true };
     Check("which is not the greeting", t.Greeting, false);
 }
 
+// ------------------------------------------------------------------ drop
+
+// A file being dragged: the button is held and OLE's drag loop has the capture.
+var drag = rest with { ButtonDown = true, Dragging = true };
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 550);
+    Check("a file drag at the edge waits for the dwell", t.State, IslandState.Hidden);
+    Check("and fills the dwell bar meanwhile", t.DwellProgress > 0.5, true);
+    Check("then shows the drop target", t.Update(drag with { NowMs = 600 }), IslandState.Drop);
+}
+
+Check("a window drag never shows it (move/size mode)",
+    Hold(new IslandTrigger(), rest with { ButtonDown = true, MovingOrSizing = true }, 0, 2000), IslandState.Hidden);
+
+Check("a held button alone (tab or text drag) never shows it",
+    Hold(new IslandTrigger(), rest with { ButtonDown = true }, 0, 2000), IslandState.Hidden);
+
+Check("a file drag away from the edge never shows it",
+    Hold(new IslandTrigger(), drag with { CursorY = 300 }, 0, 2000), IslandState.Hidden);
+
+Check("busy never shows it",
+    Hold(new IslandTrigger(), drag with { Busy = true }, 0, 2000), IslandState.Hidden);
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 600);
+    var onTarget = drag with { CursorY = 120, OverIsland = true };
+    Check("moving down onto the target keeps it", Hold(t, onTarget, 650, 3000), IslandState.Drop);
+    var away = drag with { CursorY = 600 };
+    t.Update(away with { NowMs = 3050 });
+    Check("dragging away keeps it 399 ms", t.Update(away with { NowMs = 3449 }), IslandState.Drop);
+    Check("then hides it", t.Update(away with { NowMs = 3450 }), IslandState.Hidden);
+}
+
+{
+    // Released somewhere else, or Esc cancelled the drag: OLE gives the capture back.
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 600);
+    t.Update(rest with { CursorY = 120, OverIsland = true, NowMs = 650 });
+    Check("a drag that ended elsewhere hides it after the leave time",
+        Hold(t, rest with { CursorY = 120, OverIsland = true }, 700, 1050), IslandState.Hidden);
+}
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 600);
+    t.Hold();
+    Check("a drop holds the island open", Hold(t, desk, 650, 400_000), IslandState.Held);
+    t.Notify(needsA);
+    Check("a note waits behind it", t.Update(desk with { NowMs = 400_050 }), IslandState.Held);
+    t.Release();
+    Check("released, the note shows", t.Update(desk with { NowMs = 400_100 }), IslandState.Notify);
+}
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 600);
+    t.Hold();
+    Check("held through a fullscreen app", t.Update(desk with { Busy = true, NowMs = 650 }), IslandState.Held);
+    Check("and with Clayo in front", t.Update(desk with { ClayoActive = true, NowMs = 700 }), IslandState.Held);
+}
+
+{
+    var t = new IslandTrigger();
+    t.Notify(doneB);
+    t.Update(desk with { NowMs = 0 });
+    Check("a file drag replaces a note on screen", Hold(t, drag, 50, 650), IslandState.Drop);
+    Hold(t, desk, 700, 1200);
+    Check("which shows again after the drag", t.State, IslandState.Notify);
+}
+
+{
+    var t = new IslandTrigger();
+    Hold(t, drag, 0, 600);
+    t.Hold();
+    t.Release();
+    Check("released at the edge, it stays away", Hold(t, rest, 650, 3000), IslandState.Hidden);
+}
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;
