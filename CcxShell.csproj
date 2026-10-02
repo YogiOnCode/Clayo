@@ -11,6 +11,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>clayo.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Program.Main, not the one WPF generates: see Program.cs. -->
+    <StartupObject>CcxShell.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
