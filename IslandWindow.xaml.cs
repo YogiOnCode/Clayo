@@ -22,6 +22,8 @@ public partial class IslandWindow : Window
     // room for a session name. The window is always the wider one; see the XAML. The extra
     // height is slack for the spring overshoot.
     private const double PeekWidth = 300;
+    // The compact pill: the mascot and its status dot with the header's padding, nothing more.
+    private const double CompactWidth = 92;
     private const double NoteWidth = 420;
     private const double IslandHeight = 60;
 
@@ -78,6 +80,7 @@ public partial class IslandWindow : Window
             if (kind is { } k) _trigger.Notify(new IslandNote(pane, name, k));
             else _trigger.Resolve(pane);
         };
+        _main.SessionWorking += (pane, working) => _trigger.SetWorking(pane, working);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -141,7 +144,8 @@ public partial class IslandWindow : Window
             ButtonDown: PrimaryButtonDown(),
             MovingOrSizing: InMoveSize(),
             Busy: _busy,
-            OverIsland: IsVisible && _placed.Contains(pt.X, pt.Y),
+            // The open menu hangs below the pill; reaching for it must not send the island away.
+            OverIsland: IsVisible && (_placed.Contains(pt.X, pt.Y) || Menu.IsOpen),
             NowMs: now,
             // With Clayo itself in front the sidebar already shows every session, so the
             // island would only repeat it. Behind the browser it is needed again.
@@ -156,6 +160,11 @@ public partial class IslandWindow : Window
             else if (was == IslandState.Hidden) SlideIn(bounds, scale, fresh: true);
             else SlideIn(_monitor, _scale, fresh: false);
         }
+
+        // The compact pill sits over the browser's tab strip, so clicks go through it to the
+        // tabs; resting on it opens the full island, which takes clicks again. Through while
+        // sliding out too, so a click meant for a tab cannot land on a pill that is leaving.
+        ClickThrough(state is IslandState.Compact or IslandState.Hidden);
 
         // After SlideIn, so the glow window is already lit when the bar stops needing it.
         _glow.Dwell(bounds, scale, _trigger.DwellProgress);
@@ -188,17 +197,18 @@ public partial class IslandWindow : Window
     // -------------------------------------------------------------- show/hide
 
     /// <summary>
-    /// Shows the peek or the trigger's note. `fresh` is coming from hidden; otherwise the pill
+    /// Shows the compact pill, the peek or the trigger's note. `fresh` is coming from hidden; otherwise the pill
     /// is already there and only grows, changes its line, pose and light.
     /// </summary>
     private void SlideIn(PxRect monitor, double scale, bool fresh)
     {
         var note = _trigger.Note;
+        bool compact = _trigger.State == IslandState.Compact;
         _shown = note;
         _monitor = monitor;
         _scale = scale;
 
-        double pillWidth = note is null ? PeekWidth : NoteWidth;
+        double pillWidth = compact ? CompactWidth : note is null ? PeekWidth : NoteWidth;
         int w = (int)Math.Round(NoteWidth * scale);
         int h = (int)Math.Round(IslandHeight * scale);
         int x = (monitor.Left + monitor.Right) / 2 - w / 2;
@@ -209,6 +219,12 @@ public partial class IslandWindow : Window
         int px = (monitor.Left + monitor.Right) / 2 - pw / 2;
         _placed = new PxRect(px, monitor.Top, px + pw, monitor.Top + h);
 
+        // Compact shows only the mascot and the dot; the text under it is filled in regardless.
+        // The greeting's dot is the warm hello, not the blue of work.
+        bool greeting = _trigger.Greeting;
+        Dot.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        Dot.Fill = new SolidColorBrush(greeting ? IslandGlow.Warm : IslandGlow.Blue);
+        Text.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         if (note is null)
         {
             int n = _main.OpenSessionCount;
@@ -242,6 +258,10 @@ public partial class IslandWindow : Window
         _poseTimer.Stop();
         switch (note?.Kind)
         {
+            // The login hello waves until it leaves, a couple of seconds later.
+            case null when greeting: Pose(MascotMove.Wave); break;
+            // Walking while the work runs; ClayoMascot stops it when the island hides.
+            case null when compact: Pose(MascotMove.Walk); break;
             case null: Pose(MascotMove.Wave, then: MascotMove.Idle); break;
             case NoteKind.NeedsYou: Pose(MascotMove.Alert, then: MascotMove.Talk); break;
             case NoteKind.Error: Pose(MascotMove.Alert); break;
@@ -264,6 +284,7 @@ public partial class IslandWindow : Window
 
         var light = note?.Kind switch
         {
+            null when compact && !greeting => IslandGlow.Blue,
             null => IslandGlow.Warm,
             NoteKind.Done => IslandGlow.Green,
             _ => IslandGlow.Amber,
@@ -297,6 +318,19 @@ public partial class IslandWindow : Window
         Slide.BeginAnimation(TranslateTransform.YProperty, anim);
     }
 
+    /// <summary>
+    /// WS_EX_TRANSPARENT on a layered window passes every click and hover through to whatever
+    /// is underneath. The poll still sees the cursor over it, because it asks GetCursorPos, not
+    /// the window.
+    /// </summary>
+    private void ClickThrough(bool on)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        int want = on ? style | WS_EX_TRANSPARENT : style & ~WS_EX_TRANSPARENT;
+        if (want != style) SetWindowLong(hwnd, GWL_EXSTYLE, want);
+    }
+
     private void Place()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
@@ -312,15 +346,22 @@ public partial class IslandWindow : Window
         SlideOut();
 
         // The click was the last input event and it went to this process, so Windows allows
-        // the foreground change. RestoreWindow rather than WindowState = Normal, so a window
-        // that was maximized before it was minimized comes back maximized.
-        if (_main.WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(_main);
-        _main.Show();
-        _main.Activate();
+        // the foreground change, also for a window that is hidden rather than minimized.
+        _main.Reveal();
 
         // On the session that asked, not whichever pane was last in front.
         if (note?.Source is TerminalPane pane) _main.ShowSession(pane);
     }
+
+    /// <summary>Clayo was started at login; the compact pill waves once on the next poll that allows it.</summary>
+    public void Greet() => _trigger.Greet();
+
+    // Shared with the gear's menu in the sidebar.
+    private void Menu_Opened(object sender, RoutedEventArgs e) => MainWindow.ShowLoginState(LoginItem);
+
+    private void Login_Click(object sender, RoutedEventArgs e) => MainWindow.ApplyLoginState(LoginItem);
+
+    private void Quit_Click(object sender, RoutedEventArgs e) => _main.Quit();
 
     // ---------------------------------------------------------------- interop
 
@@ -398,6 +439,7 @@ public partial class IslandWindow : Window
     private const int QUNS_QUIET_TIME = 6;
 
     private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TRANSPARENT = 0x00000020;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WS_EX_NOACTIVATE = 0x08000000;
 

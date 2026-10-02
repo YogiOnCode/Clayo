@@ -1,6 +1,10 @@
 namespace CcxShell.Core;
 
-public enum IslandState { Hidden, Peek, Notify }
+/// <summary>
+/// Compact is the small pill the island shows by itself while a session works: only the mascot
+/// and a status dot, and click-through, so it never stands between you and the tabs under it.
+/// </summary>
+public enum IslandState { Hidden, Compact, Peek, Notify }
 
 /// <summary>What a session wants you to know. NeedsYou and Error block the session, Done does not.</summary>
 public enum NoteKind { NeedsYou, Error, Done }
@@ -52,6 +56,24 @@ public sealed class IslandTrigger
     public const long LeaveMs = 400;
     public const long DoneMs = 4000;
 
+    /// <summary>At most one self-peek in this long, so a busy afternoon does not keep popping it up.</summary>
+    public const long SelfPeekEveryMs = 180_000;
+
+    /// <summary>A self-peek leaves after this even while the work runs: it has said its piece.</summary>
+    public const long CompactMs = 10_000;
+
+    /// <summary>Resting on the compact pill this long opens the full island. The edge dwell's length, so both feel alike.</summary>
+    public const long RestMs = 600;
+
+    /// <summary>The login greeting is out this long: one wave, then gone.</summary>
+    public const long GreetMs = 2500;
+
+    /// <summary>
+    /// A greeting held back by a fullscreen app or Do Not Disturb gives up after this. Much
+    /// later it would only say hello in the middle of something else.
+    /// </summary>
+    public const long GreetWithinMs = 60_000;
+
     private long? _dwellSince;
     private long? _awaySince;
 
@@ -65,6 +87,18 @@ public sealed class IslandTrigger
     private long _seq;
     private long _shownAt;
 
+    // Sessions working right now, and those of them the compact pill has already been out for
+    // (or skipped for the rate limit) in this run of work. A session leaves both when it stops.
+    private readonly HashSet<object> _working = [];
+    private readonly HashSet<object> _peeked = [];
+    private long? _selfPeekAt;
+    private long _compactSince;
+    private long? _restSince;
+
+    private bool _greetPending;
+    private long? _greetSince;
+    private bool _greeting;
+
     public IslandState State { get; private set; }
 
     /// <summary>The note on screen while State is Notify, otherwise null.</summary>
@@ -72,6 +106,9 @@ public sealed class IslandTrigger
 
     /// <summary>0..1 through the dwell at the edge, for the dwell bar. 0 when not dwelling.</summary>
     public double DwellProgress { get; private set; }
+
+    /// <summary>The compact pill on screen is the login greeting, not a session at work.</summary>
+    public bool Greeting => State == IslandState.Compact && _greeting;
 
     public static bool InZone(in IslandInput i)
     {
@@ -94,14 +131,40 @@ public sealed class IslandTrigger
     /// </summary>
     public void Resolve(object source) => _notes.RemoveAll(n => Equals(n.note.Source, source));
 
+    /// <summary>
+    /// A session started or stopped working. A start may bring out the compact pill on a later
+    /// Update; one held back while Clayo is in front still shows once Clayo goes behind, as
+    /// long as the work runs.
+    /// </summary>
+    public void SetWorking(object source, bool working)
+    {
+        if (working) _working.Add(source);
+        else
+        {
+            _working.Remove(source);
+            _peeked.Remove(source);
+        }
+    }
+
+    /// <summary>Clayo started at login: say hello once with the compact pill, on a later Update.</summary>
+    public void Greet() => _greetPending = true;
+
     public IslandState Update(in IslandInput i)
     {
         bool zone = InZone(i);
         if (!zone) _mustLeaveFirst = false;
         DwellProgress = 0;
 
+        if (_greetPending)
+        {
+            _greetSince ??= i.NowMs;
+            if (i.NowMs - _greetSince >= GreetWithinMs) _greetPending = false;
+        }
+
         if (i.Busy || i.ClayoActive)
         {
+            // Clayo in front means you already found it; the hello has nothing left to say.
+            if (i.ClayoActive) _greetPending = false;
             // Held, not dropped: a missed permission leaves the session stuck. A Done only
             // reports, and with Clayo in front the sidebar already says it, so that one goes.
             if (i.ClayoActive) _notes.RemoveAll(n => !n.note.Urgent);
@@ -114,6 +177,8 @@ public sealed class IslandTrigger
         if (ShowNote(i)) return State;
         if (State == IslandState.Notify) Hide();
 
+        if (State == IslandState.Compact) return Compact(i, zone);
+
         if (State == IslandState.Peek)
         {
             if (zone || i.OverIsland) _awaySince = null;
@@ -124,6 +189,8 @@ public sealed class IslandTrigger
             }
             return State;
         }
+
+        if (GreetNow(i) || SelfPeek(i)) return State;
 
         // A held button means a window is being dragged toward the top to snap or maximize;
         // move/size mode catches the same drag when the button state is not what Windows uses
@@ -143,6 +210,65 @@ public sealed class IslandTrigger
             _awaySince = null;
         }
         else DwellProgress = (double)dwelt / DwellMs;
+        return State;
+    }
+
+    /// <summary>
+    /// Brings out the compact pill if a session has started working since the last one and
+    /// the rate limit allows. A start the limit blocks is skipped, not held: popping up minutes
+    /// into the work would be about nothing in particular.
+    /// </summary>
+    private bool SelfPeek(in IslandInput i)
+    {
+        bool fresh = false;
+        foreach (var s in _working) fresh |= _peeked.Add(s);
+        if (!fresh || i.NowMs - _selfPeekAt < SelfPeekEveryMs) return false;
+
+        State = IslandState.Compact;
+        _selfPeekAt = _compactSince = i.NowMs;
+        _restSince = null;
+        _dwellSince = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Shows the login greeting if one is waiting. It is not a self-peek: it is about Clayo
+    /// being there, not about any work, so a session starting right after still shows.
+    /// </summary>
+    private bool GreetNow(in IslandInput i)
+    {
+        if (!_greetPending) return false;
+        _greetPending = false;
+        _greeting = true;
+        State = IslandState.Compact;
+        _compactSince = i.NowMs;
+        _restSince = null;
+        _dwellSince = null;
+        return true;
+    }
+
+    private IslandState Compact(in IslandInput i, bool zone)
+    {
+        // A held button is a tab being dragged along the strip, not a cursor resting on the pill.
+        if ((zone || i.OverIsland) && !i.ButtonDown && !i.MovingOrSizing)
+        {
+            _restSince ??= i.NowMs;
+            if (i.NowMs - _restSince >= RestMs)
+            {
+                State = IslandState.Peek;
+                _greeting = false;
+                _restSince = null;
+                _awaySince = null;
+            }
+            // Not sent away by the time limit mid-rest: that cursor is about to open it.
+            return State;
+        }
+        _restSince = null;
+
+        bool over = _greeting
+            ? i.NowMs - _compactSince >= GreetMs
+            : _working.Count == 0 || i.NowMs - _compactSince >= CompactMs;
+        if (over) Hide();
         return State;
     }
 
@@ -203,7 +329,9 @@ public sealed class IslandTrigger
     {
         State = IslandState.Hidden;
         Note = null;
+        _greeting = false;
         _dwellSince = null;
         _awaySince = null;
+        _restSince = null;
     }
 }

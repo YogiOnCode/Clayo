@@ -310,5 +310,206 @@ var errorB = new IslandNote(paneB, "docs-pass", NoteKind.Error);
     Check("dwell progress 0 away from the edge", t.DwellProgress, 0.0);
 }
 
+// ------------------------------------------------------------------ compact (peeking on its own)
+
+// Resting on the compact pill: out of the 2 px edge, over its body.
+var onPill = desk with { CursorY = 30, OverIsland = true };
+
+{
+    var t = new IslandTrigger();
+    Hold(t, desk, 0, 1000);
+    t.SetWorking(paneA, true);
+    Check("compact when a session starts working behind the browser",
+        t.Update(desk with { NowMs = 1050 }), IslandState.Compact);
+    Check("compact shows no note", t.Note, null);
+    Check("stays while the work runs", Hold(t, desk, 1100, 11000), IslandState.Compact);
+    Check("leaves after 10 s", t.Update(desk with { NowMs = 11050 }), IslandState.Hidden);
+    Check("and does not come back for the same run", Hold(t, desk, 11100, 400_000), IslandState.Hidden);
+}
+
+{
+    // Started from Clayo, then you switch to the browser while it works.
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    Check("not while Clayo is in front", Hold(t, desk with { ClayoActive = true }, 0, 5000), IslandState.Hidden);
+    Check("shows once Clayo goes behind and the work still runs",
+        t.Update(desk with { NowMs = 5050 }), IslandState.Compact);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    Check("not while busy", Hold(t, desk with { Busy = true }, 0, 5000), IslandState.Hidden);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.SetWorking(paneB, true);
+    t.Update(desk with { NowMs = 0 });
+    t.SetWorking(paneA, false);
+    Check("stays while one session still works", t.Update(desk with { NowMs = 50 }), IslandState.Compact);
+    t.SetWorking(paneB, false);
+    Check("hides when every session is idle", t.Update(desk with { NowMs = 100 }), IslandState.Hidden);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    t.SetWorking(paneA, false);
+    t.Update(desk with { NowMs = 1000 });
+    t.SetWorking(paneB, true);
+    Check("a second start within 3 min is skipped", Hold(t, desk, 2000, 60_000), IslandState.Hidden);
+    t.SetWorking(paneB, false);
+    t.SetWorking(paneA, true);
+    Check("still skipped just before 3 min", t.Update(desk with { NowMs = 179_950 }), IslandState.Hidden);
+    t.SetWorking(paneA, false);
+    t.Update(desk with { NowMs = 180_000 });
+    t.SetWorking(paneA, true);
+    Check("a new run 3 min after the last self-peek peeks again",
+        t.Update(desk with { NowMs = 180_050 }), IslandState.Compact);
+}
+
+{
+    // The rate-limited start is skipped, not held: it does not pop up when the limit runs out.
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    t.SetWorking(paneB, true);
+    Check("a skipped start stays skipped past the limit", Hold(t, desk, 50, 400_000), IslandState.Hidden);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    t.Update(desk with { ClayoActive = true, NowMs = 50 });
+    Check("Clayo in front hides it", t.State, IslandState.Hidden);
+    Check("not twice for the same session while it works", Hold(t, desk, 100, 400_000), IslandState.Hidden);
+    t.SetWorking(paneA, false);
+    t.Update(desk with { NowMs = 400_050 });
+    t.SetWorking(paneA, true);
+    Check("its next run counts again", t.Update(desk with { NowMs = 400_100 }), IslandState.Compact);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    Check("resting 550 ms is not yet enough", Hold(t, onPill, 50, 600), IslandState.Compact);
+    Check("resting 600 ms opens the full island", t.Update(onPill with { NowMs = 650 }), IslandState.Peek);
+    Check("which stays while the cursor is on it", Hold(t, onPill, 700, 20_000), IslandState.Peek);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    Check("resting at the edge above it opens it too", Hold(t, rest, 50, 650), IslandState.Peek);
+}
+
+{
+    // Dragging a tab along the strip passes over the pill with the button down.
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    Check("a drag across it does not open it", Hold(t, onPill with { ButtonDown = true }, 50, 3000), IslandState.Compact);
+    Check("passing over briefly does not either", Hold(t, onPill, 3050, 3300), IslandState.Compact);
+    Hold(t, desk, 3350, 3500);
+    Check("and the rest starts from zero", Hold(t, onPill, 3550, 4100), IslandState.Compact);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    Hold(t, onPill, 9800, 10_000);
+    Check("a rest under way holds it past 10 s", t.State, IslandState.Compact);
+    Check("and then opens it", Hold(t, onPill, 10_050, 10_400), IslandState.Peek);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    t.Notify(doneB);
+    Check("a note outranks the compact pill", t.Update(desk with { NowMs = 50 }), IslandState.Notify);
+    Check("and is the one shown", t.Note, doneB);
+}
+
+{
+    var t = new IslandTrigger();
+    t.Notify(needsA);
+    t.SetWorking(paneB, true);
+    Check("a pending note wins over a fresh self-peek", t.Update(desk with { NowMs = 0 }), IslandState.Notify);
+}
+
+{
+    var t = new IslandTrigger();
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = 0 });
+    t.Dismiss();
+    Check("dismissed compact goes", t.Update(desk with { NowMs = 50 }), IslandState.Hidden);
+    Check("and stays away while that session works", Hold(t, desk, 100, 400_000), IslandState.Hidden);
+}
+
+// ------------------------------------------------------------------ login greeting
+
+{
+    var t = new IslandTrigger();
+    t.Greet();
+    Check("the greeting brings out the compact pill", t.Update(desk with { NowMs = 0 }), IslandState.Compact);
+    Check("as the greeting", t.Greeting, true);
+    Check("with no note", t.Note, null);
+    Check("stays for its wave though nothing works",
+        Hold(t, desk, 50, IslandTrigger.GreetMs - 50), IslandState.Compact);
+    Check("then hides", t.Update(desk with { NowMs = IslandTrigger.GreetMs }), IslandState.Hidden);
+    Check("and is no longer the greeting", t.Greeting, false);
+    Check("only once", Hold(t, desk, IslandTrigger.GreetMs + 50, 400_000), IslandState.Hidden);
+}
+
+{
+    // Signing in straight into a fullscreen app or Do Not Disturb.
+    var t = new IslandTrigger();
+    t.Greet();
+    Check("held while busy", Hold(t, desk with { Busy = true }, 0, 30_000), IslandState.Hidden);
+    t.Update(desk with { NowMs = 30_050 });
+    Check("shown once that ends within a minute", t.Greeting, true);
+}
+
+{
+    var t = new IslandTrigger();
+    t.Greet();
+    Hold(t, desk with { Busy = true }, 0, IslandTrigger.GreetWithinMs);
+    Check("dropped if busy for longer than a minute",
+        Hold(t, desk, IslandTrigger.GreetWithinMs + 50, 400_000), IslandState.Hidden);
+}
+
+{
+    var t = new IslandTrigger();
+    t.Greet();
+    t.Update(desk with { ClayoActive = true, NowMs = 0 });
+    Check("dropped once Clayo is in front", Hold(t, desk, 50, 400_000), IslandState.Hidden);
+}
+
+{
+    var t = new IslandTrigger();
+    t.Greet();
+    t.Update(desk with { NowMs = 0 });
+    Check("resting on the greeting opens the full island", Hold(t, onPill, 50, 650), IslandState.Peek);
+    Check("which is not the greeting", t.Greeting, false);
+}
+
+{
+    var t = new IslandTrigger();
+    t.Greet();
+    Hold(t, desk, 0, IslandTrigger.GreetMs);
+    t.SetWorking(paneA, true);
+    t.Update(desk with { NowMs = IslandTrigger.GreetMs + 50 });
+    Check("the greeting does not use up the self-peek", t.State, IslandState.Compact);
+    Check("which is not the greeting", t.Greeting, false);
+}
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;
