@@ -10,23 +10,27 @@
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
 
-  <!-- The window is a few px taller than the pill so the spring's overshoot is not clipped.
-       That slack is fully transparent, and a layered window lets clicks through alpha-0
-       pixels, so it never covers what is underneath. For the same reason there is no drop
-       shadow yet: a soft shadow is partly opaque and would eat clicks on the tab strip. -->
-  <Border x:Name="Pill" Height="52" VerticalAlignment="Top"
+  <!-- The window is a few px taller than the pill so the spring's overshoot is not clipped,
+       and as wide as the widest pill so a notification can grow the pill without moving the
+       window. That slack is fully transparent, and a layered window lets clicks through
+       alpha-0 pixels, so it never covers what is underneath. For the same reason the glow is
+       not drawn here but in IslandGlow: a soft light is partly opaque and would eat clicks on
+       the tab strip. -->
+  <Border x:Name="Pill" Height="52" Width="300" VerticalAlignment="Top" HorizontalAlignment="Center"
           Background="#000000" CornerRadius="0,0,24,24" Cursor="Hand"
           MouseLeftButtonUp="Pill_Click">
     <Border.RenderTransform>
       <TranslateTransform x:Name="Slide" />
     </Border.RenderTransform>
     <!-- The prototype's header: 8 px in, the 44 px mascot, a 10 px gap, then the text. -->
-    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,22,0">
-      <ui:ClayoMascot x:Name="Mascot" Width="44" Height="44" Margin="0,0,10,0" />
+    <DockPanel VerticalAlignment="Center" Margin="8,0,22,0">
+      <ui:ClayoMascot x:Name="Mascot" Width="44" Height="44" Margin="0,0,10,0" DockPanel.Dock="Left" />
       <StackPanel VerticalAlignment="Center">
-        <TextBlock Text="clayo" Foreground="#ECEEF1" FontSize="13" FontWeight="SemiBold" />
+        <TextBlock x:Name="Head" Foreground="#ECEEF1" FontSize="13" TextTrimming="CharacterEllipsis">
+          <Run x:Name="HeadName" Text="clayo" FontWeight="SemiBold" /><Run x:Name="HeadRest" Foreground="#8B919A" />
+        </TextBlock>
         <TextBlock x:Name="Sub" Foreground="#8B919A" FontSize="12" />
       </StackPanel>
-    </StackPanel>
+    </DockPanel>
   </Border>
 </Window>
