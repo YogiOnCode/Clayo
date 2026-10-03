@@ -37,6 +37,19 @@ public sealed class SessionRow : INotifyPropertyChanged
     public string? CustomName { get; set; }
     public string Folder { get; set; } = "";
 
+    /// <summary>A row with no transcript yet is a pane Clayo started, and those are Claude's for now.</summary>
+    public AgentKind Agent => Info?.Agent ?? AgentKind.Claude;
+
+    /// <summary>Set by MainWindow when both agents are in use, so the tag only shows when it tells rows apart.</summary>
+    public bool ShowAgent { get; set; }
+
+    public string AgentTag => Agent == AgentKind.Codex ? "CX" : "CC";
+
+    /// <summary>The badge colours from the setup window: clay for Claude Code, blue for Codex.</summary>
+    public string AgentBrush => Agent == AgentKind.Codex ? "#7DBBEB" : "#E39A7E";
+
+    public Visibility AgentVisibility => ShowAgent ? Visibility.Visible : Visibility.Collapsed;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // ------------------------------------------------------------------ labels
@@ -205,6 +218,7 @@ public sealed class SessionRow : INotifyPropertyChanged
         Raise(nameof(Name));
         Raise(nameof(Subtitle));
         Raise(nameof(Tip));
+        Raise(nameof(AgentVisibility));
         Raise(nameof(StatusBrush));
         Raise(nameof(StatusText));
     }
@@ -226,7 +240,10 @@ public sealed class BrushKeyConverter : IValueConverter
 public partial class MainWindow : Window
 {
     private readonly IAgent _claude;
-    private ISessionSource _store => _claude.Sessions;
+    private readonly CodexSessionStore _codexSessions = CodexSessionStore.ForThisUser();
+
+    /// <summary>Both agents' transcripts, watched always; RefreshSessions skips an agent setup's Use left off.</summary>
+    private ISessionSource[] Sources => [_claude.Sessions, _codexSessions];
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
@@ -290,11 +307,11 @@ public partial class MainWindow : Window
         _folder = folder;
         ShowFolder(folder);
 
-        _store.Changed += () => Dispatcher.BeginInvoke(RefreshSessions);
+        foreach (var source in Sources) source.Changed += () => Dispatcher.BeginInvoke(RefreshSessions);
         Loaded += (_, __) =>
         {
             RefreshSessions();
-            _store.StartWatching();
+            foreach (var source in Sources) source.StartWatching();
             _status.Start();
 
             // A hidden window shows no branch, so it reads none.
@@ -519,6 +536,7 @@ public partial class MainWindow : Window
             _settings = s;
             s.Save(ClayoSettings.DefaultPath);
             if (SettingsView.IsVisible) SettingsView.Refresh(s);
+            RefreshSessions();
             Reveal();
         };
         _setup.Closed += (_, _) => _setup = null;
@@ -557,7 +575,12 @@ public partial class MainWindow : Window
         // identity (and their status light) across a refresh.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var info in _store.Scan())
+        // With both agents in use, each row says whose it is.
+        bool both = _settings.UseClaude && _settings.UseCodex;
+        var infos = (_settings.UseClaude ? _claude.Sessions.Scan() : [])
+            .Concat(_settings.UseCodex ? _codexSessions.Scan() : []);
+
+        foreach (var info in infos)
         {
             seen.Add(info.SessionId);
 
@@ -565,6 +588,7 @@ public partial class MainWindow : Window
             {
                 row.Info = info;
                 row.CustomName = _names.Get(info.SessionId);
+                row.ShowAgent = both;
                 row.Refresh();
             }
             else
@@ -574,7 +598,8 @@ public partial class MainWindow : Window
                     SessionId = info.SessionId,
                     Info = info,
                     CustomName = _names.Get(info.SessionId),
-                    Folder = info.ProjectDir
+                    Folder = info.ProjectDir,
+                    ShowAgent = both
                 };
             }
         }
@@ -595,8 +620,8 @@ public partial class MainWindow : Window
 
         ApplyFilter();
 
-        if (!_store.RootExists)
-            EmptyState.Text = "No transcripts found under ~\\.claude\\projects.\nStart a session and it will show up here.";
+        if (!Sources.Any(source => source.RootExists))
+            EmptyState.Text = "No transcripts found under ~\\.claude or ~\\.codex.\nStart a session and it will show up here.";
     }
 
     /// <summary>Rows, order and grouping the ListBox currently shows. See ApplyFilter.</summary>
@@ -694,7 +719,8 @@ public partial class MainWindow : Window
     {
         foreach (var row in _rows.Values)
         {
-            row.ParentId = _parents.Get(row.SessionId);
+            // Codex says in the transcript; Claude's links are only the ones Clayo recorded.
+            row.ParentId = row.Info?.ParentId ?? _parents.Get(row.SessionId);
             row.BranchOf = row.ParentId is { } pid && _rows.TryGetValue(pid, out var parent)
                 ? parent.Name
                 : null;
@@ -788,6 +814,9 @@ public partial class MainWindow : Window
             Activate(row.Pane, row.Name);
             return;
         }
+
+        // Codex panes come with docs/SETUP.md step 6; until then its rows are to look at.
+        if (row.Agent == AgentKind.Codex) return;
 
         var cwd = Directory.Exists(row.Folder) ? row.Folder : _folder;
         StartPane(SessionLauncher.Plan(_claude, LaunchMode.Resume, cwd, row.SessionId), row.Name);
@@ -1254,7 +1283,7 @@ public partial class MainWindow : Window
             Hide();
             return;
         }
-        _store.StopWatching();
+        foreach (var source in Sources) source.StopWatching();
         _status.Dispose();
         _gitPoll.Stop();
         _clock.Stop();
