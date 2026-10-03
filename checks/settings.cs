@@ -35,6 +35,27 @@ try
     Check("a key of the wrong type falls back, the others still count",
         ClayoSettings.Load(path), defaults with { StatusBranch = false });
 
+    // Reserve (step 6): off by default, one of the offered thresholds, else off.
+    Check("reserve is off by default", defaults.ReserveAt, 0);
+    var reserve = defaults with { ReserveAt = 80, ReserveSevenDay = false };
+    reserve.Save(path);
+    Check("a reserve loads back", ClayoSettings.Load(path), reserve);
+    File.WriteAllText(path, """{"reserveAt":55}""");
+    Check("a threshold not offered is off", ClayoSettings.Load(path).ReserveAt, 0);
+    File.WriteAllText(path, """{"reserveAt":"90"}""");
+    Check("a threshold of the wrong type is off", ClayoSettings.Load(path).ReserveAt, 0);
+
+    // Theme: Numbers by default (D1), saved by name, anything unknown is Numbers.
+    Check("numbers by default", defaults.Theme, StatusTheme.Numbers);
+    var rings = defaults with { Theme = StatusTheme.Rings };
+    rings.Save(path);
+    Check("a theme loads back", ClayoSettings.Load(path).Theme, StatusTheme.Rings);
+    Check("saved by its name", File.ReadAllText(path).Contains("\"theme\": \"rings\""), true);
+    File.WriteAllText(path, """{"theme":"voxel"}""");
+    Check("a theme not offered is numbers", ClayoSettings.Load(path).Theme, StatusTheme.Numbers);
+    File.WriteAllText(path, """{"theme":"2"}""");
+    Check("a number is not a theme", ClayoSettings.Load(path).Theme, StatusTheme.Numbers);
+
     File.WriteAllText(path, """{"statusModel":fal""");
     Check("a half-written file is the defaults", ClayoSettings.Load(path), defaults);
     File.WriteAllText(path, "[true]");

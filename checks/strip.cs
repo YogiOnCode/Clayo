@@ -79,6 +79,18 @@ Check("reset passed", StatusStrip.ResetIn(now.AddMinutes(-1), now), "now");
         StatusStrip.LimitMeter(true, new Limit(5, null), now).Detail, null);
 }
 
+// The bare reset time, for the themes that word it "resets in 1h20m" or show it without ↻.
+Check("a limit's reset alone", StatusStrip.Footer(limits, all, now)[0].Reset, "1h20m");
+Check("context has no reset", StatusStrip.For(status, git, limits, all, now)!.Context?.Reset, null);
+
+// Effort as a step of five, for the themes that draw it as rising bars.
+Check("effort low", StatusStrip.EffortStep("low"), 0);
+Check("effort medium", StatusStrip.EffortStep("medium"), 1);
+Check("effort med", StatusStrip.EffortStep("med"), 1);
+Check("effort xhigh", StatusStrip.EffortStep("xhigh"), 3);
+Check("effort max", StatusStrip.EffortStep("max"), 4);
+Check("effort unknown shows no steps", StatusStrip.EffortStep("turbo"), -1);
+
 // The sidebar footer's limits (step 4).
 {
     var f = StatusStrip.Footer(limits, all, now);
@@ -100,6 +112,33 @@ Check("reset passed", StatusStrip.ResetIn(now.AddMinutes(-1), now), "now");
     Check("a stale limit has no countdown", stale[0].Detail, null);
     Check("the 7d limit is still current then", stale[1].Stale, false);
     Check("the countdown ticks without new data", StatusStrip.Footer(limits, all, now.AddMinutes(30))[0].Detail, "↻ 50m");
+}
+
+// Reserve (step 6): at or past the threshold a limit reads red, and warns once per window.
+{
+    var at80 = all with { ReserveAt = 80 };
+    var near = new AccountLimits(new Limit(82, now.AddHours(1)), new Limit(14, now.AddDays(4)), at);
+    var f = StatusStrip.Footer(near, at80, now);
+    Check("past the reserve reads red", f[0].Band, Band.Red);
+    Check("under the reserve keeps its band", f[1].Band, Band.Green);
+    Check("the tooltip says why it is red", f[0].Tip, "5-hour limit: 82% used, resets in 1h00m. Past your 80% reserve");
+    Check("reserve off keeps the band", StatusStrip.Footer(near, all, now)[0].Band, Band.Orange);
+    Check("a limit the reserve does not watch keeps its band",
+        StatusStrip.Footer(near, at80 with { ReserveFiveHour = false }, now)[0].Band, Band.Orange);
+    Check("the reserve shows in the header too (D5)",
+        StatusStrip.For(status, git, near, at80 with { StatusFooter = false }, now)!.FiveHour?.Band, Band.Red);
+    Check("a stale limit is not past the reserve", StatusStrip.Footer(near, at80, now.AddHours(2))[0].Band, Band.Orange);
+
+    var watch = new ReserveWatch();
+    Check("crossing warns", string.Join(",", watch.Crossed(near, at80, now).Select(m => m.Label)), "5h");
+    Check("once per window", watch.Crossed(near, at80, now).Count, 0);
+    Check("nothing reported warns nothing", watch.Crossed(null, at80, now).Count, 0);
+    var next = near with { FiveHour = new Limit(85, now.AddHours(6)) };
+    Check("a new window warns again", string.Join(",", watch.Crossed(next, at80, now.AddHours(1.5)).Select(m => m.Label)), "5h");
+    var both = new AccountLimits(new Limit(91, now.AddHours(1)), new Limit(90, now.AddDays(4)), at);
+    Check("both can cross at once", string.Join(",", new ReserveWatch().Crossed(both, all with { ReserveAt = 90 }, now).Select(m => m.Label)), "5h,7d");
+    Check("reserve off warns nothing", new ReserveWatch().Crossed(both, all, now).Count, 0);
+    Check("stale limits warn nothing", new ReserveWatch().Crossed(near, at80, now.AddHours(2)).Count, 0);
 }
 
 Check("near limit: context orange", StatusStrip.For(status with { ContextUsed = 810_000, ContextPercent = 81 },

@@ -3,6 +3,9 @@ using System.Text.Json;
 
 namespace CcxShell.Core;
 
+/// <summary>How the status strip and footer draw their numbers (design/settings, D6: these four of its six).</summary>
+public enum StatusTheme { Numbers, Bars, Rings, Chips }
+
 /// <summary>
 /// What you chose in Settings, kept in %LOCALAPPDATA%\Clayo\settings.json. Start at login is
 /// not here: it lives in the Run key (LoginStartup).
@@ -15,8 +18,15 @@ public sealed record ClayoSettings(
     bool StatusContext = true,
     bool StatusEffort = true,
     bool StatusFiveHour = true,
-    bool StatusSevenDay = true)
+    bool StatusSevenDay = true,
+    int ReserveAt = 0,
+    bool ReserveFiveHour = true,
+    bool ReserveSevenDay = true,
+    StatusTheme Theme = StatusTheme.Numbers)
 {
+    /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
+    public static readonly int[] ReserveSteps = [0, 70, 80, 90];
+
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clayo", "settings.json");
 
@@ -49,7 +59,15 @@ public sealed record ClayoSettings(
             B("statusContext", d.StatusContext),
             B("statusEffort", d.StatusEffort),
             B("statusFiveHour", d.StatusFiveHour),
-            B("statusSevenDay", d.StatusSevenDay));
+            B("statusSevenDay", d.StatusSevenDay),
+            root.TryGetProperty("reserveAt", out var r) && r.ValueKind == JsonValueKind.Number
+                && r.TryGetInt32(out var at) && ReserveSteps.Contains(at) ? at : d.ReserveAt,
+            B("reserveFiveHour", d.ReserveFiveHour),
+            B("reserveSevenDay", d.ReserveSevenDay),
+            // By name only: Enum.TryParse would also take "2".
+            root.TryGetProperty("theme", out var t) && t.ValueKind == JsonValueKind.String
+                && Enum.GetNames<StatusTheme>().FirstOrDefault(n => n.Equals(t.GetString(), StringComparison.OrdinalIgnoreCase)) is { } theme
+                ? Enum.Parse<StatusTheme>(theme) : d.Theme);
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -72,6 +90,10 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("statusEffort", StatusEffort);
                 w.WriteBoolean("statusFiveHour", StatusFiveHour);
                 w.WriteBoolean("statusSevenDay", StatusSevenDay);
+                w.WriteNumber("reserveAt", ReserveAt);
+                w.WriteBoolean("reserveFiveHour", ReserveFiveHour);
+                w.WriteBoolean("reserveSevenDay", ReserveSevenDay);
+                w.WriteString("theme", Theme.ToString().ToLowerInvariant());
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

@@ -25,12 +25,14 @@ public sealed record SessionStatus(
 
 /// <summary>
 /// Reads the status files the relay leaves in %LOCALAPPDATA%\Clayo\status (see StatusRelay),
-/// one per session, and keeps them fresh. Clayo only shows what Claude hands its status line.
+/// one per session, and keeps them fresh. Clayo only shows what Claude hands its status line
+/// (and, for the limits, what the user's own status line script saved).
 /// </summary>
 public sealed class StatusStore : IDisposable
 {
     private readonly string _dir;
     private readonly Func<string> _fallbackEffort;
+    private readonly string _usageCache;
     private readonly Dictionary<string, SessionStatus> _byId = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private FileSystemWatcher? _watcher;
@@ -38,10 +40,11 @@ public sealed class StatusStore : IDisposable
     /// <summary>Fired on a background thread when a session's file brings a new status.</summary>
     public event Action<SessionStatus>? Changed;
 
-    public StatusStore(string? dir = null, Func<string>? fallbackEffort = null)
+    public StatusStore(string? dir = null, Func<string>? fallbackEffort = null, string? usageCache = null)
     {
         _dir = dir ?? StatusRelay.StatusDir;
         _fallbackEffort = fallbackEffort ?? DefaultEffort;
+        _usageCache = usageCache ?? UsageCachePath;
     }
 
     public SessionStatus? Get(string sessionId)
@@ -51,20 +54,53 @@ public sealed class StatusStore : IDisposable
 
     /// <summary>
     /// The limits are the account's, not a session's, so the newest report wins. A session
-    /// that has not called the API yet has none, and must not blank the ones we have.
+    /// that has not called the API yet has none, and must not blank the ones we have. Some
+    /// accounts' Claude Code sends none at all; then the user's script's cache stands in.
     /// </summary>
     public AccountLimits? Limits
     {
         get
         {
+            AccountLimits? fromClaude;
             lock (_lock)
             {
                 var newest = _byId.Values
                     .Where(s => s.FiveHour is not null || s.SevenDay is not null)
                     .MaxBy(s => s.Updated);
-                return newest is null ? null : new AccountLimits(newest.FiveHour, newest.SevenDay, newest.Updated);
+                fromClaude = newest is null ? null : new AccountLimits(newest.FiveHour, newest.SevenDay, newest.Updated);
             }
+            var cached = ReadUsageCache(_usageCache);
+            return cached is null || fromClaude?.Updated >= cached.Updated ? fromClaude : cached;
         }
+    }
+
+    /// <summary>
+    /// Where the user's statusline.ps1 keeps the limits it fetches for itself when Claude's
+    /// payload has none. Clayo only reads the file: the script calls the API, Clayo never does.
+    /// </summary>
+    public static string UsageCachePath => Path.Combine(
+        Environment.GetEnvironmentVariable("TEMP") ?? Path.GetTempPath(), "claude", "statusline-usage-cache.json");
+
+    private static AccountLimits? ReadUsageCache(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            return ParseUsageCache(File.ReadAllText(path), File.GetLastWriteTimeUtc(path));
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>The script's cache: as rate_limits, but "utilization" for the percentage. Null when it holds no limits.</summary>
+    public static AccountLimits? ParseUsageCache(string json, DateTime updated)
+    {
+        JsonElement root;
+        try { root = JsonDocument.Parse(json).RootElement; }
+        catch (JsonException) { return null; }
+        var h5 = ReadLimit(Obj(root, "five_hour"), "utilization");
+        var d7 = ReadLimit(Obj(root, "seven_day"), "utilization");
+        return h5 is null && d7 is null ? null : new AccountLimits(h5, d7, updated);
     }
 
     /// <summary>Reads what is there already, then follows changes.</summary>
@@ -145,8 +181,8 @@ public sealed class StatusStore : IDisposable
             size,
             (int)(used * 100 / size),
             Str(Obj(root, "effort"), "level") is { Length: > 0 } e ? e : fallbackEffort(),
-            ReadLimit(Obj(limits, "five_hour")),
-            ReadLimit(Obj(limits, "seven_day")),
+            ReadLimit(Obj(limits, "five_hour"), "used_percentage"),
+            ReadLimit(Obj(limits, "seven_day"), "used_percentage"),
             updated);
     }
 
@@ -171,9 +207,9 @@ public sealed class StatusStore : IDisposable
         return Effort(null, Environment.GetEnvironmentVariable("CLAUDE_CODE_EFFORT_LEVEL"), fromSettings);
     }
 
-    private static Limit? ReadLimit(JsonElement? el)
+    private static Limit? ReadLimit(JsonElement? el, string percentKey)
     {
-        if (Num(el, "used_percentage") is not { } pct) return null;
+        if (Num(el, percentKey) is not { } pct) return null;
 
         // Epoch seconds today; the user's script also takes an ISO time, so do we.
         DateTimeOffset? resets = null;

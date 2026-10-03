@@ -134,6 +134,9 @@ var doneA = new IslandNote(paneA, "api-refactor", NoteKind.Done);
 var doneB = new IslandNote(paneB, "docs-pass", NoteKind.Done);
 var errorB = new IslandNote(paneB, "docs-pass", NoteKind.Error);
 
+// A reserve warning only reports, like a Done: it blocks nothing, and needs-you outranks it.
+Check("a reserve note is not urgent", new IslandNote("5h", "5h at 82%", NoteKind.Reserve).Urgent, false);
+
 {
     var t = new IslandTrigger();
     Hold(t, desk, 0, 1000);

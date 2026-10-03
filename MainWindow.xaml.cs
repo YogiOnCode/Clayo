@@ -260,6 +260,11 @@ public partial class MainWindow : Window
     /// <summary>A pane went to Working (true) or out of it, closing included. The island peeks on its own for it.</summary>
     public event Action<TerminalPane, bool>? SessionWorking;
 
+    /// <summary>A limit went past the reserve set in Settings, once per limit window. The island listens.</summary>
+    public event Action<Meter>? ReserveCrossed;
+
+    private readonly ReserveWatch _reserve = new();
+
     public MainWindow(string folder, bool startSession)
     {
         InitializeComponent();
@@ -269,10 +274,15 @@ public partial class MainWindow : Window
             _settings = s;
             s.Save(ClayoSettings.DefaultPath);
             ShowStatusBar();
+            WarnReserve();
         };
         // Both fire on background threads, for any pane; only the active one's strip shows,
         // and the footer shows the newest limits whichever pane reported them.
-        _status.Changed += _ => Dispatcher.BeginInvoke(ShowStatusBar);
+        _status.Changed += _ => Dispatcher.BeginInvoke(() =>
+        {
+            ShowStatusBar();
+            WarnReserve();
+        });
         _git.Changed += (_, _) => Dispatcher.BeginInvoke(ShowStatusBar);
         _folder = folder;
         ShowFolder(folder);
@@ -291,7 +301,12 @@ public partial class MainWindow : Window
                 foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) _git.Refresh(pane.WorkingDirectory);
             };
             _gitPoll.Start();
-            _clock.Tick += (_, _) => { if (IsVisible) ShowStatusBar(); };
+            // The reserve is checked hidden too: a script's cached limits change between Claude's reports.
+            _clock.Tick += (_, _) =>
+            {
+                if (IsVisible) ShowStatusBar();
+                WarnReserve();
+            };
             _clock.Start();
             ShowStatusBar();
 
@@ -1065,8 +1080,17 @@ public partial class MainWindow : Window
         var limits = _status.Limits;
         HeadStrip.Show(_active?.SessionId is { } id
             ? StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
-            : null);
-        FootLimits.Show(StatusStrip.Footer(limits, _settings, now));
+            : null, _settings.Theme);
+        FootLimits.Show(StatusStrip.Footer(limits, _settings, now), _settings.Theme);
+    }
+
+    /// <summary>
+    /// Tells the island about a limit that has just gone past the reserve. Only a warning:
+    /// prompts are never held back.
+    /// </summary>
+    private void WarnReserve()
+    {
+        foreach (var m in _reserve.Crossed(_status.Limits, _settings, DateTimeOffset.Now)) ReserveCrossed?.Invoke(m);
     }
 
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
