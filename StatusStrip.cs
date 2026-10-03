@@ -8,11 +8,14 @@ public enum Band { Green, Yellow, Orange, Red }
 
 /// <summary>
 /// A percentage in the strip or the footer: its label, the numbers beside it (if any) and its
-/// tooltip. Stale is a limit past its reset that Claude has not reported on since.
+/// tooltip. Stale is a limit past its reset that Claude has not reported on since; Reserve is
+/// one at or past the threshold you set, which reads red whatever its band. Reset is a limit's
+/// time to its reset alone ("1h20m"), for the themes that word it their own way.
 /// </summary>
-public sealed record Meter(string Label, string? Detail, int Percent, string Tip, bool Stale = false)
+public sealed record Meter(string Label, string? Detail, int Percent, string Tip, bool Stale = false, bool Reserve = false,
+                          string? Reset = null)
 {
-    public Band Band => StatusStrip.BandFor(Percent);
+    public Band Band => Reserve ? Band.Red : StatusStrip.BandFor(Percent);
 }
 
 /// <summary>What the pane header strip shows for one session, in order. A null part is not shown.</summary>
@@ -21,7 +24,7 @@ public sealed record Strip(string? Model, GitStatus? Git, Meter? Context, string
 /// <summary>
 /// Turns what a session's status line was handed (StatusStore) and its folder's git state
 /// (GitInfo) into the strip's text, as design/settings/settings-prototype.html words it.
-/// Which theme draws it is the view's business.
+/// Which theme draws it (StatusTheme) is the view's business.
 /// </summary>
 public static class StatusStrip
 {
@@ -41,8 +44,8 @@ public static class StatusStrip
             settings.StatusBranch ? git : null,
             settings.StatusContext ? ContextMeter(status) : null,
             settings.StatusEffort ? status.Effort : null,
-            limitsHere && settings.StatusFiveHour && limits?.FiveHour is { } h5 ? LimitMeter(true, h5, now) : null,
-            limitsHere && settings.StatusSevenDay && limits?.SevenDay is { } d7 ? LimitMeter(false, d7, now) : null);
+            limitsHere && settings.StatusFiveHour && limits?.FiveHour is { } h5 ? LimitMeter(true, h5, now, ReserveFor(settings, true)) : null,
+            limitsHere && settings.StatusSevenDay && limits?.SevenDay is { } d7 ? LimitMeter(false, d7, now, ReserveFor(settings, false)) : null);
 
         return strip == new Strip(null, null, null, null, null, null) ? null : strip;
     }
@@ -59,12 +62,13 @@ public static class StatusStrip
     {
         var meters = new List<Meter>();
         if (!settings.StatusFooter || limits is null) return meters;
-        if (settings.StatusFiveHour && limits.FiveHour is { } h5) meters.Add(LimitMeter(true, h5, now));
-        if (settings.StatusSevenDay && limits.SevenDay is { } d7) meters.Add(LimitMeter(false, d7, now));
+        if (settings.StatusFiveHour && limits.FiveHour is { } h5) meters.Add(LimitMeter(true, h5, now, ReserveFor(settings, true)));
+        if (settings.StatusSevenDay && limits.SevenDay is { } d7) meters.Add(LimitMeter(false, d7, now, ReserveFor(settings, false)));
         return meters;
     }
 
-    public static Meter LimitMeter(bool fiveHour, Limit limit, DateTimeOffset now)
+    /// <summary>A reserveAt of 0 is no reserve on this limit.</summary>
+    public static Meter LimitMeter(bool fiveHour, Limit limit, DateTimeOffset now, int reserveAt = 0)
     {
         string name = fiveHour ? "5-hour" : "7-day", label = fiveHour ? "5h" : "7d";
         // Limits only change when Claude refreshes its status line, so past the reset the
@@ -74,9 +78,19 @@ public static class StatusStrip
                              $"{name} limit: reset since the last report, which said {limit.Percent}%", Stale: true);
 
         var reset = limit.ResetsAt is { } at ? ResetIn(at, now) : null;
-        var tip = $"{name} limit: {limit.Percent}% used" + (reset is null ? "" : $", resets in {reset}");
-        return new Meter(label, reset is null ? null : $"↻ {reset}", limit.Percent, tip);
+        bool past = PastReserve(limit, reserveAt, now);
+        var tip = $"{name} limit: {limit.Percent}% used" + (reset is null ? "" : $", resets in {reset}")
+                  + (past ? $". Past your {reserveAt}% reserve" : "");
+        return new Meter(label, reset is null ? null : $"↻ {reset}", limit.Percent, tip, Reserve: past, Reset: reset);
     }
+
+    /// <summary>The threshold watching this limit, or 0 when the reserve is off or not on it.</summary>
+    public static int ReserveFor(ClayoSettings s, bool fiveHour) =>
+        (fiveHour ? s.ReserveFiveHour : s.ReserveSevenDay) ? s.ReserveAt : 0;
+
+    /// <summary>A stale limit is the old window's, so it is past nothing.</summary>
+    public static bool PastReserve(Limit limit, int reserveAt, DateTimeOffset now) =>
+        reserveAt > 0 && limit.Percent >= reserveAt && !(limit.ResetsAt <= now);
 
     public static Band BandFor(int percent) => percent switch
     {
@@ -84,6 +98,17 @@ public static class StatusStrip
         >= 70 => Band.Orange,
         >= 50 => Band.Yellow,
         _ => Band.Green,
+    };
+
+    /// <summary>Effort as a step of five, low to max, for the themes that draw it as rising bars. -1 for one not on the scale.</summary>
+    public static int EffortStep(string effort) => effort switch
+    {
+        "low" => 0,
+        "medium" or "med" => 1,
+        "high" => 2,
+        "xhigh" => 3,
+        "max" => 4,
+        _ => -1,
     };
 
     /// <summary>As the user's script writes token counts (340k, 1M, 1.5M), with the design's capital M.</summary>
@@ -110,5 +135,26 @@ public static class StatusStrip
         if (left.Days > 0) return $"{left.Days}d{left.Hours}h";
         if (left.Hours > 0) return $"{left.Hours}h{left.Minutes:00}m";
         return $"{left.Minutes}m";
+    }
+}
+
+/// <summary>
+/// Which limits have just gone past the reserve, so the island says so once per window rather
+/// than on every status refresh. A limit's window is told apart by its reset time.
+/// </summary>
+public sealed class ReserveWatch
+{
+    private readonly HashSet<(bool FiveHour, DateTimeOffset? ResetsAt)> _warned = [];
+
+    public IReadOnlyList<Meter> Crossed(AccountLimits? limits, ClayoSettings settings, DateTimeOffset now)
+    {
+        var crossed = new List<Meter>();
+        foreach (var (fiveHour, limit) in new[] { (true, limits?.FiveHour), (false, limits?.SevenDay) })
+        {
+            int reserveAt = StatusStrip.ReserveFor(settings, fiveHour);
+            if (limit is not null && StatusStrip.PastReserve(limit, reserveAt, now) && _warned.Add((fiveHour, limit.ResetsAt)))
+                crossed.Add(StatusStrip.LimitMeter(fiveHour, limit, now, reserveAt));
+        }
+        return crossed;
     }
 }

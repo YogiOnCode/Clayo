@@ -7,16 +7,19 @@ namespace CcxShell.Core;
 /// </summary>
 public enum IslandState { Hidden, Compact, Peek, Notify, Drop }
 
-/// <summary>What a session wants you to know. NeedsYou and Error block the session, Done does not.</summary>
-public enum NoteKind { NeedsYou, Error, Done }
+/// <summary>
+/// What a session wants you to know. NeedsYou and Error block the session, Done does not.
+/// Reserve is the account's: a limit went past the reserve set in Settings.
+/// </summary>
+public enum NoteKind { NeedsYou, Error, Done, Reserve }
 
 /// <summary>
-/// One notification. Source is whatever identifies the session to the caller (the pane);
-/// the trigger only compares it, so it stays free of WPF.
+/// One notification. Source is whatever identifies the session to the caller (the pane), or
+/// the limit for a Reserve; the trigger only compares it, so it stays free of WPF.
 /// </summary>
 public sealed record IslandNote(object Source, string Name, NoteKind Kind)
 {
-    public bool Urgent => Kind != NoteKind.Done;
+    public bool Urgent => Kind is NoteKind.NeedsYou or NoteKind.Error;
 }
 
 /// <summary>A rectangle in physical pixels. Right and Bottom are exclusive, like a Win32 RECT.</summary>

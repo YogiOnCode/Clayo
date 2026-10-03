@@ -20,7 +20,28 @@ public partial class SettingsPane : UserControl
 
     private ClayoSettings _settings = new();
 
-    public SettingsPane() => InitializeComponent();
+    public SettingsPane()
+    {
+        InitializeComponent();
+        foreach (var theme in Enum.GetValues<StatusTheme>())
+            AddChoice(ThemeChoices, theme, theme.ToString());
+        foreach (var step in ClayoSettings.ReserveSteps)
+            AddChoice(ReserveSteps, step, step == 0 ? "Off" : $"{step}%");
+    }
+
+    private void AddChoice(Panel group, object value, string label)
+    {
+        var button = new RadioButton { Style = (Style)FindResource("Segment"), GroupName = group.Name, Tag = value, Content = label };
+        button.Click += Status_Click;
+        group.Children.Add(button);
+    }
+
+    private static T Chosen<T>(Panel group) => (T)group.Children.OfType<RadioButton>().First(b => b.IsChecked == true).Tag;
+
+    private static void Choose(Panel group, object value)
+    {
+        foreach (var b in group.Children.OfType<RadioButton>()) b.IsChecked = b.Tag.Equals(value);
+    }
 
     /// <summary>
     /// Brings the pages up to date each time Settings opens: the login entry can be changed
@@ -37,6 +58,10 @@ public partial class SettingsPane : UserControl
         EffortTick.IsChecked = settings.StatusEffort;
         FiveHourTick.IsChecked = settings.StatusFiveHour;
         SevenDayTick.IsChecked = settings.StatusSevenDay;
+        Choose(ThemeChoices, settings.Theme);
+        Choose(ReserveSteps, settings.ReserveAt);
+        ReserveFiveHourTick.IsChecked = settings.ReserveFiveHour;
+        ReserveSevenDayTick.IsChecked = settings.ReserveSevenDay;
         ShowStatusPage();
 
         var startup = LoginStartup.ForThisUser();
@@ -68,7 +93,11 @@ public partial class SettingsPane : UserControl
             ContextTick.IsChecked == true,
             EffortTick.IsChecked == true,
             FiveHourTick.IsChecked == true,
-            SevenDayTick.IsChecked == true);
+            SevenDayTick.IsChecked == true,
+            Chosen<int>(ReserveSteps),
+            ReserveFiveHourTick.IsChecked == true,
+            ReserveSevenDayTick.IsChecked == true,
+            Chosen<StatusTheme>(ThemeChoices));
         ShowStatusPage();
         SettingsChanged?.Invoke(_settings);
     }
@@ -98,6 +127,8 @@ public partial class SettingsPane : UserControl
         WhyFoot.Text = !foot && !head ? "Both placements are off"
                      : !foot ? "Shown in the pane header while the footer is off"
                      : "";
+        // With no reserve there is nothing for the ticks to watch.
+        ReserveFiveHourTick.IsEnabled = ReserveSevenDayTick.IsEnabled = _settings.ReserveAt > 0;
     }
 
     private void Nav_Checked(object sender, RoutedEventArgs e)

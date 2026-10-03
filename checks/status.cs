@@ -87,7 +87,8 @@ try
     Write(c, fresh.Replace("3f136615-e5ba-45b2-9766-6cc4d88ef5d9", c), at.AddMinutes(9));
     Write("broken", busy[..80], at.AddMinutes(10));
 
-    using var store = new StatusStore(dir, () => "medium");
+    // A usage cache that is not there: the real one must not leak into these checks.
+    using var store = new StatusStore(dir, () => "medium", Path.Combine(dir, "no-usage-cache.json"));
     store.Start();
     Check("each session's file is read", store.Get(a)?.ContextPercent, 34);
     Check("lookup ignores case", store.Get(b.ToUpperInvariant())?.FiveHour?.Percent, 77);
@@ -113,6 +114,52 @@ try
 finally
 {
     Directory.Delete(dir, recursive: true);
+}
+
+// The user's statusline.ps1 cache, for accounts whose Claude Code sends no rate_limits. A real
+// file's shape, trimmed: utilization rather than used_percentage, ISO reset times.
+const string cache = """
+{
+    "five_hour":  { "utilization":  2.0, "resets_at":  "2026-10-03T13:39:59.976874+00:00", "limit_dollars":  null },
+    "seven_day":  { "utilization":  16.0, "resets_at":  "2026-10-07T01:59:59.976900+00:00" },
+    "extra_usage": { "is_enabled": false }
+}
+""";
+{
+    var c = StatusStore.ParseUsageCache(cache, at)!;
+    Check("cache: 5h percent", c.FiveHour?.Percent, 2);
+    Check("cache: 5h reset", c.FiveHour?.ResetsAt, new DateTimeOffset(2026, 10, 3, 13, 39, 59, 976, TimeSpan.Zero).AddTicks(8740));
+    Check("cache: 7d percent", c.SevenDay?.Percent, 16);
+    Check("cache: updated is the file's time", c.Updated, at);
+    Check("cache: no limits in it is none", StatusStore.ParseUsageCache("""{"extra_usage":{}}""", at), null);
+    Check("cache: bad JSON is none", StatusStore.ParseUsageCache("{\"five_hour\":", at), null);
+}
+
+var dir2 = Path.Combine(Path.GetTempPath(), "clayo-check-cache-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(dir2);
+try
+{
+    var cachePath = Path.Combine(dir2, "usage.json");
+    using var store = new StatusStore(dir2, () => "medium", cachePath);
+    store.Start();
+    Check("no sessions and no cache is no limits", store.Limits, null);
+
+    File.WriteAllText(cachePath, cache);
+    File.SetLastWriteTimeUtc(cachePath, at);
+    Check("the cache fills in when Claude sends none", store.Limits?.SevenDay?.Percent, 16);
+
+    // Claude's own report, newer than the cache, wins; an older one does not.
+    var s = Path.Combine(dir2, "aaaaaaaa-0000-0000-0000-000000000000.json");
+    File.WriteAllText(s, busy.Replace("3f136615-e5ba-45b2-9766-6cc4d88ef5d9", "aaaaaaaa-0000-0000-0000-000000000000"));
+    File.SetLastWriteTimeUtc(s, at.AddMinutes(1));
+    store.Load(s);
+    Check("a newer report from Claude wins", store.Limits?.SevenDay?.Percent, 9);
+    File.SetLastWriteTimeUtc(cachePath, at.AddMinutes(2));
+    Check("a newer cache wins", store.Limits?.SevenDay?.Percent, 16);
+}
+finally
+{
+    Directory.Delete(dir2, recursive: true);
 }
 
 // Git: the same numbers as the user's script, binary files (-) skipped.

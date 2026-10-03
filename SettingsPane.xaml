@@ -141,6 +141,36 @@
       <Setter Property="TextElement.Foreground" Value="{StaticResource MutedAA}" />
     </Style>
 
+    <!-- One choice of a few side by side, as the theme or the reserve's threshold: clay when picked,
+         like a tick. The code that adds them sets their group. -->
+    <Style x:Key="Segment" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="6,0,0,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" CornerRadius="6" BorderThickness="1" Padding="10,4"
+                    BorderBrush="{StaticResource Hairline}" Background="Transparent">
+              <ContentPresenter HorizontalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1E232B" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#24D27556" />
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Clay}" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="LaterTag" TargetType="Border">
       <Setter Property="DockPanel.Dock" Value="Right" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -268,8 +298,23 @@
             <TextBlock Style="{StaticResource PageIntro}"
                        Text="Live session info drawn by Clayo itself, not the terminal. Colours follow how full each limit is." />
 
-            <!-- First under the intro, so no gap above it beyond the intro's own. -->
-            <TextBlock Style="{StaticResource GroupLabel}" Text="Where it shows" Margin="0,0,0,8" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <DockPanel Style="{StaticResource Row}">
+                <TextBlock Style="{StaticResource RowIcon}" Text="&#xE790;" />
+                <!-- Filled from StatusTheme. -->
+                <StackPanel x:Name="ThemeChoices" DockPanel.Dock="Right" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="20,0,0,0"
+                            AutomationProperties.Name="Theme" />
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Style="{StaticResource RowTitle}" Text="Theme" />
+                  <TextBlock Style="{StaticResource RowText}"
+                             Text="How the numbers are drawn, in the pane header and the sidebar footer." />
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Where it shows" />
             <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
                     Background="{StaticResource SurfaceBg}">
               <StackPanel>
@@ -335,6 +380,35 @@
                 <CheckBox x:Name="FiveHourTick" Grid.Row="3" Grid.Column="0" Style="{StaticResource Tick}" Content="5-hour limit" Click="Status_Click" />
                 <CheckBox x:Name="SevenDayTick" Grid.Row="3" Grid.Column="1" Style="{StaticResource Tick}" Content="7-day limit" Click="Status_Click" />
               </Grid>
+            </Border>
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Reserve" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                  <TextBlock Style="{StaticResource RowIcon}" Text="&#xE7BA;" />
+                  <!-- Filled from ClayoSettings.ReserveSteps. -->
+                  <StackPanel x:Name="ReserveSteps" DockPanel.Dock="Right" Orientation="Horizontal"
+                              VerticalAlignment="Center" Margin="20,0,0,0"
+                              AutomationProperties.Name="Warn at" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource RowTitle}" Text="Warn near a limit" />
+                    <TextBlock Style="{StaticResource RowText}"
+                               Text="Past this much of a limit, the island says so once and the limit turns red. Prompts still go through." />
+                  </StackPanel>
+                </DockPanel>
+                <Grid Margin="6,0,6,6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <CheckBox x:Name="ReserveFiveHourTick" Style="{StaticResource Tick}" Content="5-hour limit" Click="Status_Click" />
+                  <CheckBox x:Name="ReserveSevenDayTick" Grid.Column="1" Style="{StaticResource Tick}" Content="7-day limit" Click="Status_Click" />
+                </Grid>
+              </StackPanel>
             </Border>
           </StackPanel>
         </Grid>

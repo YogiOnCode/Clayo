@@ -88,6 +88,8 @@ public partial class IslandWindow : Window
             else _trigger.Resolve(pane);
         };
         _main.SessionWorking += (pane, working) => _trigger.SetWorking(pane, working);
+        // Keyed by the limit, so a newer warning about it replaces the older one.
+        _main.ReserveCrossed += m => _trigger.Notify(new IslandNote(m.Label, $"{m.Label} at {m.Percent}%", NoteKind.Reserve));
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -273,6 +275,7 @@ public partial class IslandWindow : Window
             {
                 NoteKind.NeedsYou => " · needs you",
                 NoteKind.Error => " · api error",
+                NoteKind.Reserve => " · past your reserve",
                 _ => " · finished",
             };
             Sub.Visibility = Visibility.Collapsed;
@@ -290,7 +293,7 @@ public partial class IslandWindow : Window
             case null when compact: Pose(MascotMove.Walk); break;
             case null: Pose(MascotMove.Wave, then: MascotMove.Idle); break;
             case NoteKind.NeedsYou: Pose(MascotMove.Alert, then: MascotMove.Talk); break;
-            case NoteKind.Error: Pose(MascotMove.Alert); break;
+            case NoteKind.Error or NoteKind.Reserve: Pose(MascotMove.Alert); break;
             case NoteKind.Done: Pose(MascotMove.Jump); break;
         }
 
