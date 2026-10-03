@@ -8,6 +8,12 @@ public sealed class SessionInfo
 {
     public required string SessionId { get; init; }
 
+    public AgentKind Agent { get; init; } = AgentKind.Claude;
+
+    /// <summary>The session this one was branched from, when the transcript says so (Codex). Claude's
+    /// forks keep no such link; Clayo records theirs itself (SessionParents).</summary>
+    public string? ParentId { get; init; }
+
     /// <summary>Working directory read from the transcript, not un-mangled from the folder name.</summary>
     public required string ProjectDir { get; init; }
 
@@ -207,7 +213,7 @@ public sealed class SessionStore : ISessionSource
                 cleanPrompt.Length > 0 ? Shorten(cleanPrompt, 120) : null);
     }
 
-    private static string? GetString(JsonElement el, string name) =>
+    internal static string? GetString(JsonElement el, string name) =>
         el.ValueKind == JsonValueKind.Object
         && el.TryGetProperty(name, out var v)
         && v.ValueKind == JsonValueKind.String
@@ -245,7 +251,7 @@ public sealed class SessionStore : ISessionSource
         return "";
     }
 
-    private static string Clean(string s)
+    internal static string Clean(string s)
     {
         s = s.Trim();
         // Slash commands and hook output arrive wrapped in pseudo-XML.
@@ -254,7 +260,7 @@ public sealed class SessionStore : ISessionSource
         return s;
     }
 
-    private static string Shorten(string s, int max)
+    internal static string Shorten(string s, int max)
     {
         s = string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return s.Length <= max ? s : s[..max].TrimEnd() + "…";
