@@ -6,8 +6,11 @@ namespace CcxShell.Core;
 /// <summary>How full a meter is, on the design's scale: green under 50, yellow to 69, orange to 89, red from 90.</summary>
 public enum Band { Green, Yellow, Orange, Red }
 
-/// <summary>A percentage in the strip: its label, the numbers beside it (if any) and its tooltip.</summary>
-public sealed record Meter(string Label, string? Detail, int Percent, string Tip)
+/// <summary>
+/// A percentage in the strip or the footer: its label, the numbers beside it (if any) and its
+/// tooltip. Stale is a limit past its reset that Claude has not reported on since.
+/// </summary>
+public sealed record Meter(string Label, string? Detail, int Percent, string Tip, bool Stale = false)
 {
     public Band Band => StatusStrip.BandFor(Percent);
 }
@@ -44,19 +47,35 @@ public static class StatusStrip
         return strip == new Strip(null, null, null, null, null, null) ? null : strip;
     }
 
-    public static Meter ContextMeter(SessionStatus s)
+    private static Meter ContextMeter(SessionStatus s)
     {
         string used = Tokens(s.ContextUsed), size = Tokens(s.ContextSize);
         return new Meter("ctx", $"{used}/{size}", s.ContextPercent,
                          $"Context: {used} of {size} tokens used ({s.ContextPercent}%)");
     }
 
+    /// <summary>The sidebar footer's limits, 5h then 7d: none while it is off or nothing has reported them.</summary>
+    public static IReadOnlyList<Meter> Footer(AccountLimits? limits, ClayoSettings settings, DateTimeOffset now)
+    {
+        var meters = new List<Meter>();
+        if (!settings.StatusFooter || limits is null) return meters;
+        if (settings.StatusFiveHour && limits.FiveHour is { } h5) meters.Add(LimitMeter(true, h5, now));
+        if (settings.StatusSevenDay && limits.SevenDay is { } d7) meters.Add(LimitMeter(false, d7, now));
+        return meters;
+    }
+
     public static Meter LimitMeter(bool fiveHour, Limit limit, DateTimeOffset now)
     {
+        string name = fiveHour ? "5-hour" : "7-day", label = fiveHour ? "5h" : "7d";
+        // Limits only change when Claude refreshes its status line, so past the reset the
+        // number is the old window's, not the current use.
+        if (limit.ResetsAt <= now)
+            return new Meter(label, null, limit.Percent,
+                             $"{name} limit: reset since the last report, which said {limit.Percent}%", Stale: true);
+
         var reset = limit.ResetsAt is { } at ? ResetIn(at, now) : null;
-        var tip = $"{(fiveHour ? "5-hour" : "7-day")} limit: {limit.Percent}% used"
-                  + (reset is null ? "" : $", resets in {reset}");
-        return new Meter(fiveHour ? "5h" : "7d", reset is null ? null : $"↻ {reset}", limit.Percent, tip);
+        var tip = $"{name} limit: {limit.Percent}% used" + (reset is null ? "" : $", resets in {reset}");
+        return new Meter(label, reset is null ? null : $"↻ {reset}", limit.Percent, tip);
     }
 
     public static Band BandFor(int percent) => percent switch

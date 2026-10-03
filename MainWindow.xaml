@@ -240,7 +240,10 @@
       <!-- Footer tray: a hairline and a darker band, so the actions read as apart from the list. -->
       <Border Grid.Row="4" Background="#171B21"
               BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0">
-      <DockPanel LastChildFill="False" Margin="14,12,14,14">
+      <StackPanel Margin="14,12,14,14">
+      <!-- The account's 5h and 7d limits, above the actions; gone while there are none to show. -->
+      <local:LimitsView x:Name="FootLimits" Margin="0,0,0,12" />
+      <DockPanel LastChildFill="False">
         <Button x:Name="NewButton" Content="New session" Tag="&#xE710;"
                 Style="{StaticResource AccentButton}"
                 ToolTip="Pick the folder to start in. Recent folders first."
@@ -325,6 +328,7 @@
           </Button.ContextMenu>
         </Button>
       </DockPanel>
+      </StackPanel>
       </Border>
     </Grid>
 

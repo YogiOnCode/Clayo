@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using CcxShell.Core;
 
@@ -57,15 +58,6 @@ public partial class SettingsPane : UserControl
         ShowLoginState();
     }
 
-    // A click anywhere on the row flips the switch, as a click on a label does. A click on
-    // the switch itself is the switch's own and must not count twice.
-    private void LoginRow_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (!LoginSwitch.IsEnabled || LoginSwitch.IsMouseOver) return;
-        LoginSwitch.IsChecked = LoginSwitch.IsChecked != true;
-        LoginSwitch_Click(LoginSwitch, e);
-    }
-
     private void Status_Click(object sender, RoutedEventArgs e)
     {
         _settings = new ClayoSettings(
@@ -81,17 +73,19 @@ public partial class SettingsPane : UserControl
         SettingsChanged?.Invoke(_settings);
     }
 
-    // As LoginRow_Click, for any row whose Tag is its switch.
+    // A click anywhere on a row whose Tag is its switch flips the switch, as a click on a
+    // label does, and runs the switch's own Click. A click on the switch itself is the
+    // switch's own and must not count twice.
     private void SwitchRow_Click(object sender, MouseButtonEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is not CheckBox sw || !sw.IsEnabled || sw.IsMouseOver) return;
         sw.IsChecked = sw.IsChecked != true;
-        Status_Click(sw, e);
+        sw.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, sw));
     }
 
     /// <summary>
-    /// The switches' states, which ticks still mean something, and the previews. A field
-    /// whose every placement is off keeps its tick but greys out, and says why.
+    /// The switches' states and which ticks still mean something. A field whose every
+    /// placement is off keeps its tick but greys out, and says why.
     /// </summary>
     private void ShowStatusPage()
     {
@@ -104,24 +98,7 @@ public partial class SettingsPane : UserControl
         WhyFoot.Text = !foot && !head ? "Both placements are off"
                      : !foot ? "Shown in the pane header while the footer is off"
                      : "";
-
-        var now = DateTimeOffset.Now;
-        var sample = Sample(now);
-        PreviewStrip.Show(StatusStrip.For(sample, SampleGit,
-            new AccountLimits(sample.FiveHour, sample.SevenDay, sample.Updated), _settings, now));
-        NumbersCardStrip.Show(new Strip(null, null, StatusStrip.ContextMeter(sample), null,
-            StatusStrip.LimitMeter(true, sample.FiveHour!, now), null), leadRule: false);
     }
-
-    // The design's sample session, so the preview shows every field whatever is open. The
-    // half minute keeps the countdowns from reading a minute short.
-    private static readonly GitStatus SampleGit = new("feature/upgrade-clayo-v1", 12, 3);
-
-    private static SessionStatus Sample(DateTimeOffset now) => new(
-        "00000000-0000-0000-0000-000000000000", "Opus 5.5 (1M context)", null,
-        340_000, 1_000_000, 34, "xhigh",
-        new Limit(62, now + new TimeSpan(1, 20, 30)), new Limit(14, now + new TimeSpan(4, 10, 0, 30)),
-        now.UtcDateTime);
 
     private void Nav_Checked(object sender, RoutedEventArgs e)
     {

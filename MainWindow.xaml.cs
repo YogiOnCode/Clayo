@@ -229,11 +229,14 @@ public partial class MainWindow : Window
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
-    // What each pane's status line was handed, and its folder's git state, for the header strip.
+    // What each pane's status line was handed, and its folder's git state, for the header strip
+    // and the footer's limits.
     private readonly StatusStore _status = new();
     private readonly GitInfo _git = new(TimeSpan.FromSeconds(3));
     private ClayoSettings _settings = ClayoSettings.Load(ClayoSettings.DefaultPath);
     private readonly System.Windows.Threading.DispatcherTimer _gitPoll = new() { Interval = TimeSpan.FromSeconds(3) };
+    // The reset countdowns run down, and limits go stale, between Claude's reports.
+    private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(30) };
 
     // Panes stay alive when you switch away, so switching back is instant and the
     // process keeps working in the background. PaneHost.Children is the set of them.
@@ -265,11 +268,12 @@ public partial class MainWindow : Window
         {
             _settings = s;
             s.Save(ClayoSettings.DefaultPath);
-            ShowStrip();
+            ShowStatusBar();
         };
-        // Both fire on background threads, for any pane; only the active one's strip shows.
-        _status.Changed += _ => Dispatcher.BeginInvoke(ShowStrip);
-        _git.Changed += (_, _) => Dispatcher.BeginInvoke(ShowStrip);
+        // Both fire on background threads, for any pane; only the active one's strip shows,
+        // and the footer shows the newest limits whichever pane reported them.
+        _status.Changed += _ => Dispatcher.BeginInvoke(ShowStatusBar);
+        _git.Changed += (_, _) => Dispatcher.BeginInvoke(ShowStatusBar);
         _folder = folder;
         ShowFolder(folder);
 
@@ -287,6 +291,9 @@ public partial class MainWindow : Window
                 foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) _git.Refresh(pane.WorkingDirectory);
             };
             _gitPoll.Start();
+            _clock.Tick += (_, _) => { if (IsVisible) ShowStatusBar(); };
+            _clock.Start();
+            ShowStatusBar();
 
             // Opening Clayo in a folder should land you in a live session, not an
             // empty pane. Same thing the Explorer handoff does in AdoptFolder.
@@ -888,7 +895,7 @@ public partial class MainWindow : Window
         else
         {
             PaneTitle.Text = "";
-            ShowStrip();
+            ShowStatusBar();
             ForkButton.IsEnabled = false;
             AttachButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
@@ -1040,7 +1047,7 @@ public partial class MainWindow : Window
         PaintStatus(pane.Status);
         // Read now rather than on the next poll, so the branch shows as the pane does.
         _git.Refresh(pane.WorkingDirectory);
-        ShowStrip();
+        ShowStatusBar();
         pane.FocusTerminal();
     }
 
@@ -1048,14 +1055,19 @@ public partial class MainWindow : Window
         StatusDot.Fill = (Brush)FindResource(SessionRow.BrushKeyFor(status));
 
     /// <summary>
-    /// The active pane's strip. A pane Claude has not reported on yet, or none at all, shows
-    /// an empty strip, not zeros.
+    /// The active pane's strip and the footer's limits. A pane Claude has not reported on yet,
+    /// or none at all, shows an empty strip, not zeros; the limits are the account's, so they
+    /// show whichever pane is open.
     /// </summary>
-    private void ShowStrip() => HeadStrip.Show(
-        _active?.SessionId is { } id
-            ? StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), _status.Limits,
-                              _settings, DateTimeOffset.Now)
+    private void ShowStatusBar()
+    {
+        var now = DateTimeOffset.Now;
+        var limits = _status.Limits;
+        HeadStrip.Show(_active?.SessionId is { } id
+            ? StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
             : null);
+        FootLimits.Show(StatusStrip.Footer(limits, _settings, now));
+    }
 
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
 
@@ -1159,6 +1171,7 @@ public partial class MainWindow : Window
         _store.StopWatching();
         _status.Dispose();
         _gitPoll.Stop();
+        _clock.Stop();
         foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.Close();
         base.OnClosing(e);
     }

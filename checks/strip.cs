@@ -79,6 +79,29 @@ Check("reset passed", StatusStrip.ResetIn(now.AddMinutes(-1), now), "now");
         StatusStrip.LimitMeter(true, new Limit(5, null), now).Detail, null);
 }
 
+// The sidebar footer's limits (step 4).
+{
+    var f = StatusStrip.Footer(limits, all, now);
+    Check("footer shows 5h then 7d", string.Join(" ", f.Select(m => m.Label)), "5h 7d");
+    Check("footer 5h reset", f[0].Detail, "↻ 1h20m");
+    Check("footer 7d band", f[1].Band, Band.Green);
+    Check("a current limit is not stale", f[0].Stale, false);
+    Check("footer off shows none there", StatusStrip.Footer(limits, all with { StatusFooter = false }, now).Count, 0);
+    Check("no limits reported yet shows no footer", StatusStrip.Footer(null, all, now).Count, 0);
+    Check("an unticked limit stays out of the footer",
+        StatusStrip.Footer(limits, all with { StatusFiveHour = false }, now).Single().Label, "7d");
+    Check("the header off leaves the footer as it is", StatusStrip.Footer(limits, all with { StatusHeader = false }, now).Count, 2);
+
+    // Past its reset time the number belongs to the old window until Claude reports again.
+    var later = now.AddHours(2);
+    var stale = StatusStrip.Footer(limits, all, later);
+    Check("a limit past its reset is stale", stale[0].Stale, true);
+    Check("a stale limit says so", stale[0].Tip, "5-hour limit: reset since the last report, which said 62%");
+    Check("a stale limit has no countdown", stale[0].Detail, null);
+    Check("the 7d limit is still current then", stale[1].Stale, false);
+    Check("the countdown ticks without new data", StatusStrip.Footer(limits, all, now.AddMinutes(30))[0].Detail, "↻ 50m");
+}
+
 Check("near limit: context orange", StatusStrip.For(status with { ContextUsed = 810_000, ContextPercent = 81 },
     git, limits, all, now)!.Context?.Band, Band.Orange);
 
