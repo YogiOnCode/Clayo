@@ -33,13 +33,11 @@ public sealed class ClaudeAgent(Func<string> exe, ISessionSource sessions, Func<
     /// <summary>Single quotes throughout, because the shell is PowerShell.</summary>
     private string Command(string args)
     {
-        var command = $"& {Quote(exe())} {args}";
+        var command = $"& {AgentHelper.Quote(exe())} {args}";
 
         // Clayo's status line relay, for this pane only. The user's own settings.json is
         // never written.
-        if (relaySettings() is { } settings) command += $" --settings {Quote(settings)}";
+        if (relaySettings() is { } settings) command += $" --settings {AgentHelper.Quote(settings)}";
         return command;
     }
-
-    private static string Quote(string s) => $"'{s.Replace("'", "''")}'";
 }

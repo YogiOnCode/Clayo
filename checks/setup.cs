@@ -73,6 +73,32 @@ Check("none: with node", SetupScreen.From(claudeMissing, codexMissing, true, tru
 Check("none: can't open", v.CanOpen, false);
 Check("none: options greyed", v.OptionsEnabled, false);
 
+// #installing and signing in: only that row changes, nothing can be done meanwhile.
+v = SetupScreen.Installing(SetupScreen.From(claudeMissing, codexMissing, true, true), AgentKind.Claude);
+Check("installing: title", v.Title, "Installing Claude Code");
+Check("installing: claude row", v.Claude, new AgentRowView(AgentKind.Claude, AgentRowState.Installing, "Running the official installer…"));
+Check("installing: codex row as it was", v.Codex.State, AgentRowState.Missing);
+Check("installing: can't open", v.CanOpen, false);
+Check("installing: options greyed", v.OptionsEnabled, false);
+v = SetupScreen.Installing(SetupScreen.From(claudeReady, codexMissing, true, true), AgentKind.Codex);
+Check("installing codex beside a ready claude: still can't open meanwhile", v.CanOpen, false);
+Check("installing codex: the npm line", v.Codex.Meta, "Running npm install -g @openai/codex…");
+v = SetupScreen.SigningIn(SetupScreen.From(claudeMissing, codexSignIn, true, true), AgentKind.Codex);
+Check("signing in: title", v.Title, "Signing in to Codex");
+Check("signing in: state", v.Codex.State, AgentRowState.SigningIn);
+
+// What Install and Sign in run.
+Check("install claude", AgentHelper.InstallCommand(claudeMissing), "irm https://claude.ai/install.ps1 | iex");
+Check("install codex through its npm", AgentHelper.InstallCommand(codexMissing with { Npm = @"C:\Program Files\nodejs\npm.cmd" }),
+    @"& 'C:\Program Files\nodejs\npm.cmd' install -g @openai/codex");
+Check("no npm, no codex install", AgentHelper.InstallCommand(codexNoNode), null);
+Check("sign in to claude", AgentHelper.SignInCommand(claudeSignIn), @"& 'C:\c.exe' auth login");
+Check("sign in to codex", AgentHelper.SignInCommand(codexSignIn), @"& 'C:\x.cmd' login");
+Check("nothing to sign in to", AgentHelper.SignInCommand(claudeMissing), null);
+var window = AgentHelper.Window("x");
+Check("a visible PowerShell window", (window.FileName, window.UseShellExecute, window.CreateNoWindow), ("powershell.exe", false, false));
+Check("that waits before closing", window.ArgumentList[^1], "x; Read-Host 'Done. Press Enter to close'");
+
 // Small things
 Check("one session, one project", SetupScreen.From(claudeReady with { Sessions = 1, Projects = 1 }, codexMissing, true, true).Claude.Meta, "v2.1.287 · 1 session in 1 project");
 Check("no sessions yet", SetupScreen.From(claudeReady with { Sessions = 0, Projects = 0 }, codexMissing, true, true).Claude.Meta, "v2.1.287 · No sessions yet");

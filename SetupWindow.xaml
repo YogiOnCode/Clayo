@@ -106,11 +106,10 @@
                      Text="Starts hidden; the island is ready at the top of the screen." />
         </StackPanel>
       </CheckBox>
-      <!-- Step 4 makes this work (UserPath). -->
-      <CheckBox x:Name="PathTick" Style="{StaticResource Tick}" Margin="-10,4,0,-8" IsChecked="True" IsEnabled="False">
+      <CheckBox x:Name="PathTick" Style="{StaticResource Tick}" Margin="-10,4,0,-8">
         <StackPanel>
           <TextBlock Style="{StaticResource OptionTitle}" Text="Add clayo to my PATH" />
-          <TextBlock Style="{StaticResource OptionText}">
+          <TextBlock x:Name="PathText" Style="{StaticResource OptionText}">
             Type <Run FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextPrimary}">clayo</Run> in any folder to open a session there.
           </TextBlock>
         </StackPanel>
