@@ -34,6 +34,15 @@ public sealed class SessionInfo
     public string? LastPrompt { get; set; }
 
     public DateTime LastActivity { get; set; }
+
+    /// <summary>When the session began, from session_meta (Codex only). Binds a pane Clayo started to it.</summary>
+    public DateTime Started { get; init; }
+
+    /// <summary>Codex only: where the last turn stands, from the transcript.</summary>
+    public TurnState? Turn { get; init; }
+
+    /// <summary>Codex only: what the pane's strip shows, read from the transcript (Claude's comes from StatusStore).</summary>
+    public SessionStatus? Status { get; init; }
 }
 
 /// <summary>

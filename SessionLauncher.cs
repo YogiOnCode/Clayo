@@ -18,7 +18,8 @@ public sealed record LaunchPlan(
     string ShellCommandLine,
     string WorkingDirectory,
     string AgentCommand,
-    string? ExpectedSessionId);
+    string? ExpectedSessionId,
+    AgentKind Agent);
 
 public static class SessionLauncher
 {
@@ -84,7 +85,7 @@ public static class SessionLauncher
         // Resume allocates nothing — the id already exists, and it is the one the pane
         // has to be keyed on, or the sidebar row for it never learns it is open.
         return new LaunchPlan(ResolveShell(), workingDirectory, command,
-            mode == LaunchMode.Resume ? sessionId : newId);
+            mode == LaunchMode.Resume ? sessionId : newId, agent.Kind);
     }
 
     /// <summary>The first PATH folder holding exe. AgentDetector passes its own PATH.</summary>
