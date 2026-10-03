@@ -295,7 +295,7 @@ public partial class TerminalPane : UserControl
             if (_typedCommand) return;
             _typedCommand = true;
             _typedAt = DateTime.UtcNow;
-            _pty.Write(_plan.ClaudeCommand + "\r");
+            _pty.Write(_plan.AgentCommand + "\r");
         };
         delay.Start();
     }

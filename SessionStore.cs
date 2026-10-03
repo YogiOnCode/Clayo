@@ -34,7 +34,7 @@ public sealed class SessionInfo
 /// Reads Claude Code transcripts from %USERPROFILE%\.claude\projects and keeps the list fresh.
 /// Never writes into that tree.
 /// </summary>
-public sealed class SessionStore
+public sealed class SessionStore : ISessionSource
 {
     private readonly string _root;
     private readonly Dictionary<string, (long size, DateTime mtime, SessionInfo info)> _cache = new(StringComparer.OrdinalIgnoreCase);

@@ -18,6 +18,9 @@ public partial class SettingsPane : UserControl
     /// <summary>A status bar option changed. MainWindow saves it and redraws the header.</summary>
     public event Action<ClayoSettings>? SettingsChanged;
 
+    /// <summary>Agents was picked. MainWindow opens the setup window.</summary>
+    public event Action? SetupRequested;
+
     private ClayoSettings _settings = new();
 
     public SettingsPane()
@@ -85,19 +88,22 @@ public partial class SettingsPane : UserControl
 
     private void Status_Click(object sender, RoutedEventArgs e)
     {
-        _settings = new ClayoSettings(
-            HeaderSwitch.IsChecked == true,
-            FooterSwitch.IsChecked == true,
-            ModelTick.IsChecked == true,
-            BranchTick.IsChecked == true,
-            ContextTick.IsChecked == true,
-            EffortTick.IsChecked == true,
-            FiveHourTick.IsChecked == true,
-            SevenDayTick.IsChecked == true,
-            Chosen<int>(ReserveSteps),
-            ReserveFiveHourTick.IsChecked == true,
-            ReserveSevenDayTick.IsChecked == true,
-            Chosen<StatusTheme>(ThemeChoices));
+        // With, so what the setup window chose is kept.
+        _settings = _settings with
+        {
+            StatusHeader = HeaderSwitch.IsChecked == true,
+            StatusFooter = FooterSwitch.IsChecked == true,
+            StatusModel = ModelTick.IsChecked == true,
+            StatusBranch = BranchTick.IsChecked == true,
+            StatusContext = ContextTick.IsChecked == true,
+            StatusEffort = EffortTick.IsChecked == true,
+            StatusFiveHour = FiveHourTick.IsChecked == true,
+            StatusSevenDay = SevenDayTick.IsChecked == true,
+            ReserveAt = Chosen<int>(ReserveSteps),
+            ReserveFiveHour = ReserveFiveHourTick.IsChecked == true,
+            ReserveSevenDay = ReserveSevenDayTick.IsChecked == true,
+            Theme = Chosen<StatusTheme>(ThemeChoices)
+        };
         ShowStatusPage();
         SettingsChanged?.Invoke(_settings);
     }
@@ -137,6 +143,13 @@ public partial class SettingsPane : UserControl
         if (PageGeneral is null || PageStatus is null) return;
         PageGeneral.Visibility = NavGeneral.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Opens setup, then puts the check back on the page still showing.</summary>
+    private void Agents_Checked(object sender, RoutedEventArgs e)
+    {
+        (PageStatus.IsVisible ? NavStatus : NavGeneral).IsChecked = true;
+        SetupRequested?.Invoke();
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();

@@ -17,7 +17,7 @@ public enum LaunchMode
 public sealed record LaunchPlan(
     string ShellCommandLine,
     string WorkingDirectory,
-    string ClaudeCommand,
+    string AgentCommand,
     string? ExpectedSessionId);
 
 public static class SessionLauncher
@@ -61,53 +61,36 @@ public static class SessionLauncher
         }
     }
 
-    public static LaunchPlan Plan(LaunchMode mode, string workingDirectory, string? sessionId = null)
+    public static LaunchPlan Plan(IAgent agent, LaunchMode mode, string workingDirectory, string? sessionId = null)
     {
-        string command;
-        string? expectedId = null;
+        if (mode != LaunchMode.New && string.IsNullOrWhiteSpace(sessionId))
+            throw new ArgumentException($"{mode} needs a session id.", nameof(sessionId));
 
-        switch (mode)
+        // Allocate the id up front when the agent lets us, rather than letting it pick one.
+        // Without it a brand-new pane has nothing to key on until its transcript appears on
+        // disk, so it cannot be renamed, tracked, or told apart from another new pane. For a
+        // fork it is the whole trick: we can draw the branch in the sidebar immediately
+        // instead of scraping stdout for the new id.
+        var newId = agent.KnowsIdUpfront && mode != LaunchMode.Resume ? Guid.NewGuid().ToString() : null;
+
+        var command = mode switch
         {
-            case LaunchMode.New:
-                // Allocate the id up front rather than letting claude pick one. Without it a
-                // brand-new pane has nothing to key on until its transcript appears on disk,
-                // so it cannot be renamed, tracked, or told apart from another new pane.
-                expectedId = Guid.NewGuid().ToString();
-                command = $"claude --session-id {expectedId}";
-                break;
-
-            case LaunchMode.Resume:
-                if (string.IsNullOrWhiteSpace(sessionId))
-                    throw new ArgumentException("Resume needs a session id.", nameof(sessionId));
-                command = $"claude --resume {sessionId}";
-                break;
-
-            case LaunchMode.Fork:
-                if (string.IsNullOrWhiteSpace(sessionId))
-                    throw new ArgumentException("Fork needs a parent session id.", nameof(sessionId));
-                // Pre-allocating the child id is the whole trick: we can draw the branch in
-                // the sidebar immediately instead of scraping stdout for the new id.
-                expectedId = Guid.NewGuid().ToString();
-                command = $"claude --resume {sessionId} --fork-session --session-id {expectedId}";
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(mode));
-        }
-
-        // Clayo's status line relay, for this pane only (see StatusRelay). The user's own
-        // settings.json is never written. Single quotes, because the shell is PowerShell.
-        if (Environment.ProcessPath is { } exe && StatusRelay.WriteSettings(exe) is { } settings)
-            command += $" --settings '{settings.Replace("'", "''")}'";
+            LaunchMode.New => agent.NewCommand(newId),
+            LaunchMode.Resume => agent.ResumeCommand(sessionId!),
+            LaunchMode.Fork => agent.ForkCommand(sessionId!, newId),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode))
+        };
 
         // Resume allocates nothing — the id already exists, and it is the one the pane
         // has to be keyed on, or the sidebar row for it never learns it is open.
-        return new LaunchPlan(ResolveShell(), workingDirectory, command, expectedId ?? sessionId);
+        return new LaunchPlan(ResolveShell(), workingDirectory, command,
+            mode == LaunchMode.Resume ? sessionId : newId);
     }
 
-    private static string? FindOnPath(string exe)
+    /// <summary>The first PATH folder holding exe. AgentDetector passes its own PATH.</summary>
+    internal static string? FindOnPath(string exe, string? path = null)
     {
-        var path = Environment.GetEnvironmentVariable("PATH");
+        path ??= Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrEmpty(path)) return null;
 
         foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))

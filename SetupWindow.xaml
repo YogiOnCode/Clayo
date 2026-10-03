@@ -1,0 +1,133 @@
+<Window x:Class="CcxShell.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:CcxShell"
+        xmlns:ui="clr-namespace:CcxShell.UI"
+        Title="Clayo setup"
+        SizeToContent="WidthAndHeight"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource TerminalBg}"
+        Foreground="{StaticResource TextPrimary}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="14"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+  <!-- design/setup/setup-prototype.html. The prototype's 36 px title bar is the system's dark
+       caption here, as for the main window, so the content is the 760 x 524 below it. -->
+
+  <Window.Resources>
+    <FontFamily x:Key="Display">Segoe UI Variable Display, Segoe UI</FontFamily>
+
+    <!-- New sessions use: one of three, clay-tinted when picked. -->
+    <Style x:Key="Pick" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="DefaultAgent" />
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" Height="28" Padding="12,0" CornerRadius="6" Background="Transparent">
+              <ContentPresenter VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1E232B" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#2A221F" />
+                <Setter Property="Foreground" Value="#E39A7E" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="OptionTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="#E6E9EE" />
+    </Style>
+    <Style x:Key="OptionText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+    </Style>
+  </Window.Resources>
+
+  <!-- The padding is the prototype's. -->
+  <Border Width="760" Height="524" Padding="36,28,36,22">
+  <DockPanel LastChildFill="False">
+
+    <!-- The mascot and headline. The island's Voxel 3D mascot, not the prototype's flat
+         logo, with the island's moves for what setup is doing (SetupWindow.Show). -->
+    <DockPanel DockPanel.Dock="Top">
+      <ui:ClayoMascot x:Name="Mascot" Width="44" Height="44" />
+      <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+        <TextBlock x:Name="Headline" FontFamily="{StaticResource Display}" FontSize="21"
+                   FontWeight="SemiBold" Foreground="#E6E9EE" />
+        <TextBlock x:Name="Intro" Foreground="{StaticResource MutedAA}" Margin="0,2,0,0"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+    </DockPanel>
+
+    <!-- The agents -->
+    <Border DockPanel.Dock="Top" Margin="0,20,0,0" Background="{StaticResource SurfaceBg}"
+            BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="10">
+      <StackPanel>
+        <local:AgentRow x:Name="ClaudeRow" />
+        <Rectangle Height="1" Fill="{StaticResource Hairline}" />
+        <local:AgentRow x:Name="CodexRow" />
+      </StackPanel>
+    </Border>
+
+    <!-- Options -->
+    <StackPanel x:Name="Options" DockPanel.Dock="Top" Margin="0,20,0,0">
+      <StackPanel x:Name="Picker" Orientation="Horizontal" Margin="0,0,0,12">
+        <TextBlock Text="New sessions use" Style="{StaticResource OptionTitle}" VerticalAlignment="Center" />
+        <Border Margin="12,0,0,0" Padding="2" CornerRadius="8" Background="{StaticResource SurfaceBg}"
+                BorderBrush="{StaticResource Hairline}" BorderThickness="1">
+          <StackPanel Orientation="Horizontal" AutomationProperties.Name="New sessions use">
+            <RadioButton x:Name="PickClaude" Style="{StaticResource Pick}" Content="Claude Code" />
+            <RadioButton x:Name="PickCodex" Style="{StaticResource Pick}" Content="Codex" />
+            <RadioButton x:Name="PickAsk" Style="{StaticResource Pick}" Content="Ask each time" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- The Tick style's own padding is pulled back so the boxes line up with the text above. -->
+      <CheckBox x:Name="LoginTick" Style="{StaticResource Tick}" Margin="-10,-8,0,-8" Click="LoginTick_Click">
+        <StackPanel>
+          <TextBlock Style="{StaticResource OptionTitle}" Text="Start Clayo when I sign in" />
+          <TextBlock x:Name="LoginText" Style="{StaticResource OptionText}"
+                     Text="Starts hidden; the island is ready at the top of the screen." />
+        </StackPanel>
+      </CheckBox>
+      <!-- Step 4 makes this work (UserPath). -->
+      <CheckBox x:Name="PathTick" Style="{StaticResource Tick}" Margin="-10,4,0,-8" IsChecked="True" IsEnabled="False">
+        <StackPanel>
+          <TextBlock Style="{StaticResource OptionTitle}" Text="Add clayo to my PATH" />
+          <TextBlock Style="{StaticResource OptionText}">
+            Type <Run FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource TextPrimary}">clayo</Run> in any folder to open a session there.
+          </TextBlock>
+        </StackPanel>
+      </CheckBox>
+    </StackPanel>
+
+    <!-- Footer -->
+    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0" Padding="0,14,0,0">
+      <DockPanel>
+        <Button x:Name="CheckAgain" Content="Check again" Height="36" FontSize="13" Padding="14,0"
+                Style="{StaticResource GhostButton}" BorderBrush="#3B4453" Click="CheckAgain_Click" />
+        <Button x:Name="Open" DockPanel.Dock="Right" Content="Open Clayo" Style="{StaticResource ClayButton}"
+                IsDefault="True" Click="Open_Click" />
+        <TextBlock x:Name="Note" Margin="12,0" FontSize="12" Foreground="{StaticResource MutedAA}"
+                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+      </DockPanel>
+    </Border>
+  </DockPanel>
+  </Border>
+</Window>
