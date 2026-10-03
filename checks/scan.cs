@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using System.Text;
 using CcxShell.Core;
 using CcxShell.UI;

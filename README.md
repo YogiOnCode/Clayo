@@ -55,7 +55,7 @@ Windows 11) and [Claude Code](https://docs.claude.com/en/docs/claude-code) on yo
 ```powershell
 git clone https://github.com/YogiOnCode/Clayo.git
 cd Clayo
-dotnet publish -c Release -r win-x64 --self-contained false -o $env:USERPROFILE\.local\clayo
+dotnet publish src/Clayo -c Release -r win-x64 --self-contained false -o $env:USERPROFILE\.local\clayo
 ```
 
 Add that folder to your user `PATH`:
@@ -108,4 +108,4 @@ Not affiliated with Anthropic. Clayo reads `~/.claude` and never writes to it. W
 keep files is listed in [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works#where-clayo-keeps-its-files).
 
 MIT licensed, see [LICENSE](LICENSE). Bundles [xterm.js](https://github.com/xtermjs/xterm.js)
-and its fit and WebGL addons (MIT, see `Assets/xterm/LICENSE.xterm`).
+and its fit and WebGL addons (MIT, see `src/Clayo/Assets/xterm/LICENSE.xterm`).
