@@ -229,9 +229,10 @@ public partial class MainWindow : Window
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
-    // What each pane's status line was handed, and its folder's git state. Nothing shows them yet.
+    // What each pane's status line was handed, and its folder's git state, for the header strip.
     private readonly StatusStore _status = new();
     private readonly GitInfo _git = new(TimeSpan.FromSeconds(3));
+    private ClayoSettings _settings = ClayoSettings.Load(ClayoSettings.DefaultPath);
     private readonly System.Windows.Threading.DispatcherTimer _gitPoll = new() { Interval = TimeSpan.FromSeconds(3) };
 
     // Panes stay alive when you switch away, so switching back is instant and the
@@ -259,6 +260,16 @@ public partial class MainWindow : Window
     public MainWindow(string folder, bool startSession)
     {
         InitializeComponent();
+        SettingsView.CloseRequested += HideSettings;
+        SettingsView.SettingsChanged += s =>
+        {
+            _settings = s;
+            s.Save(ClayoSettings.DefaultPath);
+            ShowStrip();
+        };
+        // Both fire on background threads, for any pane; only the active one's strip shows.
+        _status.Changed += _ => Dispatcher.BeginInvoke(ShowStrip);
+        _git.Changed += (_, _) => Dispatcher.BeginInvoke(ShowStrip);
         _folder = folder;
         ShowFolder(folder);
 
@@ -877,6 +888,7 @@ public partial class MainWindow : Window
         else
         {
             PaneTitle.Text = "";
+            ShowStrip();
             ForkButton.IsEnabled = false;
             AttachButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
@@ -1014,6 +1026,8 @@ public partial class MainWindow : Window
 
     private void Activate(TerminalPane pane, string title)
     {
+        // Picking a session, or starting one, is leaving Settings.
+        if (SettingsView.IsVisible) HideSettings();
         foreach (UIElement child in PaneHost.Children)
             child.Visibility = ReferenceEquals(child, pane) ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1024,11 +1038,24 @@ public partial class MainWindow : Window
         CloseButton.IsEnabled = true;
         EmptyState.Visibility = Visibility.Collapsed;
         PaintStatus(pane.Status);
+        // Read now rather than on the next poll, so the branch shows as the pane does.
+        _git.Refresh(pane.WorkingDirectory);
+        ShowStrip();
         pane.FocusTerminal();
     }
 
     private void PaintStatus(PaneStatus status) =>
         StatusDot.Fill = (Brush)FindResource(SessionRow.BrushKeyFor(status));
+
+    /// <summary>
+    /// The active pane's strip. A pane Claude has not reported on yet, or none at all, shows
+    /// an empty strip, not zeros.
+    /// </summary>
+    private void ShowStrip() => HeadStrip.Show(
+        _active?.SessionId is { } id
+            ? StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), _status.Limits,
+                              _settings, DateTimeOffset.Now)
+            : null);
 
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
 
@@ -1071,6 +1098,47 @@ public partial class MainWindow : Window
     }
 
     private void SettingsMenu_Opened(object sender, RoutedEventArgs e) => ShowLoginState(SettingsLoginItem);
+
+    private void OpenSettings_Click(object sender, RoutedEventArgs e) => ShowSettings();
+
+    /// <summary>
+    /// Settings takes the terminal side's place. The terminals are WebView2 windows that no WPF
+    /// element can draw over, so they are hidden meanwhile; their sessions keep running.
+    /// </summary>
+    private void ShowSettings()
+    {
+        if (SettingsView.IsVisible) return;
+        SettingsView.Refresh(_settings);
+        PaneHost.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Visible;
+        SettingsView.Focus();
+    }
+
+    /// <summary>Back to the session you were on, or to the empty state if there is none.</summary>
+    private void HideSettings()
+    {
+        SettingsView.Visibility = Visibility.Collapsed;
+        PaneHost.Visibility = Visibility.Visible;
+        _active?.FocusTerminal();
+    }
+
+    // Ctrl+, opens Settings, Esc closes it. Previewed at the window, so they work wherever the
+    // focus is in Clayo's own controls. A terminal keeps its keys: inside one, Esc belongs to
+    // Claude, and Ctrl+, reaches only xterm.
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        if (e.Key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            ShowSettings();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && SettingsView.IsVisible)
+        {
+            HideSettings();
+            e.Handled = true;
+        }
+        base.OnPreviewKeyDown(e);
+    }
 
     private void SettingsLogin_Click(object sender, RoutedEventArgs e) => ApplyLoginState(SettingsLoginItem);
 

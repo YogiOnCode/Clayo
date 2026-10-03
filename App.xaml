@@ -16,6 +16,8 @@
     <SolidColorBrush x:Key="TextPrimary" Color="#C8CDD6" />
     <SolidColorBrush x:Key="TextMuted"   Color="#7A828F" />
     <SolidColorBrush x:Key="TextFaint"   Color="#565E6B" />
+    <!-- TextMuted is 4.2:1 on SurfaceBg; settings and status strip text a step brighter clears 4.5:1. -->
+    <SolidColorBrush x:Key="MutedAA"     Color="#8C94A1" />
     <SolidColorBrush x:Key="Working"     Color="#D4A24C" />
     <!-- Conventional reading, so the sidebar needs no legend: amber is in progress,
          blue is the ball in your court, green finished cleanly, red failed. Nothing
@@ -166,6 +168,135 @@
         </Setter.Value>
       </Setter>
     </Style>
+
+    <!-- An on/off switch, from design/settings: an outlined track that fills with clay when on,
+         its knob sliding across. A CheckBox underneath, so Space, clicks on its label and
+         screen readers work as they do for any checkbox. -->
+    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid Width="40" Height="20" Background="Transparent" SnapsToDevicePixels="True">
+              <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="CheckStates">
+                  <VisualStateGroup.Transitions>
+                    <VisualTransition GeneratedDuration="0:0:0.18">
+                      <VisualTransition.GeneratedEasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                      </VisualTransition.GeneratedEasingFunction>
+                    </VisualTransition>
+                  </VisualStateGroup.Transitions>
+                  <VisualState x:Name="Unchecked" />
+                  <VisualState x:Name="Indeterminate" />
+                  <VisualState x:Name="Checked">
+                    <Storyboard>
+                      <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#D27556" Duration="0" />
+                      <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)" To="#D27556" Duration="0" />
+                      <ColorAnimation Storyboard.TargetName="Knob" Storyboard.TargetProperty="(Ellipse.Fill).(SolidColorBrush.Color)" To="#1A1210" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Slide" Storyboard.TargetProperty="X" To="20" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                </VisualStateGroup>
+                <VisualStateGroup x:Name="CommonStates">
+                  <VisualStateGroup.Transitions>
+                    <VisualTransition GeneratedDuration="0:0:0.16" />
+                  </VisualStateGroup.Transitions>
+                  <VisualState x:Name="Normal" />
+                  <VisualState x:Name="MouseOver">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Grow" Storyboard.TargetProperty="ScaleX" To="1.12" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Grow" Storyboard.TargetProperty="ScaleY" To="1.12" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                  <VisualState x:Name="Pressed" />
+                  <VisualState x:Name="Disabled">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="Opacity" To="0.4" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Knob" Storyboard.TargetProperty="Opacity" To="0.4" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                </VisualStateGroup>
+              </VisualStateManager.VisualStateGroups>
+
+              <Border x:Name="Track" CornerRadius="10" BorderThickness="1">
+                <Border.Background><SolidColorBrush Color="Transparent" /></Border.Background>
+                <Border.BorderBrush><SolidColorBrush Color="#8C94A1" /></Border.BorderBrush>
+              </Border>
+              <Ellipse x:Name="Knob" Width="12" Height="12" Margin="4,0,0,0"
+                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                       RenderTransformOrigin="0.5,0.5">
+                <Ellipse.Fill><SolidColorBrush Color="#A9B0BB" /></Ellipse.Fill>
+                <Ellipse.RenderTransform>
+                  <TransformGroup>
+                    <ScaleTransform x:Name="Grow" />
+                    <TranslateTransform x:Name="Slide" />
+                  </TransformGroup>
+                </Ellipse.RenderTransform>
+              </Ellipse>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- A tick box, from design/settings: an outlined square that tints clay with a clay tick
+         when on, and greys out with its label when disabled. -->
+    <Style x:Key="Tick" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="Bd" CornerRadius="6" Padding="10,8" Background="Transparent">
+              <StackPanel Orientation="Horizontal">
+                <Border x:Name="Box" Width="16" Height="16" CornerRadius="4" BorderThickness="1"
+                        BorderBrush="{StaticResource MutedAA}" Background="Transparent"
+                        SnapsToDevicePixels="True">
+                  <Path x:Name="Mark" Data="M2.6,6.85 L5.6,9.8 L11.4,4" Stroke="{StaticResource Clay}"
+                        StrokeThickness="1.6" Visibility="Hidden" />
+                </Border>
+                <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1E232B" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Box" Property="Background" Value="#24D27556" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Clay}" />
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="#6E7683" />
+                <Setter Property="Cursor" Value="Arrow" />
+                <Setter TargetName="Bd" Property="Background" Value="Transparent" />
+                <Setter TargetName="Box" Property="Background" Value="Transparent" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="#3A414C" />
+                <Setter TargetName="Mark" Property="Stroke" Value="#59616D" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The status strip (StatusStripView). Percentages take their band's colour; model, branch
+         and effort stay neutral, since they are not a fullness. -->
+    <SolidColorBrush x:Key="BandGreen"   Color="#6BBF8A" />
+    <SolidColorBrush x:Key="BandYellow"  Color="#D9BE5C" />
+    <SolidColorBrush x:Key="BandOrange"  Color="#E58C4E" />
+    <SolidColorBrush x:Key="BandRed"     Color="#EC726C" />
+    <SolidColorBrush x:Key="DiffAdded"   Color="#7CC596" />
+    <SolidColorBrush x:Key="DiffDeleted" Color="#E08480" />
+    <SolidColorBrush x:Key="StripRule"   Color="#2E353F" />
+    <!-- Git's branch glyph on a 16 px grid: two commits on a line, one forking off. -->
+    <Geometry x:Key="BranchGlyph">M6.1,3.5 A1.6,1.6 0 1 1 2.9,3.5 A1.6,1.6 0 1 1 6.1,3.5 Z M6.1,12.5 A1.6,1.6 0 1 1 2.9,12.5 A1.6,1.6 0 1 1 6.1,12.5 Z M13.1,5 A1.6,1.6 0 1 1 9.9,5 A1.6,1.6 0 1 1 13.1,5 Z M4.5,5.1 V10.9 M11.5,6.6 C11.5,9.6 4.5,8.6 4.5,10.9</Geometry>
 
     <!-- New session: the primary action stays in the graphite family. A filled, raised face
          and brighter label set it apart from the ghost buttons without a colour of its own. -->
