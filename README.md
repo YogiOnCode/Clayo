@@ -78,7 +78,8 @@ Now type `clayo` in any folder's Explorer address bar, or run it from a terminal
 - **Quit**: **Quit Clayo** in the gear menu or the island's menu. The window's close button
   only hides it.
 
-More in the [wiki](https://github.com/YogiOnCode/Clayo/wiki).
+More in the [wiki](https://github.com/YogiOnCode/Clayo/wiki). The self-checks in `checks/`
+need the .NET 10 SDK (they're file-based apps); the app itself builds with .NET 8.
 
 ## Docs
 
@@ -103,8 +104,8 @@ not in an issue.
 
 ## Notes
 
-Not affiliated with Anthropic. Clayo reads `~/.claude` and never writes to it; its own files
-live in `%LOCALAPPDATA%\Clayo`.
+Not affiliated with Anthropic. Clayo reads `~/.claude` and never writes to it. Where it does
+keep files is listed in [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works#where-clayo-keeps-its-files).
 
 MIT licensed, see [LICENSE](LICENSE). Bundles [xterm.js](https://github.com/xtermjs/xterm.js)
 and its fit and WebGL addons (MIT, see `Assets/xterm/LICENSE.xterm`).
