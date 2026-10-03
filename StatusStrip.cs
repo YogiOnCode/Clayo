@@ -43,7 +43,8 @@ public static class StatusStrip
             settings.StatusModel && status.Model is { } m ? ModelName(m) : null,
             settings.StatusBranch ? git : null,
             settings.StatusContext ? ContextMeter(status) : null,
-            settings.StatusEffort ? status.Effort : null,
+            // Codex leaves effort out when it runs on its default, and then so does the strip.
+            settings.StatusEffort && status.Effort is { Length: > 0 } effort ? effort : null,
             limitsHere && settings.StatusFiveHour && limits?.FiveHour is { } h5 ? LimitMeter(true, h5, now, ReserveFor(settings, true)) : null,
             limitsHere && settings.StatusSevenDay && limits?.SevenDay is { } d7 ? LimitMeter(false, d7, now, ReserveFor(settings, false)) : null);
 

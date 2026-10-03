@@ -56,6 +56,33 @@ try
     File.WriteAllText(path, """{"theme":"2"}""");
     Check("a number is not a theme", ClayoSettings.Load(path).Theme, StatusTheme.Numbers);
 
+    // Setup (docs/SETUP.md): not done, both agents in use and Claude for New session by default;
+    // paths only when Locate… picked one.
+    Check("setup not done by default", defaults.SetupDone, false);
+    Check("both agents in use by default", defaults.UseClaude && defaults.UseCodex, true);
+    Check("claude starts new sessions by default", defaults.DefaultAgent, NewSessionAgent.Claude);
+    var setup = defaults with
+    {
+        SetupDone = true, UseCodex = false, DefaultAgent = NewSessionAgent.Ask,
+        ClaudePath = @"C:\tools\claude.exe", CodexPath = null
+    };
+    setup.Save(path);
+    Check("setup choices load back", ClayoSettings.Load(path), setup);
+    Check("no path saved is no key", File.ReadAllText(path).Contains("codexPath"), false);
+    Check("new session: claude by default", defaults.NewSessionKind, AgentKind.Claude);
+    Check("new session: codex when chosen", (defaults with { DefaultAgent = NewSessionAgent.Codex }).NewSessionKind, AgentKind.Codex);
+    Check("new session: ask each time", (defaults with { DefaultAgent = NewSessionAgent.Ask }).NewSessionKind, null);
+    Check("new session: never asks with one agent in use", setup.NewSessionKind, AgentKind.Claude);
+    Check("new session: never an agent not in use", (defaults with { UseClaude = false }).NewSessionKind, AgentKind.Codex);
+    Check("an agent saved by its name", File.ReadAllText(path).Contains("\"defaultAgent\": \"ask\""), true);
+    File.WriteAllText(path, """{"defaultAgent":"gemini","claudePath":"","codexPath":3}""");
+    Check("an agent not offered is claude", ClayoSettings.Load(path).DefaultAgent, NewSessionAgent.Claude);
+    Check("an empty path is none", ClayoSettings.Load(path).ClaudePath, null);
+    Check("a path of the wrong type is none", ClayoSettings.Load(path).CodexPath, null);
+    var withStatus = setup with { StatusHeader = false };
+    withStatus.Save(path);
+    Check("a status option saved later keeps the setup choices", ClayoSettings.Load(path), withStatus);
+
     File.WriteAllText(path, """{"statusModel":fal""");
     Check("a half-written file is the defaults", ClayoSettings.Load(path), defaults);
     File.WriteAllText(path, "[true]");

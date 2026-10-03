@@ -216,7 +216,9 @@
           <RadioButton x:Name="NavStatus" Style="{StaticResource NavItem}" Tag="&#xE9D2;"
                        Content="Status bar" Checked="Nav_Checked" />
           <Rectangle Height="1" Fill="{StaticResource Hairline}" Margin="8,8" />
-          <RadioButton Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents" IsEnabled="False" />
+          <!-- Not a page: it opens the setup window, and the page you were on stays picked. -->
+          <RadioButton x:Name="NavAgents" Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents"
+                       Checked="Agents_Checked" />
           <RadioButton Style="{StaticResource NavItem}" Tag="&#xE7F4;" Content="Island" IsEnabled="False" />
         </StackPanel>
       </Border>
@@ -265,18 +267,6 @@
               <Rectangle RadiusX="8" RadiusY="8" Stroke="{StaticResource LaterRim}"
                          StrokeThickness="1" StrokeDashArray="4 3" SnapsToDevicePixels="True" />
               <StackPanel>
-                <DockPanel Style="{StaticResource Row}">
-                  <TextBlock Style="{StaticResource RowIcon}" Text="&#xE99A;" Foreground="#4A515C" />
-                  <Border Style="{StaticResource LaterTag}">
-                    <TextBlock Text="Later" FontSize="10.5" LineHeight="18" Foreground="{StaticResource LaterText}" />
-                  </Border>
-                  <StackPanel VerticalAlignment="Center">
-                    <TextBlock Style="{StaticResource RowTitle}" Text="Agents" Foreground="{StaticResource LaterText}" />
-                    <TextBlock Style="{StaticResource RowText}" Foreground="#5E6672"
-                               Text="Claude Code and Codex: which ones Clayo can start, and their defaults." />
-                  </StackPanel>
-                </DockPanel>
-                <Rectangle Height="1" Fill="{StaticResource Hairline}" />
                 <DockPanel Style="{StaticResource Row}">
                   <TextBlock Style="{StaticResource RowIcon}" Text="&#xE7F4;" Foreground="#4A515C" />
                   <Border Style="{StaticResource LaterTag}">
