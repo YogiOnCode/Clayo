@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 
 // The setup window's states (design/setup/setup-prototype.html) from made-up detector results.

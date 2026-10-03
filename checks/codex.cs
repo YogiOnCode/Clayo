@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 
 // A fake CODEX_HOME in a temp folder. The lines are cut from real codex-cli 0.160.0
