@@ -1,0 +1,418 @@
+<UserControl x:Class="CcxShell.SettingsPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource TerminalBg}">
+
+  <!-- design/settings/settings-prototype.html, #view=settings. It takes the terminal side's
+       place, header included, and leaves the sidebar where it is. -->
+
+  <UserControl.Resources>
+    <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+    <FontFamily x:Key="Display">Segoe UI Variable Display, Segoe UI</FontFamily>
+    <SolidColorBrush x:Key="LaterText" Color="#6E7683" />
+    <SolidColorBrush x:Key="LaterRim" Color="#2A3039" />
+
+    <!-- The left nav. A radio button per page, so the current one is a checked state and the
+         arrow keys move between them. A disabled one is a page still to come: "later". -->
+    <Style x:Key="NavItem" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="SettingsNav" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" CornerRadius="4" Background="Transparent">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="2" />
+                  <ColumnDefinition Width="22" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Rectangle x:Name="Bar" Height="16" RadiusX="1" RadiusY="1"
+                           Fill="{StaticResource Working}" Visibility="Hidden" />
+                <TextBlock x:Name="Glyph" Grid.Column="1" Text="{TemplateBinding Tag}"
+                           FontFamily="{StaticResource Icons}" FontSize="13"
+                           Foreground="{StaticResource MutedAA}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <ContentPresenter Grid.Column="2" Margin="6,0,0,0" VerticalAlignment="Center" />
+                <Border x:Name="Later" Grid.Column="3" Margin="0,0,8,0" Padding="5,0"
+                        CornerRadius="4" BorderThickness="1" BorderBrush="{StaticResource LaterRim}"
+                        VerticalAlignment="Center" Visibility="Collapsed">
+                  <TextBlock Text="later" FontSize="10" LineHeight="16"
+                             Foreground="{StaticResource LaterText}" />
+                </Border>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1F242C" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#232935" />
+                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{StaticResource LaterText}" />
+                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource TextFaint}" />
+                <Setter TargetName="Later" Property="Visibility" Value="Visible" />
+                <Setter Property="Cursor" Value="Arrow" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="PageTitle" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Display}" />
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#E6E9EE" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style x:Key="PageIntro" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,0,0,18" />
+    </Style>
+    <Style x:Key="GroupLabel" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="Margin" Value="0,22,0,8" />
+    </Style>
+
+    <!-- A card's rows: icon, title over description, then whatever control the row has. -->
+    <Style x:Key="RowIcon" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Icons}" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="Width" Value="20" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,20,0" />
+    </Style>
+    <Style x:Key="RowTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+    </Style>
+    <Style x:Key="RowText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+    <Style x:Key="Row" TargetType="DockPanel">
+      <!-- 60 px with the 13 px padding above and below, as the design's min-height. -->
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Margin" Value="16,13" />
+      <Setter Property="LastChildFill" Value="True" />
+    </Style>
+    <!-- A row with a switch: the whole row toggles it, as a label does in the design. -->
+    <Style x:Key="SwitchRow" TargetType="Border">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="#1E232B" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="SwitchState" TargetType="TextBlock">
+      <Setter Property="DockPanel.Dock" Value="Right" />
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Margin" Value="20,0,20,0" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="TextAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="FieldGroup" TargetType="StackPanel">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Grid.ColumnSpan" Value="4" />
+      <Setter Property="Margin" Value="10,8,10,2" />
+      <Setter Property="TextElement.FontSize" Value="11" />
+      <Setter Property="TextElement.Foreground" Value="{StaticResource MutedAA}" />
+    </Style>
+
+    <!-- One choice of a few side by side, as the theme or the reserve's threshold: clay when picked,
+         like a tick. The code that adds them sets their group. -->
+    <Style x:Key="Segment" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource MutedAA}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="6,0,0,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" CornerRadius="6" BorderThickness="1" Padding="10,4"
+                    BorderBrush="{StaticResource Hairline}" Background="Transparent">
+              <ContentPresenter HorizontalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1E232B" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#24D27556" />
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Clay}" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="LaterTag" TargetType="Border">
+      <Setter Property="DockPanel.Dock" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="20,0,0,0" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{StaticResource LaterRim}" />
+    </Style>
+  </UserControl.Resources>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- The pane header, as for a session: same height, the title strong, a close button. -->
+    <Border Background="{StaticResource SurfaceBg}"
+            BorderBrush="{StaticResource Hairline}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="14,0" Height="44">
+        <Button DockPanel.Dock="Right" Content="&#xE8BB;"
+                FontFamily="{StaticResource Icons}" FontSize="10"
+                Style="{StaticResource QuietButton}" Padding="9,6"
+                VerticalAlignment="Center"
+                ToolTip="Close (Esc)" AutomationProperties.Name="Close settings"
+                Click="Close_Click" />
+        <TextBlock Text="Settings" FontSize="12" FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+      </DockPanel>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="188" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,0,1,0">
+        <StackPanel Margin="8,14" AutomationProperties.Name="Settings sections">
+          <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItem}" Tag="&#xE713;"
+                       Content="General" IsChecked="True" Checked="Nav_Checked" />
+          <RadioButton x:Name="NavStatus" Style="{StaticResource NavItem}" Tag="&#xE9D2;"
+                       Content="Status bar" Checked="Nav_Checked" />
+          <Rectangle Height="1" Fill="{StaticResource Hairline}" Margin="8,8" />
+          <RadioButton Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents" IsEnabled="False" />
+          <RadioButton Style="{StaticResource NavItem}" Tag="&#xE7F4;" Content="Island" IsEnabled="False" />
+        </StackPanel>
+      </Border>
+
+      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+        <Grid Margin="28,22,28,40" MaxWidth="700" HorizontalAlignment="Left">
+
+          <!-- General -->
+          <StackPanel x:Name="PageGeneral">
+            <TextBlock Style="{StaticResource PageTitle}" Text="General" />
+            <TextBlock Style="{StaticResource PageIntro}" Text="How Clayo starts and what the window's close button does." />
+
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border x:Name="LoginRow" Style="{StaticResource SwitchRow}" CornerRadius="7,7,0,0"
+                        Tag="{Binding ElementName=LoginSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE7E8;" />
+                    <CheckBox x:Name="LoginSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Start at login" Click="LoginSwitch_Click" />
+                    <TextBlock x:Name="LoginState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Start at login" />
+                      <TextBlock x:Name="LoginText" Style="{StaticResource RowText}"
+                                 Text="Clayo starts hidden; the island greets you." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE768;" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Close button" />
+                      <TextBlock Style="{StaticResource RowText}"
+                                 Text="Closing the window keeps sessions running. Quit Clayo from the gear menu or the island to end them." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Coming later" />
+            <!-- WPF borders draw no dashes, so the dashed rim is a rectangle behind the rows. -->
+            <Grid>
+              <Rectangle RadiusX="8" RadiusY="8" Stroke="{StaticResource LaterRim}"
+                         StrokeThickness="1" StrokeDashArray="4 3" SnapsToDevicePixels="True" />
+              <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                  <TextBlock Style="{StaticResource RowIcon}" Text="&#xE99A;" Foreground="#4A515C" />
+                  <Border Style="{StaticResource LaterTag}">
+                    <TextBlock Text="Later" FontSize="10.5" LineHeight="18" Foreground="{StaticResource LaterText}" />
+                  </Border>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource RowTitle}" Text="Agents" Foreground="{StaticResource LaterText}" />
+                    <TextBlock Style="{StaticResource RowText}" Foreground="#5E6672"
+                               Text="Claude Code and Codex: which ones Clayo can start, and their defaults." />
+                  </StackPanel>
+                </DockPanel>
+                <Rectangle Height="1" Fill="{StaticResource Hairline}" />
+                <DockPanel Style="{StaticResource Row}">
+                  <TextBlock Style="{StaticResource RowIcon}" Text="&#xE7F4;" Foreground="#4A515C" />
+                  <Border Style="{StaticResource LaterTag}">
+                    <TextBlock Text="Later" FontSize="10.5" LineHeight="18" Foreground="{StaticResource LaterText}" />
+                  </Border>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource RowTitle}" Text="Island" Foreground="{StaticResource LaterText}" />
+                    <TextBlock Style="{StaticResource RowText}" Foreground="#5E6672"
+                               Text="Where it sits, what it announces, how long notices stay." />
+                  </StackPanel>
+                </DockPanel>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+
+          <!-- Status bar -->
+          <StackPanel x:Name="PageStatus" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Status bar" />
+            <TextBlock Style="{StaticResource PageIntro}"
+                       Text="Live session info drawn by Clayo itself, not the terminal. Colours follow how full each limit is." />
+
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <DockPanel Style="{StaticResource Row}">
+                <TextBlock Style="{StaticResource RowIcon}" Text="&#xE790;" />
+                <!-- Filled from StatusTheme. -->
+                <StackPanel x:Name="ThemeChoices" DockPanel.Dock="Right" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="20,0,0,0"
+                            AutomationProperties.Name="Theme" />
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Style="{StaticResource RowTitle}" Text="Theme" />
+                  <TextBlock Style="{StaticResource RowText}"
+                             Text="How the numbers are drawn, in the pane header and the sidebar footer." />
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Where it shows" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="7,7,0,0"
+                        Tag="{Binding ElementName=HeaderSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE737;" />
+                    <CheckBox x:Name="HeaderSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Show in the pane header" Click="Status_Click" />
+                    <TextBlock x:Name="HeaderState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Show in the pane header" />
+                      <TextBlock Style="{StaticResource RowText}" Text="Model, branch, context and effort beside the session title." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="0,0,7,7"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Tag="{Binding ElementName=FooterSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE90C;" />
+                    <CheckBox x:Name="FooterSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Show limits in the sidebar footer" Click="Status_Click" />
+                    <TextBlock x:Name="FooterState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Show limits in the sidebar footer" />
+                      <TextBlock Style="{StaticResource RowText}"
+                                 Text="The 5-hour and 7-day limits are account-wide, so they sit above New session. Off moves them into the pane header." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Fields" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}" Padding="6">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Style="{StaticResource FieldGroup}">
+                  <TextBlock Text="Per session" />
+                  <TextBlock x:Name="WhyHead" Margin="8,0,0,0" Foreground="#6E7683" />
+                </StackPanel>
+                <CheckBox x:Name="ModelTick" Grid.Row="1" Grid.Column="0" Style="{StaticResource Tick}" Content="Model" Click="Status_Click" />
+                <CheckBox x:Name="BranchTick" Grid.Row="1" Grid.Column="1" Style="{StaticResource Tick}" Content="Branch and diff" Click="Status_Click" />
+                <CheckBox x:Name="ContextTick" Grid.Row="1" Grid.Column="2" Style="{StaticResource Tick}" Content="Context used" Click="Status_Click" />
+                <CheckBox x:Name="EffortTick" Grid.Row="1" Grid.Column="3" Style="{StaticResource Tick}" Content="Effort" Click="Status_Click" />
+                <StackPanel Grid.Row="2" Style="{StaticResource FieldGroup}">
+                  <TextBlock Text="Account" />
+                  <TextBlock x:Name="WhyFoot" Margin="8,0,0,0" Foreground="#6E7683" />
+                </StackPanel>
+                <CheckBox x:Name="FiveHourTick" Grid.Row="3" Grid.Column="0" Style="{StaticResource Tick}" Content="5-hour limit" Click="Status_Click" />
+                <CheckBox x:Name="SevenDayTick" Grid.Row="3" Grid.Column="1" Style="{StaticResource Tick}" Content="7-day limit" Click="Status_Click" />
+              </Grid>
+            </Border>
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Reserve" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                  <TextBlock Style="{StaticResource RowIcon}" Text="&#xE7BA;" />
+                  <!-- Filled from ClayoSettings.ReserveSteps. -->
+                  <StackPanel x:Name="ReserveSteps" DockPanel.Dock="Right" Orientation="Horizontal"
+                              VerticalAlignment="Center" Margin="20,0,0,0"
+                              AutomationProperties.Name="Warn at" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource RowTitle}" Text="Warn near a limit" />
+                    <TextBlock Style="{StaticResource RowText}"
+                               Text="Past this much of a limit, the island says so once and the limit turns red. Prompts still go through." />
+                  </StackPanel>
+                </DockPanel>
+                <Grid Margin="6,0,6,6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <CheckBox x:Name="ReserveFiveHourTick" Style="{StaticResource Tick}" Content="5-hour limit" Click="Status_Click" />
+                  <CheckBox x:Name="ReserveSevenDayTick" Grid.Column="1" Style="{StaticResource Tick}" Content="7-day limit" Click="Status_Click" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

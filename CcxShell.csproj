@@ -11,6 +11,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>clayo.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Program.Main, not the one WPF generates: see Program.cs. -->
+    <StartupObject>CcxShell.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +23,9 @@
     <!-- checks/ holds runnable self-checks (dotnet run checks/scan.cs). Each has its
          own entry point, so they must not compile into the app. -->
     <Compile Remove="checks/**" />
+    <!-- docs/ is local notes, drafts of later code among them. -->
+    <Compile Remove="docs/**" />
+    <Page Remove="docs/**" />
   </ItemGroup>
 
   <ItemGroup>

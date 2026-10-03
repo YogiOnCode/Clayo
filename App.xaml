@@ -16,6 +16,8 @@
     <SolidColorBrush x:Key="TextPrimary" Color="#C8CDD6" />
     <SolidColorBrush x:Key="TextMuted"   Color="#7A828F" />
     <SolidColorBrush x:Key="TextFaint"   Color="#565E6B" />
+    <!-- TextMuted is 4.2:1 on SurfaceBg; settings and status strip text a step brighter clears 4.5:1. -->
+    <SolidColorBrush x:Key="MutedAA"     Color="#8C94A1" />
     <SolidColorBrush x:Key="Working"     Color="#D4A24C" />
     <!-- Conventional reading, so the sidebar needs no legend: amber is in progress,
          blue is the ball in your court, green finished cleanly, red failed. Nothing
@@ -66,59 +68,98 @@
       </Setter>
     </Style>
 
-    <!-- The two sidebar actions are the only things in the chrome you go looking for, so
-         they get a raised face instead of an outline: vertical gradient, a lit top edge,
-         a brighter rim. Deliberately not amber — that stays reserved for "this session is
-         doing something", and a permanently amber button would spend the one accent. -->
-    <LinearGradientBrush x:Key="GlassFace" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Offset="0" Color="#2C333D" />
-      <GradientStop Offset="1" Color="#1D222A" />
-    </LinearGradientBrush>
-    <LinearGradientBrush x:Key="GlassFaceHover" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Offset="0" Color="#3A4350" />
-      <GradientStop Offset="1" Color="#252B34" />
-    </LinearGradientBrush>
+    <!-- Clay is the mascot's colour, the brand rather than a status, so it can mark the one
+         primary action without competing with amber's "this session is doing something". -->
+    <SolidColorBrush x:Key="Clay" Color="#D27556" />
 
-    <Style x:Key="GlassButton" TargetType="Button">
+    <!-- Keyboard focus only (the mouse never shows it). The default dotted rectangle is
+         black, which on this chrome is no focus visual at all. -->
+    <Style x:Key="FocusRing">
+      <Setter Property="Control.Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Border Margin="-3" CornerRadius="9" BorderThickness="1"
+                    BorderBrush="{StaticResource Clay}" SnapsToDevicePixels="True" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The sidebar's bottom row. One template for both looks: Background, BorderBrush and
+         Foreground say which. Hover lays a wash of the button's own text colour over the face
+         and brings the label to full strength, eased, so neither look ever jumps. A Segoe
+         Fluent glyph in Tag sits before the label. -->
+    <Style x:Key="GhostButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="#2E353F" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
       <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
       <Setter Property="FontSize" Value="12" />
-      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="12,0" />
       <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd"
-                    Background="{StaticResource GlassFace}"
-                    BorderBrush="#3B4453"
-                    BorderThickness="1"
-                    CornerRadius="5"
-                    SnapsToDevicePixels="True">
-              <Grid>
-                <!-- Catches the light along the top edge the way a raised glass face does.
-                     Taller than the line itself so the corner curve stays smooth. -->
-                <Border x:Name="Gloss"
-                        Height="8" VerticalAlignment="Top"
-                        BorderBrush="#24FFFFFF" BorderThickness="0,1,0,0"
-                        CornerRadius="5,5,0,0" />
-                <ContentPresenter Margin="{TemplateBinding Padding}"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center" />
-              </Grid>
-            </Border>
+            <Grid SnapsToDevicePixels="True">
+              <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="CommonStates">
+                  <VisualStateGroup.Transitions>
+                    <VisualTransition GeneratedDuration="0:0:0.16">
+                      <VisualTransition.GeneratedEasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                      </VisualTransition.GeneratedEasingFunction>
+                    </VisualTransition>
+                    <VisualTransition To="Pressed" GeneratedDuration="0:0:0.06" />
+                  </VisualStateGroup.Transitions>
+                  <VisualState x:Name="Normal" />
+                  <VisualState x:Name="MouseOver">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Wash" Storyboard.TargetProperty="Opacity" To="0.08" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Face" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                  <VisualState x:Name="Pressed">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Wash" Storyboard.TargetProperty="Opacity" To="0.03" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Face" Storyboard.TargetProperty="Opacity" To="0.62" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                  <!-- Faint is already faint; dimming it again would lose the label. -->
+                  <VisualState x:Name="Disabled">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Face" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                </VisualStateGroup>
+              </VisualStateManager.VisualStateGroups>
+
+              <Border x:Name="Bd" CornerRadius="6"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="1" />
+              <Border x:Name="Wash" CornerRadius="6" Opacity="0"
+                      Background="{TemplateBinding Foreground}"
+                      BorderBrush="{TemplateBinding Foreground}"
+                      BorderThickness="1" />
+              <!-- 0.75 keeps the resting label muted and still above 4.5:1 in both looks. -->
+              <StackPanel x:Name="Face" Orientation="Horizontal" Opacity="0.75"
+                          Margin="{TemplateBinding Padding}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock x:Name="Glyph" Text="{TemplateBinding Tag}"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
+                           Margin="0,0,7,0" VerticalAlignment="Center" />
+                <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+              </StackPanel>
+            </Grid>
             <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="{StaticResource GlassFaceHover}" />
-                <Setter TargetName="Bd" Property="BorderBrush" Value="#4A5566" />
-              </Trigger>
-              <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#191E25" />
-                <Setter TargetName="Gloss" Property="Visibility" Value="Collapsed" />
+              <Trigger Property="Tag" Value="{x:Null}">
+                <Setter TargetName="Glyph" Property="Visibility" Value="Collapsed" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="Bd" Property="Background" Value="Transparent" />
                 <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Hairline}" />
-                <Setter TargetName="Gloss" Property="Visibility" Value="Collapsed" />
                 <Setter Property="Foreground" Value="{StaticResource TextFaint}" />
                 <Setter Property="Cursor" Value="Arrow" />
               </Trigger>
@@ -126,6 +167,149 @@
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+
+    <!-- An on/off switch, from design/settings: an outlined track that fills with clay when on,
+         its knob sliding across. A CheckBox underneath, so Space, clicks on its label and
+         screen readers work as they do for any checkbox. -->
+    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid Width="40" Height="20" Background="Transparent" SnapsToDevicePixels="True">
+              <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="CheckStates">
+                  <VisualStateGroup.Transitions>
+                    <VisualTransition GeneratedDuration="0:0:0.18">
+                      <VisualTransition.GeneratedEasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                      </VisualTransition.GeneratedEasingFunction>
+                    </VisualTransition>
+                  </VisualStateGroup.Transitions>
+                  <VisualState x:Name="Unchecked" />
+                  <VisualState x:Name="Indeterminate" />
+                  <VisualState x:Name="Checked">
+                    <Storyboard>
+                      <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#D27556" Duration="0" />
+                      <ColorAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)" To="#D27556" Duration="0" />
+                      <ColorAnimation Storyboard.TargetName="Knob" Storyboard.TargetProperty="(Ellipse.Fill).(SolidColorBrush.Color)" To="#1A1210" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Slide" Storyboard.TargetProperty="X" To="20" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                </VisualStateGroup>
+                <VisualStateGroup x:Name="CommonStates">
+                  <VisualStateGroup.Transitions>
+                    <VisualTransition GeneratedDuration="0:0:0.16" />
+                  </VisualStateGroup.Transitions>
+                  <VisualState x:Name="Normal" />
+                  <VisualState x:Name="MouseOver">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Grow" Storyboard.TargetProperty="ScaleX" To="1.12" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Grow" Storyboard.TargetProperty="ScaleY" To="1.12" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                  <VisualState x:Name="Pressed" />
+                  <VisualState x:Name="Disabled">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Track" Storyboard.TargetProperty="Opacity" To="0.4" Duration="0" />
+                      <DoubleAnimation Storyboard.TargetName="Knob" Storyboard.TargetProperty="Opacity" To="0.4" Duration="0" />
+                    </Storyboard>
+                  </VisualState>
+                </VisualStateGroup>
+              </VisualStateManager.VisualStateGroups>
+
+              <Border x:Name="Track" CornerRadius="10" BorderThickness="1">
+                <Border.Background><SolidColorBrush Color="Transparent" /></Border.Background>
+                <Border.BorderBrush><SolidColorBrush Color="#8C94A1" /></Border.BorderBrush>
+              </Border>
+              <Ellipse x:Name="Knob" Width="12" Height="12" Margin="4,0,0,0"
+                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                       RenderTransformOrigin="0.5,0.5">
+                <Ellipse.Fill><SolidColorBrush Color="#A9B0BB" /></Ellipse.Fill>
+                <Ellipse.RenderTransform>
+                  <TransformGroup>
+                    <ScaleTransform x:Name="Grow" />
+                    <TranslateTransform x:Name="Slide" />
+                  </TransformGroup>
+                </Ellipse.RenderTransform>
+              </Ellipse>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- A tick box, from design/settings: an outlined square that tints clay with a clay tick
+         when on, and greys out with its label when disabled. -->
+    <Style x:Key="Tick" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="Bd" CornerRadius="6" Padding="10,8" Background="Transparent">
+              <StackPanel Orientation="Horizontal">
+                <Border x:Name="Box" Width="16" Height="16" CornerRadius="4" BorderThickness="1"
+                        BorderBrush="{StaticResource MutedAA}" Background="Transparent"
+                        SnapsToDevicePixels="True">
+                  <Path x:Name="Mark" Data="M2.6,6.85 L5.6,9.8 L11.4,4" Stroke="{StaticResource Clay}"
+                        StrokeThickness="1.6" Visibility="Hidden" />
+                </Border>
+                <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1E232B" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Box" Property="Background" Value="#24D27556" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Clay}" />
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="#6E7683" />
+                <Setter Property="Cursor" Value="Arrow" />
+                <Setter TargetName="Bd" Property="Background" Value="Transparent" />
+                <Setter TargetName="Box" Property="Background" Value="Transparent" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="#3A414C" />
+                <Setter TargetName="Mark" Property="Stroke" Value="#59616D" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The status strip (StatusStripView). Percentages take their band's colour; model, branch
+         and effort stay neutral, since they are not a fullness. -->
+    <SolidColorBrush x:Key="BandGreen"   Color="#6BBF8A" />
+    <SolidColorBrush x:Key="BandYellow"  Color="#D9BE5C" />
+    <SolidColorBrush x:Key="BandOrange"  Color="#E58C4E" />
+    <SolidColorBrush x:Key="BandRed"     Color="#EC726C" />
+    <SolidColorBrush x:Key="DiffAdded"   Color="#7CC596" />
+    <SolidColorBrush x:Key="DiffDeleted" Color="#E08480" />
+    <SolidColorBrush x:Key="StripRule"   Color="#2E353F" />
+    <SolidColorBrush x:Key="LimitRule"   Color="#262C35" />
+    <!-- Bars, Rings and Chips: the empty part of a gauge, a neutral chip, effort's steps. -->
+    <SolidColorBrush x:Key="MeterTrack"  Color="#2A303A" />
+    <SolidColorBrush x:Key="ChipBg"      Color="#1F242C" />
+    <SolidColorBrush x:Key="StepOn"      Color="#A9B0BB" />
+    <SolidColorBrush x:Key="StepOff"     Color="#39404B" />
+    <!-- Git's branch glyph on a 16 px grid: two commits on a line, one forking off. -->
+    <Geometry x:Key="BranchGlyph">M6.1,3.5 A1.6,1.6 0 1 1 2.9,3.5 A1.6,1.6 0 1 1 6.1,3.5 Z M6.1,12.5 A1.6,1.6 0 1 1 2.9,12.5 A1.6,1.6 0 1 1 6.1,12.5 Z M13.1,5 A1.6,1.6 0 1 1 9.9,5 A1.6,1.6 0 1 1 13.1,5 Z M4.5,5.1 V10.9 M11.5,6.6 C11.5,9.6 4.5,8.6 4.5,10.9</Geometry>
+
+    <!-- New session: the primary action stays in the graphite family. A filled, raised face
+         and brighter label set it apart from the ghost buttons without a colour of its own. -->
+    <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+      <Setter Property="Background" Value="#2A303A" />
+      <Setter Property="BorderBrush" Value="#3A424E" />
+      <Setter Property="Foreground" Value="#E6E9EE" />
     </Style>
 
     <Style x:Key="SearchBox" TargetType="TextBox">
@@ -420,6 +604,127 @@
                     CornerRadius="3">
               <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
             </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+
+    <!-- ===================== menus ===================== -->
+
+    <!-- Implicit, so the gear's, the island's and the session list's menus all pick it up.
+         The surface is the popups' RaisedBg; Hairline would vanish against it, so the rim
+         and the separators are a step brighter. -->
+    <SolidColorBrush x:Key="MenuRim" Color="#323A46" />
+
+    <!-- The panel under a context menu and a submenu, wrapped round their ItemsPresenter. The
+         shadow is a layer of its own rather than an Effect on the panel, which would render the
+         text through a bitmap and soften it. The margin is the shadow's room, weighted
+         downward like the light. -->
+    <ControlTemplate x:Key="MenuChrome" TargetType="ContentControl">
+      <Grid Margin="8,4,8,12">
+        <Border CornerRadius="8" Background="{StaticResource RaisedBg}">
+          <Border.Effect>
+            <DropShadowEffect Color="#000000" Direction="270" ShadowDepth="4" BlurRadius="16" Opacity="0.5" />
+          </Border.Effect>
+        </Border>
+        <Border Background="{StaticResource RaisedBg}" BorderBrush="{StaticResource MenuRim}"
+                BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="176"
+                Grid.IsSharedSizeScope="True">
+          <ContentPresenter />
+        </Border>
+      </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="ContextMenu">
+      <Setter Property="OverridesDefaultStyle" Value="True" />
+      <Setter Property="SnapsToDevicePixels" Value="True" />
+      <Setter Property="Foreground" Value="#B4BAC4" />
+      <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ContextMenu">
+            <ContentControl Template="{StaticResource MenuChrome}" Focusable="False">
+              <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+            </ContentControl>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Same hover colour family as the combo items. Keyboard navigation moves the highlight,
+         so it doubles as the focus visual. Only the roles a context menu uses get real looks;
+         a top-level header just drops its submenu below instead of beside. -->
+    <Style TargetType="MenuItem">
+      <Setter Property="OverridesDefaultStyle" Value="True" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="MenuItem">
+            <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="0,6">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="28" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="MenuGesture" />
+                  <ColumnDefinition Width="20" />
+                </Grid.ColumnDefinitions>
+                <ContentPresenter x:Name="Icon" ContentSource="Icon"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Path x:Name="Check" Data="M 0,4 L 3.5,7.5 L 10,1" Visibility="Collapsed"
+                      Stroke="{StaticResource Clay}" StrokeThickness="1.5"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
+                                  VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                           Foreground="#959CA8" Margin="28,0,0,0" VerticalAlignment="Center" />
+                <Path x:Name="Arrow" Grid.Column="3" Data="M 0 0 L 4 4 L 0 8" Visibility="Collapsed"
+                      Stroke="{StaticResource TextMuted}" StrokeThickness="1.3"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Popup x:Name="PART_Popup" Grid.ColumnSpan="4" Placement="Right" HorizontalOffset="-2"
+                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                       AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                  <ContentControl Template="{StaticResource MenuChrome}" Focusable="False">
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                  </ContentControl>
+                </Popup>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="Role" Value="SubmenuHeader">
+                <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="Role" Value="TopLevelHeader">
+                <Setter TargetName="PART_Popup" Property="Placement" Value="Bottom" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                <Setter TargetName="Icon" Property="Visibility" Value="Collapsed" />
+              </Trigger>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#2D343F" />
+                <Setter Property="Foreground" Value="#E6E9EE" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{StaticResource TextFaint}" />
+                <Setter TargetName="Check" Property="Stroke" Value="{StaticResource TextFaint}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- A menu sets this key on its separators itself, over any implicit Separator style. -->
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+      <Setter Property="OverridesDefaultStyle" Value="True" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Separator">
+            <Border Height="1" Margin="10,4" Background="{StaticResource MenuRim}" />
           </ControlTemplate>
         </Setter.Value>
       </Setter>

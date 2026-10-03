@@ -106,7 +106,7 @@
         <ListBox.ContextMenu>
           <ContextMenu>
             <MenuItem Header="Open" Click="Open_Click" />
-            <MenuItem Header="Rename                 F2" Click="Rename_Click" />
+            <MenuItem Header="Rename" InputGestureText="F2" Click="Rename_Click" />
             <Separator />
             <MenuItem Header="Reset name" Click="ResetName_Click" />
           </ContextMenu>
@@ -237,16 +237,22 @@
         </ListBox.ItemTemplate>
       </ListBox>
 
-      <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="14,10,14,14">
-        <Button x:Name="NewButton" Content="New session"
-                Style="{StaticResource GlassButton}"
+      <!-- Footer tray: a hairline and a darker band, so the actions read as apart from the list. -->
+      <Border Grid.Row="4" Background="#171B21"
+              BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0">
+      <StackPanel Margin="14,12,14,14">
+      <!-- The account's 5h and 7d limits, above the actions; gone while there are none to show. -->
+      <local:LimitsView x:Name="FootLimits" Margin="0,0,0,12" />
+      <DockPanel LastChildFill="False">
+        <Button x:Name="NewButton" Content="New session" Tag="&#xE710;"
+                Style="{StaticResource AccentButton}"
                 ToolTip="Pick the folder to start in. Recent folders first."
                 Click="NewSession_Click" />
-        <Button x:Name="ResumeButton" Content="Open"
-                Style="{StaticResource GlassButton}"
-                Margin="8,0,0,0" IsEnabled="False"
-                ToolTip="Open the selected session. Double-click does the same. F2 renames."
-                Click="Open_Click" />
+        <Button x:Name="OpenButton" Content="Open" Tag="&#xE8B7;"
+                Style="{StaticResource GhostButton}"
+                Margin="8,0,0,0"
+                ToolTip="Pick a file: a new session starts in its folder with the file ready at the prompt."
+                Click="OpenFile_Click" />
 
         <!-- Folder picker for a new session. Opens upward: these buttons sit on the
              bottom edge of the sidebar. The gap above the button is the inner Border's
@@ -299,7 +305,31 @@
             </StackPanel>
           </Border>
         </Popup>
+
+        <!-- Closing the window only hides it, and the island stays away while Clayo is in
+             front, so Quit has to be reachable from here too. Same items as the island's menu.
+             Last in the panel so it is also last in the tab order. -->
+        <Button x:Name="SettingsButton" DockPanel.Dock="Right"
+                Content="&#xE713;"
+                FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
+                Style="{StaticResource GhostButton}"
+                Width="30" Padding="0"
+                ToolTip="Settings"
+                AutomationProperties.Name="Settings"
+                Click="Settings_Click">
+          <Button.ContextMenu>
+            <ContextMenu x:Name="SettingsMenu" Opened="SettingsMenu_Opened">
+              <MenuItem Header="Settings…" InputGestureText="Ctrl+," Click="OpenSettings_Click" />
+              <MenuItem x:Name="SettingsLoginItem" Header="Start at login" IsCheckable="True"
+                        Click="SettingsLogin_Click" />
+              <Separator />
+              <MenuItem Header="Quit Clayo" Click="SettingsQuit_Click" />
+            </ContextMenu>
+          </Button.ContextMenu>
+        </Button>
+      </DockPanel>
       </StackPanel>
+      </Border>
     </Grid>
 
     <GridSplitter Grid.Column="1"
@@ -332,12 +362,16 @@
                    Fill="{StaticResource Dormant}"
                    VerticalAlignment="Center" />
 
-          <TextBlock x:Name="PaneTitle" Grid.Column="1"
-                     Margin="10,13"
-                     Foreground="{StaticResource TextMuted}"
-                     FontSize="12"
-                     VerticalAlignment="Center"
-                     TextTrimming="CharacterEllipsis" />
+          <!-- The title, then the session's status strip; whatever is left stays empty. -->
+          <DockPanel Grid.Column="1" LastChildFill="False">
+            <TextBlock x:Name="PaneTitle"
+                       Margin="10,13"
+                       Foreground="{StaticResource TextMuted}"
+                       FontSize="12"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+            <local:StatusStripView x:Name="HeadStrip" AutomationProperties.Name="Session status" />
+          </DockPanel>
 
           <Button x:Name="AttachButton" Grid.Column="2"
                   Content="Attach files…"
@@ -375,6 +409,10 @@
                  FontSize="13"
                  TextAlignment="Center"
                  Text="Pick a session on the left, or start a new one." />
+
+      <!-- Over both rows, header included. The terminals are WebView2 windows, which no WPF
+           element can cover, so ShowSettings hides them while this is up. -->
+      <local:SettingsPane x:Name="SettingsView" Grid.RowSpan="2" Visibility="Collapsed" />
     </Grid>
   </Grid>
 </Window>

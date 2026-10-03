@@ -229,6 +229,15 @@ public partial class MainWindow : Window
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
+    // What each pane's status line was handed, and its folder's git state, for the header strip
+    // and the footer's limits.
+    private readonly StatusStore _status = new();
+    private readonly GitInfo _git = new(TimeSpan.FromSeconds(3));
+    private ClayoSettings _settings = ClayoSettings.Load(ClayoSettings.DefaultPath);
+    private readonly System.Windows.Threading.DispatcherTimer _gitPoll = new() { Interval = TimeSpan.FromSeconds(3) };
+    // The reset countdowns run down, and limits go stale, between Claude's reports.
+    private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(30) };
+
     // Panes stay alive when you switch away, so switching back is instant and the
     // process keeps working in the background. PaneHost.Children is the set of them.
 
@@ -239,9 +248,42 @@ public partial class MainWindow : Window
     private TerminalPane? _active;
     private string _folder;
 
-    public MainWindow(string folder)
+    /// <summary>Sessions with a live pane in this window. The island shows it when it peeks.</summary>
+    public int OpenSessionCount => PaneHost.Children.OfType<TerminalPane>().Count();
+
+    /// <summary>
+    /// A pane entered a state worth telling you about (NeedsYou, Error, Done), or, with a null
+    /// kind, moved on so whatever it said before is stale. The island listens.
+    /// </summary>
+    public event Action<TerminalPane, string, NoteKind?>? SessionNotice;
+
+    /// <summary>A pane went to Working (true) or out of it, closing included. The island peeks on its own for it.</summary>
+    public event Action<TerminalPane, bool>? SessionWorking;
+
+    /// <summary>A limit went past the reserve set in Settings, once per limit window. The island listens.</summary>
+    public event Action<Meter>? ReserveCrossed;
+
+    private readonly ReserveWatch _reserve = new();
+
+    public MainWindow(string folder, bool startSession)
     {
         InitializeComponent();
+        SettingsView.CloseRequested += HideSettings;
+        SettingsView.SettingsChanged += s =>
+        {
+            _settings = s;
+            s.Save(ClayoSettings.DefaultPath);
+            ShowStatusBar();
+            WarnReserve();
+        };
+        // Both fire on background threads, for any pane; only the active one's strip shows,
+        // and the footer shows the newest limits whichever pane reported them.
+        _status.Changed += _ => Dispatcher.BeginInvoke(() =>
+        {
+            ShowStatusBar();
+            WarnReserve();
+        });
+        _git.Changed += (_, _) => Dispatcher.BeginInvoke(ShowStatusBar);
         _folder = folder;
         ShowFolder(folder);
 
@@ -250,11 +292,29 @@ public partial class MainWindow : Window
         {
             RefreshSessions();
             _store.StartWatching();
+            _status.Start();
+
+            // A hidden window shows no branch, so it reads none.
+            _gitPoll.Tick += (_, _) =>
+            {
+                if (!IsVisible) return;
+                foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) _git.Refresh(pane.WorkingDirectory);
+            };
+            _gitPoll.Start();
+            // The reserve is checked hidden too: a script's cached limits change between Claude's reports.
+            _clock.Tick += (_, _) =>
+            {
+                if (IsVisible) ShowStatusBar();
+                WarnReserve();
+            };
+            _clock.Start();
+            ShowStatusBar();
 
             // Opening Clayo in a folder should land you in a live session, not an
             // empty pane. Same thing the Explorer handoff does in AdoptFolder.
-            StartPane(SessionLauncher.Plan(LaunchMode.New, _folder),
-                      title: $"new · {Path.GetFileName(_folder.TrimEnd('\\'))}");
+            if (startSession)
+                StartPane(SessionLauncher.Plan(LaunchMode.New, _folder),
+                          title: $"new · {Path.GetFileName(_folder.TrimEnd('\\'))}");
         };
     }
 
@@ -379,17 +439,28 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------------ folder
 
-    public void AdoptFolder(string folder)
+    /// <param name="prefill">Typed into Claude's input once it is up, not sent (see TerminalPane.Prefill).</param>
+    public void AdoptFolder(string folder, string? prefill = null)
     {
         if (!Directory.Exists(folder)) return;
         _folder = folder;
         ShowFolder(folder);
-
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Activate();
+        Reveal();
 
         StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
-                  title: $"new · {Path.GetFileName(folder.TrimEnd('\\'))}");
+                  title: $"new · {Path.GetFileName(folder.TrimEnd('\\'))}").Prefill = prefill;
+    }
+
+    /// <summary>
+    /// Brings the window forward from wherever it is: hidden (closed, or never shown after a
+    /// login start), minimized, or behind. RestoreWindow rather than WindowState = Normal, so
+    /// a window that was maximized before it was minimized comes back maximized.
+    /// </summary>
+    public void Reveal()
+    {
+        Show();
+        if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
+        Activate();
     }
 
     private void ShowFolder(string folder)
@@ -621,7 +692,6 @@ public partial class MainWindow : Window
     private void Sessions_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var row = Sessions.SelectedItem as SessionRow;
-        ResumeButton.IsEnabled = row is not null;
 
         // Leaving a row cancels an edit in progress rather than silently keeping it open.
         foreach (var other in e.RemovedItems.OfType<SessionRow>()) other.IsEditing = false;
@@ -717,16 +787,45 @@ public partial class MainWindow : Window
     /// Starts a session in <paramref name="folder"/> and points the window at it, so the
     /// header and the next new session agree with where you just launched.
     /// </summary>
-    private void SpawnIn(string folder)
+    private TerminalPane? SpawnIn(string folder)
     {
         FolderPopup.IsOpen = false;
-        if (!Directory.Exists(folder)) return;
+        if (!Directory.Exists(folder)) return null;
 
         _folder = folder;
         ShowFolder(folder);
 
-        StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
-                  title: $"new · {FolderLeaf(folder)}");
+        return StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
+                         title: $"new · {FolderLeaf(folder)}");
+    }
+
+    /// <summary>
+    /// Starts a session in the picked file's folder and types the file's path at the prompt,
+    /// unsent, so you can say what to do with it. Typed on the first Done, the session's first
+    /// settle at its prompt: earlier and the keys would reach a CLI still starting up, or a
+    /// trust prompt (NeedsInput) instead.
+    /// </summary>
+    private void OpenFile_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Open a file in a new session",
+            InitialDirectory = Directory.Exists(_folder) ? _folder : ""
+        };
+
+        if (dialog.ShowDialog(this) != true) return;
+
+        var file = dialog.FileName;
+        if (SpawnIn(Path.GetDirectoryName(file)!) is not { } pane) return;
+
+        EventHandler<PaneStatus>? ready = null;
+        ready = (_, status) =>
+        {
+            if (status != PaneStatus.Done) return;
+            pane.StatusChanged -= ready;
+            pane.InsertPaths([file]);
+        };
+        pane.StatusChanged += ready;
     }
 
     private static string FolderLeaf(string folder) =>
@@ -789,6 +888,9 @@ public partial class MainWindow : Window
 
         pane.Close();
         PaneHost.Children.Remove(pane);
+        // Nothing left to jump to, so a pending note about it would only mislead.
+        SessionNotice?.Invoke(pane, "", null);
+        SessionWorking?.Invoke(pane, false);
         if (id is not null && _rows.TryGetValue(id, out var row))
         {
             row.Pane = null;
@@ -808,6 +910,7 @@ public partial class MainWindow : Window
         else
         {
             PaneTitle.Text = "";
+            ShowStatusBar();
             ForkButton.IsEnabled = false;
             AttachButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
@@ -882,7 +985,7 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------------- panes
 
-    private void StartPane(LaunchPlan plan, string title)
+    private TerminalPane StartPane(LaunchPlan plan, string title)
     {
         var pane = new TerminalPane(plan);
         var id = pane.SessionId ?? Guid.NewGuid().ToString();
@@ -908,17 +1011,45 @@ public partial class MainWindow : Window
 
         pane.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>
         {
+            var was = row.Status;
             row.Status = status;
             if (ReferenceEquals(pane, _active)) PaintStatus(status);
+
+            // StatusChanged only fires on a real change, so a repeat cannot notify twice.
+            // Done counts only after work: the first settle out of Starting is the shell or a
+            // resumed session reaching its prompt, which is nothing you are waiting for. A
+            // question or an error is worth knowing whenever it comes, a trust prompt at
+            // launch included. Any other state means the session moved on.
+            NoteKind? kind = status switch
+            {
+                PaneStatus.NeedsInput => NoteKind.NeedsYou,
+                PaneStatus.Error => NoteKind.Error,
+                PaneStatus.Done when was == PaneStatus.Working => NoteKind.Done,
+                _ => null,
+            };
+            SessionNotice?.Invoke(pane, row.Name, kind);
+            if (status == PaneStatus.Working) SessionWorking?.Invoke(pane, true);
+            else if (was == PaneStatus.Working) SessionWorking?.Invoke(pane, false);
         });
 
         PaneHost.Children.Add(pane);
         Activate(pane, row.Name);
         ApplyFilter();
+        return pane;
+    }
+
+    /// <summary>Switches to this pane, for the island's click. Ignored if it was closed meanwhile.</summary>
+    public void ShowSession(TerminalPane pane)
+    {
+        if (!PaneHost.Children.Contains(pane)) return;
+        var row = _rows.Values.FirstOrDefault(r => ReferenceEquals(r.Pane, pane));
+        Activate(pane, row?.Name ?? "session");
     }
 
     private void Activate(TerminalPane pane, string title)
     {
+        // Picking a session, or starting one, is leaving Settings.
+        if (SettingsView.IsVisible) HideSettings();
         foreach (UIElement child in PaneHost.Children)
             child.Visibility = ReferenceEquals(child, pane) ? Visibility.Visible : Visibility.Collapsed;
 
@@ -929,17 +1060,142 @@ public partial class MainWindow : Window
         CloseButton.IsEnabled = true;
         EmptyState.Visibility = Visibility.Collapsed;
         PaintStatus(pane.Status);
+        // Read now rather than on the next poll, so the branch shows as the pane does.
+        _git.Refresh(pane.WorkingDirectory);
+        ShowStatusBar();
         pane.FocusTerminal();
     }
 
     private void PaintStatus(PaneStatus status) =>
         StatusDot.Fill = (Brush)FindResource(SessionRow.BrushKeyFor(status));
 
+    /// <summary>
+    /// The active pane's strip and the footer's limits. A pane Claude has not reported on yet,
+    /// or none at all, shows an empty strip, not zeros; the limits are the account's, so they
+    /// show whichever pane is open.
+    /// </summary>
+    private void ShowStatusBar()
+    {
+        var now = DateTimeOffset.Now;
+        var limits = _status.Limits;
+        HeadStrip.Show(_active?.SessionId is { } id
+            ? StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
+            : null, _settings.Theme);
+        FootLimits.Show(StatusStrip.Footer(limits, _settings, now), _settings.Theme);
+    }
+
+    /// <summary>
+    /// Tells the island about a limit that has just gone past the reserve. Only a warning:
+    /// prompts are never held back.
+    /// </summary>
+    private void WarnReserve()
+    {
+        foreach (var m in _reserve.Crossed(_status.Limits, _settings, DateTimeOffset.Now)) ReserveCrossed?.Invoke(m);
+    }
+
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
 
+    private bool _quitting;
+
+    /// <summary>Ends Clayo: every session closes and the app exits. The island's and the gear's Quit.</summary>
+    public void Quit()
+    {
+        _quitting = true;
+        Close();
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    // The gear's menu and the island's carry the same "Start at login" item; both call these.
+
+    /// <summary>
+    /// Read fresh each time a menu opens: the entry can also be removed outside Clayo. A dev
+    /// build shows what the installed Clayo set but cannot change it (LoginStartup.CanWrite).
+    /// </summary>
+    internal static void ShowLoginState(MenuItem item)
+    {
+        var startup = LoginStartup.ForThisUser();
+        item.IsChecked = startup.IsOn;
+        item.IsEnabled = startup.CanWrite;
+    }
+
+    /// <summary>A checkable item has already flipped IsChecked by the time Click arrives.</summary>
+    internal static void ApplyLoginState(MenuItem item)
+    {
+        if (Environment.ProcessPath is { } exe) LoginStartup.ForThisUser().Set(item.IsChecked, exe);
+    }
+
+    // A left click opens the menu above the gear, as the folder picker opens above New session.
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsMenu.PlacementTarget = SettingsButton;
+        SettingsMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        SettingsMenu.IsOpen = true;
+    }
+
+    private void SettingsMenu_Opened(object sender, RoutedEventArgs e) => ShowLoginState(SettingsLoginItem);
+
+    private void OpenSettings_Click(object sender, RoutedEventArgs e) => ShowSettings();
+
+    /// <summary>
+    /// Settings takes the terminal side's place. The terminals are WebView2 windows that no WPF
+    /// element can draw over, so they are hidden meanwhile; their sessions keep running.
+    /// </summary>
+    private void ShowSettings()
+    {
+        if (SettingsView.IsVisible) return;
+        SettingsView.Refresh(_settings);
+        PaneHost.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Visible;
+        SettingsView.Focus();
+    }
+
+    /// <summary>Back to the session you were on, or to the empty state if there is none.</summary>
+    private void HideSettings()
+    {
+        SettingsView.Visibility = Visibility.Collapsed;
+        PaneHost.Visibility = Visibility.Visible;
+        _active?.FocusTerminal();
+    }
+
+    // Ctrl+, opens Settings, Esc closes it. Previewed at the window, so they work wherever the
+    // focus is in Clayo's own controls. A terminal keeps its keys: inside one, Esc belongs to
+    // Claude, and Ctrl+, reaches only xterm.
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        if (e.Key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            ShowSettings();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && SettingsView.IsVisible)
+        {
+            HideSettings();
+            e.Handled = true;
+        }
+        base.OnPreviewKeyDown(e);
+    }
+
+    private void SettingsLogin_Click(object sender, RoutedEventArgs e) => ApplyLoginState(SettingsLoginItem);
+
+    private void SettingsQuit_Click(object sender, RoutedEventArgs e) => Quit();
+
+    /// <summary>
+    /// Closing only hides. The sessions keep running, so a long task is not lost to a reflex
+    /// click on X and Remote Control can keep reaching them; the island brings the window back.
+    /// </summary>
     protected override void OnClosing(CancelEventArgs e)
     {
+        if (!_quitting)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
         _store.StopWatching();
+        _status.Dispose();
+        _gitPoll.Stop();
+        _clock.Stop();
         foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.Close();
         base.OnClosing(e);
     }

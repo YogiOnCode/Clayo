@@ -33,9 +33,12 @@ public partial class TerminalPane : UserControl
     private readonly PtyProcess _pty = new();
     private readonly LaunchPlan _plan;
     private bool _typedCommand;
+    private DateTime _typedAt = DateTime.MaxValue;
     private bool _closed;
 
     private DateTime _lastOutput = DateTime.UtcNow;
+    private DateTime _resizedAt = DateTime.MinValue;
+    private (short, short) _ptySize;
     private readonly Queue<DateTime> _recent = new();
     private readonly System.Windows.Threading.DispatcherTimer _idleTimer;
     private PaneStatus _status = PaneStatus.Starting;
@@ -50,6 +53,13 @@ public partial class TerminalPane : UserControl
     public string? SessionId { get; }
 
     public string WorkingDirectory => _plan.WorkingDirectory;
+
+    /// <summary>
+    /// Text to type into Claude's input once, without Enter, so you finish the prompt and
+    /// send it yourself. Typed on the pane's first quiet after the claude command (see
+    /// TypePrefill).
+    /// </summary>
+    public string? Prefill { get; set; }
 
     public PaneStatus Status
     {
@@ -103,7 +113,11 @@ public partial class TerminalPane : UserControl
             // ponytail: a question or an error outlives the silence behind it. Without this,
             // going quiet would immediately repaint both of them as "done".
             else if (Status is PaneStatus.NeedsInput or PaneStatus.Error) return;
-            else if (quietFor > 1500) Status = PaneStatus.Done;
+            else if (quietFor > 1500)
+            {
+                Status = PaneStatus.Done;
+                TypePrefill();
+            }
         };
 
         _flushTimer = new System.Windows.Threading.DispatcherTimer
@@ -173,9 +187,17 @@ public partial class TerminalPane : UserControl
                 break;
 
             case "r":
-                _pty.Resize(
-                    (short)(msg.TryGetProperty("cols", out var rc) ? rc.GetInt32() : 80),
-                    (short)(msg.TryGetProperty("rows", out var rr) ? rr.GetInt32() : 24));
+                // A minimized window still gets the odd layout pass (a title change is enough),
+                // measured against a client area that is not the real one: seen as 124 -> 105
+                // cols with nothing on screen. Passed on, Claude Code repaints at the wrong width,
+                // then again on restore. The fit after restoring reports the true size, which the
+                // pty usually still has, and even a same-size resize makes ConPTY repaint.
+                var size = ((short)(msg.TryGetProperty("cols", out var rc) ? rc.GetInt32() : 80),
+                            (short)(msg.TryGetProperty("rows", out var rr) ? rr.GetInt32() : 24));
+                if (Window.GetWindow(this)?.WindowState == WindowState.Minimized || size == _ptySize) break;
+                _ptySize = size;
+                _resizedAt = DateTime.UtcNow;
+                _pty.Resize(size.Item1, size.Item2);
                 break;
 
             case "paste":
@@ -215,11 +237,15 @@ public partial class TerminalPane : UserControl
         {
             var now = DateTime.UtcNow;
             _lastOutput = now;
-            lock (_recent)
-            {
-                _recent.Enqueue(now);
-                while (_recent.Count > 12) _recent.Dequeue();
-            }
+            // A resize makes Claude Code repaint the whole screen at once. Counted, that reads
+            // as sustained output and flips a finished pane to Working and back, which raises
+            // a Done for a turn that never happened. It still counts as output for going quiet.
+            if ((now - _resizedAt).TotalMilliseconds > 500)
+                lock (_recent)
+                {
+                    _recent.Enqueue(now);
+                    while (_recent.Count > 12) _recent.Dequeue();
+                }
             var seen = Scan(bytes, ref _carry);
             if (seen is { } s) Dispatcher.BeginInvoke(() => Status = s);
 
@@ -247,6 +273,7 @@ public partial class TerminalPane : UserControl
         try
         {
             _pty.Start(_plan.ShellCommandLine, _plan.WorkingDirectory, cols, rows);
+            _ptySize = (cols, rows);
         }
         catch (Exception ex)
         {
@@ -267,9 +294,24 @@ public partial class TerminalPane : UserControl
             delay.Stop();
             if (_typedCommand) return;
             _typedCommand = true;
+            _typedAt = DateTime.UtcNow;
             _pty.Write(_plan.ClaudeCommand + "\r");
         };
         delay.Start();
+    }
+
+    /// <summary>
+    /// Claude has drawn its input box once the output after the typed command goes quiet: the
+    /// same 1.5 s of silence that marks a turn over. The output must be newer than the command,
+    /// or a pane that was silent while WebView2 loaded would type into PowerShell first. A
+    /// claude slow enough to load in silence for 1.5 s gets the text a little early, in the
+    /// console's input buffer, which it reads as typeahead once it starts.
+    /// </summary>
+    private void TypePrefill()
+    {
+        if (Prefill is not { } text || _lastOutput <= _typedAt) return;
+        Prefill = null;
+        _pty.Write(Encoding.UTF8.GetBytes(text));
     }
 
     // ponytail: two ASCII literals, not a parser. Verified against the transcripts and
