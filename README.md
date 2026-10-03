@@ -1,110 +1,110 @@
-# ccx
+<div align="center">
 
-A Windows shell for Claude Code sessions. Sessions on the left, a real terminal on the right.
+<img src="media/icon.png" width="96" alt="Clayo mascot" />
 
-Not affiliated with Anthropic. Reads `~/.claude/projects` and never writes to it.
+# Clayo
 
-## Status
+**Every Claude Code session in one Windows window, plus an island that tells you which one needs you.**
 
-**Untested.** This was written without a Windows machine to build on, so treat it as a
-first draft that compiles by inspection. `Core/ConPty.cs` is the part most likely to
-need fixing — see *Where it will break* below.
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-## Build
+</div>
 
-Needs the .NET 8 SDK and the WebView2 runtime (already present on current Windows 11).
+<!-- Video: drag brag.mp4 into a GitHub comment box, paste the
+     https://github.com/user-attachments/assets/… URL on its own line here, and it plays inline. -->
 
-```
-dotnet build -c Release
-```
+<p align="center"><img src="media/poster.jpg" alt="Clayo launch video" width="800" /></p>
 
-The output is `clayo.exe`.
+## Why
 
-## Launching it the way you launch PowerShell
+You run four or five Claude Code sessions at once, each in its own terminal. One is waiting
+for a permission, one finished ten minutes ago, and you're in the browser. Clayo puts them
+all in one window and tells you when one needs you, without you switching windows.
 
-1. Publish somewhere stable:
-   `dotnet publish -c Release -r win-x64 --self-contained false -o %USERPROFILE%\.local\clayo`
-2. Add that folder to your user `PATH`. Set it with
-   `[Environment]::SetEnvironmentVariable('PATH', ..., 'User')`, not `setx` — `setx`
-   truncates `PATH` at 1024 characters.
-3. Type `clayo` in any folder's Explorer address bar.
+## What you get
 
-Explorer runs the command with that folder as its working directory, which is what
-`App.OnStartup` reads, and the window opens on a new session in it. A second `clayo` in
-a different folder hands the path to the window you already have and exits, adding a
-session there instead of opening a second window.
+![The Clayo window: sessions on the left, a branch nested under its parent, the real Claude Code terminal on the right](media/hero.png)
 
-The publish folder has to hold `Assets\` as well: `TerminalPane` maps
-`AppContext.BaseDirectory\Assets` as the WebView2 virtual host, so the exe cannot sit
-loose in a shared `bin` directory.
+- **The real Claude Code.** Each pane is a real terminal (ConPTY + xterm.js) running the
+  `claude` you already use: slash commands, permission prompts, plan mode, your status line.
+- **Sessions on the left, grouped by folder.** Search, rename (F2), resume with a click.
+- **Branch from here.** Fork a conversation into a new session. The branch sits under its
+  parent; the original stays as it was.
+- **The island.** A small pill drops from the top of the screen when a session needs you or
+  has finished, even while you're in another app. It never takes focus. Click it to jump to
+  that session.
 
-## How it works
+  ![The island: "api-refactor · needs you"](media/island.png)
 
-```
-SessionStore     scans and watches ~/.claude/projects, parses JSONL heads
-SessionLauncher  builds the claude command for new / resume / fork
-ConPty           P/Invoke wrapper: pipes, pseudoconsole, CreateProcess
-PtyProcess       one child process, a read thread, raw byte events
-TerminalPane     WebView2 + xterm.js, bridged to a PtyProcess
-MainWindow       sidebar, pane switching, status
-SingleInstance   mutex + named pipe handoff from Explorer
-```
+- **Drop a file or folder on the island** and it opens in Clayo.
+- **Status at a glance.** Each pane's header shows model, branch and diff, context and
+  effort. The sidebar footer shows your 5-hour and 7-day limits, drawn as Numbers, Bars,
+  Rings or Chips, and the island warns you once when you get near one.
+- **Type `clayo` in any Explorer address bar** to open a session in that folder.
+- **Stays out of the way.** Start at login, hidden until the island has something to say.
+  Closing the window keeps sessions running.
 
-Each pane spawns a **shell**, then types the `claude` command into it. When Claude exits
-you land on a prompt instead of the pane dying. Same as your current habit.
+## Install
 
-Bytes cross the C#/JS bridge base64-encoded and are never decoded on the way. A pipe read
-can split a UTF-8 character or an escape sequence in half; xterm.js reassembles them.
-Decoding to a string in C# would corrupt both.
+You need Windows 10 or 11, the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0),
+the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (already on
+Windows 11) and [Claude Code](https://docs.claude.com/en/docs/claude-code) on your `PATH`.
 
-`SessionStore` reads the working directory out of the transcript rather than un-mangling
-the folder name. The folder name replaces separators with dashes, so a path that contains
-a real dash can't be recovered from it. The mangled name is used for display only.
-
-## Forking
-
-`Branch from here` runs:
-
-```
-claude --resume <parent> --fork-session --session-id <new-guid>
+```powershell
+git clone https://github.com/YogiOnCode/Clayo.git
+cd Clayo
+dotnet publish -c Release -r win-x64 --self-contained false -o $env:USERPROFILE\.local\clayo
 ```
 
-Pre-allocating the child id means the branch is addressable before its transcript exists,
-so the sidebar can show it immediately instead of scraping stdout for the new id.
+Add that folder to your user `PATH`:
 
-Two things to know: permissions granted with "allow for this session" do **not** carry
-over to a branch, and resuming the same session in two panes *without* forking interleaves
-both streams into one transcript. `Sessions_SelectionChanged` guards against the second by
-switching to an open pane rather than starting a duplicate.
+```powershell
+$p = [Environment]::GetEnvironmentVariable('PATH', 'User')
+[Environment]::SetEnvironmentVariable('PATH', "$p;$env:USERPROFILE\.local\clayo", 'User')
+```
 
-## Where it will break
+Don't use `setx` for this: it cuts `PATH` off at 1024 characters. Keep the `Assets\` folder
+next to `clayo.exe`; the terminal pane loads from it.
 
-- **`InitializeProcThreadAttributeList` size probe.** `lpSize` is a `SIZE_T`. It's declared
-  here as `ref IntPtr`, which is right on x64 but worth checking first if `CreateProcess`
-  fails with 87.
-- **`Dispose` ordering.** `ClosePseudoConsole` can block while the client is still attached
-  and the output pipe isn't being drained. Current order is terminate, close console, then
-  dispose streams. If closing a pane hangs, this is why.
-- **Resize storms.** `ResizePseudoConsole` on every observer callback makes the TUI redraw
-  garbage. The JS side coalesces to 60 ms; raise it if dragging the splitter looks bad.
-- **The 400 ms delay before typing the command.** PowerShell eats input sent before its
-  prompt is up. A timer is a guess — sniffing for the prompt in the output stream is the
-  real fix.
-- **Console encoding.** If box-drawing characters come out as mojibake, add
-  `[Console]::OutputEncoding = [Text.Encoding]::UTF8` to your PowerShell profile.
+Now type `clayo` in any folder's Explorer address bar, or run it from a terminal.
 
-## Not built yet
+## Use
 
-- Vendored xterm.js. `Assets/terminal.html` loads it from jsDelivr, so the pane is blank
-  offline. `npm i @xterm/xterm @xterm/addon-fit`, copy the dist files into
-  `Assets/xterm/`, and swap the four CDN URLs.
-- Restoring open panes on launch. `SingleInstance` and `SessionStore` are there; a
-  `Workspace` module that persists the open set to JSON is the missing piece.
-- Real status. The working/idle dot is a 1.2 s output-silence heuristic. Parsing OSC title
-  sequences out of the byte stream would give you a true needs-input state.
-- Keyboard navigation. Ctrl+P for the session switcher, Ctrl+Tab between panes.
-- Closing a pane. Panes accumulate until the window closes.
+- **New session**: the button at the bottom of the sidebar, or `clayo` in a folder.
+- **Branch**: open a session, then **Branch from here** in its header.
+- **Settings**: the gear menu, or `Ctrl+,`.
+- **Quit**: **Quit Clayo** in the gear menu or the island's menu. The window's close button
+  only hides it.
 
-## Third-party
+More in the [wiki](https://github.com/YogiOnCode/Clayo/wiki).
 
-xterm.js, `@xterm/addon-fit` and `@xterm/addon-webgl` are MIT. Nothing else is vendored.
+## Docs
+
+| | |
+|---|---|
+| [Install](https://github.com/YogiOnCode/Clayo/wiki/Install) | Publish, PATH, updating, uninstalling |
+| [Sessions and Branching](https://github.com/YogiOnCode/Clayo/wiki/Sessions-and-Branching) | What each button runs |
+| [The Island](https://github.com/YogiOnCode/Clayo/wiki/The-Island) | Notices, peek, drop to open |
+| [Status Bar and Limits](https://github.com/YogiOnCode/Clayo/wiki/Status-Bar-and-Limits) | Pane header, limits, themes |
+| [Settings](https://github.com/YogiOnCode/Clayo/wiki/Settings) | Every option |
+| [Troubleshooting](https://github.com/YogiOnCode/Clayo/wiki/Troubleshooting) | When something looks wrong |
+| [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works) | The code, module by module |
+| [Roadmap](https://github.com/YogiOnCode/Clayo/wiki/Roadmap) | Codex support, setup window, release builds |
+
+## Contributing
+
+Issues and pull requests are welcome. Open an issue before a big change so we can agree on
+the approach first. Pull requests to `main` need one review and are squash-merged. See
+[Contributing](https://github.com/YogiOnCode/Clayo/wiki/Contributing) for building and
+running the checks. Found a security issue? Report it privately from the **Security** tab,
+not in an issue.
+
+## Notes
+
+Not affiliated with Anthropic. Clayo reads `~/.claude` and never writes to it; its own files
+live in `%LOCALAPPDATA%\Clayo`.
+
+MIT licensed, see [LICENSE](LICENSE). Bundles [xterm.js](https://github.com/xtermjs/xterm.js)
+and its fit and WebGL addons (MIT, see `Assets/xterm/LICENSE.xterm`).
