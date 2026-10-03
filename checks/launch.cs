@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 
 // The commands a pane types, for new / resume / fork. Nothing is run; the relay settings

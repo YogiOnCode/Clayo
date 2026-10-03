@@ -4,8 +4,9 @@
 
 # Clayo
 
-**Every Claude Code session in one Windows window, plus an island that tells you which one needs you.**
+**Every Claude Code and Codex session in one Windows window, plus an island that tells you which one needs you.**
 
+![Latest release](https://img.shields.io/github/v/release/YogiOnCode/Clayo)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
@@ -19,16 +20,22 @@
 
 ## Why
 
-You run four or five Claude Code sessions at once, each in its own terminal. One is waiting
-for a permission, one finished ten minutes ago, and you're in the browser. Clayo puts them
-all in one window and tells you when one needs you, without you switching windows.
+You run four or five coding agent sessions at once, Claude Code or Codex, each in its own
+terminal. One is waiting for a permission, one finished ten minutes ago, and you're in the
+browser. Clayo puts them all in one window and tells you when one needs you, without you
+switching windows.
 
 ## What you get
 
 ![The Clayo window: sessions on the left, a branch nested under its parent, the real Claude Code terminal on the right](media/hero.png)
 
-- **The real Claude Code.** Each pane is a real terminal (ConPTY + xterm.js) running the
-  `claude` you already use: slash commands, permission prompts, plan mode, your status line.
+- **The real Claude Code and Codex.** Each pane is a real terminal (ConPTY + xterm.js)
+  running the `claude` or `codex` you already use: slash commands, permission prompts, plan
+  mode, your status line.
+- **Both side by side, or just one.** Use Claude Code, Codex or both; with both, each
+  session in the sidebar is tagged **CC** or **CX**.
+- **Set up in one screen.** The first time it starts, Clayo finds your agents, installs or
+  signs in to the one you're missing, and turns on start at login and `clayo` in Explorer.
 - **Sessions on the left, grouped by folder.** Search, rename (F2), resume with a click.
 - **Branch from here.** Fork a conversation into a new session. The branch sits under its
   parent; the original stays as it was.
@@ -48,51 +55,83 @@ all in one window and tells you when one needs you, without you switching window
 
 ## Install
 
-You need Windows 10 or 11, the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0),
-the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (already on
-Windows 11) and [Claude Code](https://docs.claude.com/en/docs/claude-code) on your `PATH`.
+1. Download `clayo-<version>-win-x64.zip` from the
+   [latest release](https://github.com/YogiOnCode/Clayo/releases/latest).
+2. Unzip it into `%LOCALAPPDATA%\Programs`, so you have
+   `%LOCALAPPDATA%\Programs\Clayo\clayo.exe`. Keep it there: start at login and `clayo` in
+   Explorer point at this folder.
+3. Run `clayo.exe`. Clayo isn't signed yet, so Windows may say "Windows protected your PC":
+   click **More info**, then **Run anyway**.
+
+You need Windows 10 or 11, 64-bit, and nothing else first: .NET comes inside the zip, and the
+[WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) is already on
+Windows 11 and on most Windows 10 PCs.
+
+### First run
+
+The setup window looks for [Claude Code](https://docs.claude.com/en/docs/claude-code) and
+[Codex](https://github.com/openai/codex). You need at least one.
+
+- Missing one? **Install** runs its own installer in a PowerShell window you can watch
+  (Codex needs [Node.js](https://nodejs.org) first). **Sign in** does the same for signing
+  in, and **Locate…** points Clayo at an install in an unusual folder.
+- Choose which ones to use and which one **New session** starts.
+- Keep **Start Clayo when I sign in** and **Add clayo to my PATH** ticked, then press
+  **Open Clayo**.
+
+**Settings › Agents** brings the setup window back. What works with each agent, and how to
+install them by hand: [docs/AGENTS.md](docs/AGENTS.md).
+
+### Updating
+
+Quit Clayo, then unzip the new release over the old folder. Your settings are kept.
+
+### Uninstalling
+
+1. In **Settings › Agents**, untick **Start Clayo when I sign in** and **Add clayo to my
+   PATH**, and press **Open Clayo**.
+2. **Quit Clayo** from the gear menu.
+3. Delete `%LOCALAPPDATA%\Programs\Clayo`, and `%LOCALAPPDATA%\Clayo` too if you want your
+   settings gone. Your Claude Code and Codex sessions aren't touched.
+
+### Build from source
+
+You need the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ```powershell
 git clone https://github.com/YogiOnCode/Clayo.git
 cd Clayo
-dotnet publish -c Release -r win-x64 --self-contained false -o $env:USERPROFILE\.local\clayo
+dotnet publish src/Clayo -c Release -r win-x64 --self-contained false -o $env:LOCALAPPDATA\Programs\Clayo
 ```
 
-Add that folder to your user `PATH`:
-
-```powershell
-$p = [Environment]::GetEnvironmentVariable('PATH', 'User')
-[Environment]::SetEnvironmentVariable('PATH', "$p;$env:USERPROFILE\.local\clayo", 'User')
-```
-
-Don't use `setx` for this: it cuts `PATH` off at 1024 characters. Keep the `Assets\` folder
-next to `clayo.exe`; the terminal pane loads from it.
-
-Now type `clayo` in any folder's Explorer address bar, or run it from a terminal.
+Then run `clayo.exe` from there; the setup window takes care of `PATH`. Keep the `Assets\`
+folder next to `clayo.exe`, the terminal pane loads from it. `.\scripts\publish.ps1` builds
+the release zip instead. The self-checks in `checks/` need the .NET 10 SDK (they're
+file-based apps); the app itself builds with .NET 8.
 
 ## Use
 
 - **New session**: the button at the bottom of the sidebar, or `clayo` in a folder.
 - **Branch**: open a session, then **Branch from here** in its header.
-- **Settings**: the gear menu, or `Ctrl+,`.
+- **Settings**: the gear menu, or `Ctrl+,`. **Agents** there reopens the setup window.
 - **Quit**: **Quit Clayo** in the gear menu or the island's menu. The window's close button
   only hides it.
 
-More in the [wiki](https://github.com/YogiOnCode/Clayo/wiki). The self-checks in `checks/`
-need the .NET 10 SDK (they're file-based apps); the app itself builds with .NET 8.
+More in the [wiki](https://github.com/YogiOnCode/Clayo/wiki).
 
 ## Docs
 
 | | |
 |---|---|
-| [Install](https://github.com/YogiOnCode/Clayo/wiki/Install) | Publish, PATH, updating, uninstalling |
+| [Claude Code and Codex](docs/AGENTS.md) | What works with each, installing them by hand |
+| [Install](https://github.com/YogiOnCode/Clayo/wiki/Install) | Download, first run, updating, uninstalling |
 | [Sessions and Branching](https://github.com/YogiOnCode/Clayo/wiki/Sessions-and-Branching) | What each button runs |
 | [The Island](https://github.com/YogiOnCode/Clayo/wiki/The-Island) | Notices, peek, drop to open |
 | [Status Bar and Limits](https://github.com/YogiOnCode/Clayo/wiki/Status-Bar-and-Limits) | Pane header, limits, themes |
 | [Settings](https://github.com/YogiOnCode/Clayo/wiki/Settings) | Every option |
 | [Troubleshooting](https://github.com/YogiOnCode/Clayo/wiki/Troubleshooting) | When something looks wrong |
 | [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works) | The code, module by module |
-| [Roadmap](https://github.com/YogiOnCode/Clayo/wiki/Roadmap) | Codex support, setup window, release builds |
+| [Roadmap](https://github.com/YogiOnCode/Clayo/wiki/Roadmap) | What's next |
 
 ## Contributing
 
@@ -104,8 +143,9 @@ not in an issue.
 
 ## Notes
 
-Not affiliated with Anthropic. Clayo reads `~/.claude` and never writes to it. Where it does
-keep files is listed in [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works#where-clayo-keeps-its-files).
+Not affiliated with Anthropic or OpenAI. Clayo reads `~/.claude` and `~/.codex` and never
+writes to either. Where it does keep files is listed in
+[How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works#where-clayo-keeps-its-files).
 
 MIT licensed, see [LICENSE](LICENSE). Bundles [xterm.js](https://github.com/xtermjs/xterm.js)
-and its fit and WebGL addons (MIT, see `Assets/xterm/LICENSE.xterm`).
+and its fit and WebGL addons (MIT, see `src/Clayo/Assets/xterm/LICENSE.xterm`).

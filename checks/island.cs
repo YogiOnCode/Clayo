@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 
 // 1920x1080 at 100%: centre x is 960, the zone runs 840..1080, the edge is rows 0 and 1.
