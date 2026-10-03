@@ -204,7 +204,17 @@
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <!-- Whose session: CC or CX in the setup window's badge colours, only when
+                       both agents are in use. -->
+                  <TextBlock Grid.Column="2"
+                             Text="{Binding AgentTag}"
+                             Foreground="{Binding AgentBrush}"
+                             Visibility="{Binding AgentVisibility}"
+                             FontFamily="{StaticResource MonoFont}"
+                             FontSize="9.5" FontWeight="SemiBold" Opacity="0.85"
+                             Margin="6,0,0,0" VerticalAlignment="Center" />
                   <TextBlock Grid.Column="0"
                              Text="↳"
                              Visibility="{Binding BranchMarkVisibility}"

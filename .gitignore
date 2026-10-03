@@ -15,4 +15,5 @@ Thumbs.db
 desktop.ini
 brag-output
 design
-docs
+docs/*
+!docs/AGENTS.md

@@ -23,7 +23,8 @@ public sealed record FolderChoice(string Name, string FullPath);
 /// </summary>
 public sealed class SessionRow : INotifyPropertyChanged
 {
-    public required string SessionId { get; init; }
+    /// <summary>A placeholder for a Codex pane until its transcript appears (MainWindow.BindCodexPanes).</summary>
+    public required string SessionId { get; set; }
 
     /// <summary>Null until the transcript for this session shows up on disk.</summary>
     public SessionInfo? Info { get; set; }
@@ -36,6 +37,19 @@ public sealed class SessionRow : INotifyPropertyChanged
 
     public string? CustomName { get; set; }
     public string Folder { get; set; } = "";
+
+    /// <summary>A row with no transcript yet is a pane Clayo started, which knows its agent.</summary>
+    public AgentKind Agent => Info?.Agent ?? Pane?.Agent ?? AgentKind.Claude;
+
+    /// <summary>Set by MainWindow when both agents are in use, so the tag only shows when it tells rows apart.</summary>
+    public bool ShowAgent { get; set; }
+
+    public string AgentTag => Agent == AgentKind.Codex ? "CX" : "CC";
+
+    /// <summary>The badge colours from the setup window: clay for Claude Code, blue for Codex.</summary>
+    public string AgentBrush => Agent == AgentKind.Codex ? "#7DBBEB" : "#E39A7E";
+
+    public Visibility AgentVisibility => ShowAgent ? Visibility.Visible : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -205,6 +219,7 @@ public sealed class SessionRow : INotifyPropertyChanged
         Raise(nameof(Name));
         Raise(nameof(Subtitle));
         Raise(nameof(Tip));
+        Raise(nameof(AgentVisibility));
         Raise(nameof(StatusBrush));
         Raise(nameof(StatusText));
     }
@@ -225,7 +240,16 @@ public sealed class BrushKeyConverter : IValueConverter
 
 public partial class MainWindow : Window
 {
-    private readonly SessionStore _store = new();
+    private readonly IAgent _claude;
+    private readonly IAgent _codex;
+
+    private IAgent AgentFor(AgentKind kind) => kind == AgentKind.Codex ? _codex : _claude;
+
+    /// <summary>Codex panes waiting for their transcript, in start order. See BindCodexPanes.</summary>
+    private readonly List<(SessionRow Row, string? ParentId, DateTime Since)> _unbound = [];
+
+    /// <summary>Both agents' transcripts, watched always; RefreshSessions skips an agent setup's Use left off.</summary>
+    private ISessionSource[] Sources => [_claude.Sessions, _codex.Sessions];
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
@@ -267,7 +291,10 @@ public partial class MainWindow : Window
 
     public MainWindow(string folder, bool startSession)
     {
+        _claude = ClaudeAgent.ForThisUser(() => _settings.ClaudePath);
+        _codex = CodexAgent.ForThisUser(() => _settings.CodexPath);
         InitializeComponent();
+        SettingsView.SetupRequested += () => ShowSetup();
         SettingsView.CloseRequested += HideSettings;
         SettingsView.SettingsChanged += s =>
         {
@@ -287,11 +314,11 @@ public partial class MainWindow : Window
         _folder = folder;
         ShowFolder(folder);
 
-        _store.Changed += () => Dispatcher.BeginInvoke(RefreshSessions);
+        foreach (var source in Sources) source.Changed += () => Dispatcher.BeginInvoke(RefreshSessions);
         Loaded += (_, __) =>
         {
             RefreshSessions();
-            _store.StartWatching();
+            foreach (var source in Sources) source.StartWatching();
             _status.Start();
 
             // A hidden window shows no branch, so it reads none.
@@ -312,9 +339,7 @@ public partial class MainWindow : Window
 
             // Opening Clayo in a folder should land you in a live session, not an
             // empty pane. Same thing the Explorer handoff does in AdoptFolder.
-            if (startSession)
-                StartPane(SessionLauncher.Plan(LaunchMode.New, _folder),
-                          title: $"new · {Path.GetFileName(_folder.TrimEnd('\\'))}");
+            if (startSession) StartNew(_folder);
         };
     }
 
@@ -334,10 +359,16 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        DarkCaption(hwnd);
+        PlaceOnPrimary(hwnd);
+    }
 
+    /// <summary>The caption look, shared with the setup window.</summary>
+    internal static void DarkCaption(IntPtr hwnd)
+    {
         // A white system title bar above a near-black app reads as a bug. This is the
         // supported way to darken it without taking over the whole non-client area.
-        var hwnd = new WindowInteropHelper(this).Handle;
         int on = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
 
@@ -355,8 +386,6 @@ public partial class MainWindow : Window
         // No return values checked on purpose: dwmapi answers E_INVALIDARG for an
         // attribute the running build doesn't know, so anything older than 22H2 keeps
         // the plain dark title bar instead of failing.
-
-        PlaceOnPrimary(hwnd);
     }
 
     // -------------------------------------------------------------- placement
@@ -446,21 +475,76 @@ public partial class MainWindow : Window
         _folder = folder;
         ShowFolder(folder);
         Reveal();
+        // Setup came up instead: there may be no agent to start yet. New session will use the folder.
+        if (!IsVisible) return;
 
-        StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
-                  title: $"new · {Path.GetFileName(folder.TrimEnd('\\'))}").Prefill = prefill;
+        StartNew(folder, pane => pane.Prefill = prefill);
     }
 
     /// <summary>
     /// Brings the window forward from wherever it is: hidden (closed, or never shown after a
     /// login start), minimized, or behind. RestoreWindow rather than WindowState = Normal, so
     /// a window that was maximized before it was minimized comes back maximized.
+    /// The setup window comes first while setup is needed (NeedsSetup), and this window
+    /// once you press its Open Clayo.
     /// </summary>
     public void Reveal()
     {
+        if (!IsVisible && NeedsSetup)
+        {
+            ShowSetup();
+            return;
+        }
         Show();
         if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
         Activate();
+    }
+
+    /// <summary>
+    /// docs/SETUP.md D6: never set up, or none of the agents you use is where it was. Located
+    /// only, not run, so asking costs a few file checks.
+    /// </summary>
+    private bool NeedsSetup
+    {
+        get
+        {
+            var detector = AgentDetector.ForThisMachine();
+            return !_settings.SetupDone
+                || !(_settings.UseClaude && detector.Locate(AgentKind.Claude, _settings.ClaudePath) is not null
+                     || _settings.UseCodex && detector.Locate(AgentKind.Codex, _settings.CodexPath) is not null);
+        }
+    }
+
+    private SetupWindow? _setup;
+
+    /// <summary>
+    /// The setup window, on top of this one when it is open (from Settings), else on its own.
+    /// Closing it without Open Clayo changes nothing; the next Reveal asks again.
+    /// </summary>
+    private void ShowSetup()
+    {
+        if (_setup is not null)
+        {
+            _setup.Activate();
+            return;
+        }
+
+        _setup = new SetupWindow(_settings);
+        if (IsVisible)
+        {
+            _setup.Owner = this;
+            _setup.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        }
+        _setup.Done += s =>
+        {
+            _settings = s;
+            s.Save(ClayoSettings.DefaultPath);
+            if (SettingsView.IsVisible) SettingsView.Refresh(s);
+            RefreshSessions();
+            Reveal();
+        };
+        _setup.Closed += (_, _) => _setup = null;
+        _setup.Show();
     }
 
     private void ShowFolder(string folder)
@@ -495,7 +579,18 @@ public partial class MainWindow : Window
         // identity (and their status light) across a refresh.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var info in _store.Scan())
+        // With both agents in use, each row says whose it is.
+        bool both = _settings.UseClaude && _settings.UseCodex;
+        var codex = _settings.UseCodex ? _codex.Sessions.Scan() : [];
+        var infos = (_settings.UseClaude ? _claude.Sessions.Scan() : []).Concat(codex);
+        BindCodexPanes(codex);
+
+        // A Codex pane's working / done is exact in its transcript (TerminalPane.ShowTurn).
+        foreach (var info in codex)
+            if (info.Turn is { } turn && _rows.TryGetValue(info.SessionId, out var open) && open.Pane is { } pane)
+                pane.ShowTurn(turn, info.LastActivity);
+
+        foreach (var info in infos)
         {
             seen.Add(info.SessionId);
 
@@ -503,6 +598,7 @@ public partial class MainWindow : Window
             {
                 row.Info = info;
                 row.CustomName = _names.Get(info.SessionId);
+                row.ShowAgent = both;
                 row.Refresh();
             }
             else
@@ -512,7 +608,8 @@ public partial class MainWindow : Window
                     SessionId = info.SessionId,
                     Info = info,
                     CustomName = _names.Get(info.SessionId),
-                    Folder = info.ProjectDir
+                    Folder = info.ProjectDir,
+                    ShowAgent = both
                 };
             }
         }
@@ -532,9 +629,35 @@ public partial class MainWindow : Window
         }
 
         ApplyFilter();
+        // A Codex pane's strip is read from the transcript this refresh just read.
+        ShowStatusBar();
 
-        if (!_store.RootExists)
-            EmptyState.Text = "No transcripts found under ~\\.claude\\projects.\nStart a session and it will show up here.";
+        if (!Sources.Any(source => source.RootExists))
+            EmptyState.Text = "No transcripts found under ~\\.claude or ~\\.codex.\nStart a session and it will show up here.";
+    }
+
+    /// <summary>
+    /// Codex picks its own ids, so a new Codex pane or fork is re-keyed from its placeholder to
+    /// the transcript it turns out to be, once that appears (docs/SETUP.md, "Finding a new
+    /// Codex session"). Done before the rows are folded in, so the transcript lands on the
+    /// pane's row instead of growing a second one.
+    /// </summary>
+    private void BindCodexPanes(IReadOnlyList<SessionInfo> codex)
+    {
+        foreach (var wait in _unbound.ToList())
+        {
+            var taken = PaneHost.Children.OfType<TerminalPane>().Select(p => p.SessionId).OfType<string>()
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (CodexSessionStore.FindStarted(codex, wait.Row.Folder, wait.ParentId, wait.Since, taken) is not { } found)
+                continue;
+
+            _unbound.Remove(wait);
+            _rows.Remove(wait.Row.SessionId);
+            wait.Row.SessionId = found.SessionId;
+            wait.Row.Pane!.SessionId = found.SessionId;
+            _rows[found.SessionId] = wait.Row;
+            if (ReferenceEquals(wait.Row.Pane, _active)) ForkButton.IsEnabled = true;
+        }
     }
 
     /// <summary>Rows, order and grouping the ListBox currently shows. See ApplyFilter.</summary>
@@ -632,7 +755,8 @@ public partial class MainWindow : Window
     {
         foreach (var row in _rows.Values)
         {
-            row.ParentId = _parents.Get(row.SessionId);
+            // Codex says in the transcript; Claude's links are only the ones Clayo recorded.
+            row.ParentId = row.Info?.ParentId ?? _parents.Get(row.SessionId);
             row.BranchOf = row.ParentId is { } pid && _rows.TryGetValue(pid, out var parent)
                 ? parent.Name
                 : null;
@@ -728,7 +852,7 @@ public partial class MainWindow : Window
         }
 
         var cwd = Directory.Exists(row.Folder) ? row.Folder : _folder;
-        StartPane(SessionLauncher.Plan(LaunchMode.Resume, cwd, row.SessionId), row.Name);
+        StartPane(SessionLauncher.Plan(AgentFor(row.Agent), LaunchMode.Resume, cwd, row.SessionId), row.Name);
     }
 
     private void NewSession_Click(object sender, RoutedEventArgs e)
@@ -787,16 +911,44 @@ public partial class MainWindow : Window
     /// Starts a session in <paramref name="folder"/> and points the window at it, so the
     /// header and the next new session agree with where you just launched.
     /// </summary>
-    private TerminalPane? SpawnIn(string folder)
+    private void SpawnIn(string folder, Action<TerminalPane>? then = null)
     {
         FolderPopup.IsOpen = false;
-        if (!Directory.Exists(folder)) return null;
+        if (!Directory.Exists(folder)) return;
 
         _folder = folder;
         ShowFolder(folder);
 
-        return StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
-                         title: $"new · {FolderLeaf(folder)}");
+        StartNew(folder, then);
+    }
+
+    /// <summary>
+    /// A new session with the agent setup picked for New session, or, set to ask each time,
+    /// the one you pick from a two-item menu over the New session button. Closing the menu
+    /// starts nothing. then gets the pane once it exists.
+    /// </summary>
+    private void StartNew(string folder, Action<TerminalPane>? then = null)
+    {
+        void Start(IAgent agent)
+        {
+            var pane = StartPane(SessionLauncher.Plan(agent, LaunchMode.New, folder), $"new · {FolderLeaf(folder)}");
+            then?.Invoke(pane);
+        }
+
+        if (_settings.NewSessionKind is { } kind)
+        {
+            Start(AgentFor(kind));
+            return;
+        }
+
+        var menu = new ContextMenu { PlacementTarget = NewButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Top };
+        foreach (var agent in new[] { _claude, _codex })
+        {
+            var item = new MenuItem { Header = SetupScreen.Name(agent.Kind) };
+            item.Click += (_, _) => Start(agent);
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
     }
 
     /// <summary>
@@ -816,16 +968,17 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
 
         var file = dialog.FileName;
-        if (SpawnIn(Path.GetDirectoryName(file)!) is not { } pane) return;
-
-        EventHandler<PaneStatus>? ready = null;
-        ready = (_, status) =>
+        SpawnIn(Path.GetDirectoryName(file)!, pane =>
         {
-            if (status != PaneStatus.Done) return;
-            pane.StatusChanged -= ready;
-            pane.InsertPaths([file]);
-        };
-        pane.StatusChanged += ready;
+            EventHandler<PaneStatus>? ready = null;
+            ready = (_, status) =>
+            {
+                if (status != PaneStatus.Done) return;
+                pane.StatusChanged -= ready;
+                pane.InsertPaths([file]);
+            };
+            pane.StatusChanged += ready;
+        });
     }
 
     private static string FolderLeaf(string folder) =>
@@ -861,15 +1014,16 @@ public partial class MainWindow : Window
         if (parentId is null) return;
 
         var cwd = _active!.WorkingDirectory;
-        var plan = SessionLauncher.Plan(LaunchMode.Fork, cwd, parentId);
+        var plan = SessionLauncher.Plan(AgentFor(_active.Agent), LaunchMode.Fork, cwd, parentId);
 
         // Record the link now: the fork rewrites sessionId on every line it copies, so
         // once this returns there is nothing left anywhere that says the two are related.
+        // A Codex fork names its parent itself, and has no id of ours yet.
         if (plan.ExpectedSessionId is { } childId) _parents.Set(childId, parentId);
 
-        // The child's id was allocated by us, so the branch is addressable before
+        // A Claude child's id was allocated by us, so the branch is addressable before
         // the transcript for it exists on disk.
-        StartPane(plan, $"branch of {Short(parentId)}");
+        StartPane(plan, $"branch of {Short(parentId)}", forkOf: parentId);
     }
 
     private void ClosePane_Click(object sender, RoutedEventArgs e)
@@ -884,18 +1038,20 @@ public partial class MainWindow : Window
     /// </summary>
     private void ClosePane(TerminalPane pane)
     {
-        var id = pane.SessionId;
-
         pane.Close();
         PaneHost.Children.Remove(pane);
         // Nothing left to jump to, so a pending note about it would only mislead.
         SessionNotice?.Invoke(pane, "", null);
         SessionWorking?.Invoke(pane, false);
-        if (id is not null && _rows.TryGetValue(id, out var row))
+        if (_rows.Values.FirstOrDefault(r => ReferenceEquals(r.Pane, pane)) is { } row)
         {
             row.Pane = null;
             row.Status = null;
             row.Refresh();
+
+            // A Codex pane closed before its first message never got a transcript, so there
+            // is no session to list.
+            if (_unbound.RemoveAll(w => ReferenceEquals(w.Row, row)) > 0) _rows.Remove(row.SessionId);
         }
 
         _active = PaneHost.Children.OfType<TerminalPane>().LastOrDefault();
@@ -985,8 +1141,10 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------------- panes
 
-    private TerminalPane StartPane(LaunchPlan plan, string title)
+    /// <param name="forkOf">The parent, for a fork: what a Codex fork's transcript is found by.</param>
+    private TerminalPane StartPane(LaunchPlan plan, string title, string? forkOf = null)
     {
+        var since = DateTime.Now;
         var pane = new TerminalPane(plan);
         var id = pane.SessionId ?? Guid.NewGuid().ToString();
 
@@ -1008,6 +1166,7 @@ public partial class MainWindow : Window
         row.Folder = plan.WorkingDirectory;
         row.Status = PaneStatus.Starting;
         row.Refresh();
+        if (pane.SessionId is null) _unbound.Add((row, forkOf, since));
 
         pane.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>
         {
@@ -1079,9 +1238,24 @@ public partial class MainWindow : Window
         var now = DateTimeOffset.Now;
         var limits = _status.Limits;
         HeadStrip.Show(_active?.SessionId is { } id
-            ? StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
+            ? _active.Agent == AgentKind.Codex
+                ? CodexStrip(id, now)
+                : StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
             : null, _settings.Theme);
         FootLimits.Show(StatusStrip.Footer(limits, _settings, now), _settings.Theme);
+    }
+
+    /// <summary>
+    /// A Codex pane's strip, from what its transcript says (CodexSessionStore). Its limits are
+    /// Codex's own account's, which the footer (Claude's) doesn't show, so they ride in the
+    /// header, as everyone's do with the footer off.
+    /// </summary>
+    private Strip? CodexStrip(string id, DateTimeOffset now)
+    {
+        if (!_rows.TryGetValue(id, out var row) || row.Info?.Status is not { } status) return null;
+        return StatusStrip.For(status, _git.Get(_active!.WorkingDirectory),
+            new AccountLimits(status.FiveHour, status.SevenDay, status.Updated),
+            _settings with { StatusFooter = false }, now);
     }
 
     /// <summary>
@@ -1192,7 +1366,7 @@ public partial class MainWindow : Window
             Hide();
             return;
         }
-        _store.StopWatching();
+        foreach (var source in Sources) source.StopWatching();
         _status.Dispose();
         _gitPoll.Stop();
         _clock.Stop();

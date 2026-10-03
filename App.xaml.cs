@@ -58,7 +58,8 @@ public partial class App : Application
         // close that only hides.
         SessionEnding += (_, _) => window.Quit();
 
-        if (!background) window.Show();
+        // Reveal, not Show: until setup is done the setup window comes first (docs/SETUP.md D6).
+        if (!background) window.Reveal();
 
         // After MainWindow is set, so this window does not become the one whose closing ends
         // the app. ShutdownMode is OnMainWindowClose, so it never keeps the process alive.
