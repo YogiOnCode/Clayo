@@ -316,6 +316,7 @@
                 Click="Settings_Click">
           <Button.ContextMenu>
             <ContextMenu x:Name="SettingsMenu" Opened="SettingsMenu_Opened">
+              <MenuItem Header="Settings…" InputGestureText="Ctrl+," Click="OpenSettings_Click" />
               <MenuItem x:Name="SettingsLoginItem" Header="Start at login" IsCheckable="True"
                         Click="SettingsLogin_Click" />
               <Separator />
@@ -357,12 +358,16 @@
                    Fill="{StaticResource Dormant}"
                    VerticalAlignment="Center" />
 
-          <TextBlock x:Name="PaneTitle" Grid.Column="1"
-                     Margin="10,13"
-                     Foreground="{StaticResource TextMuted}"
-                     FontSize="12"
-                     VerticalAlignment="Center"
-                     TextTrimming="CharacterEllipsis" />
+          <!-- The title, then the session's status strip; whatever is left stays empty. -->
+          <DockPanel Grid.Column="1" LastChildFill="False">
+            <TextBlock x:Name="PaneTitle"
+                       Margin="10,13"
+                       Foreground="{StaticResource TextMuted}"
+                       FontSize="12"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+            <local:StatusStripView x:Name="HeadStrip" AutomationProperties.Name="Session status" />
+          </DockPanel>
 
           <Button x:Name="AttachButton" Grid.Column="2"
                   Content="Attach files…"
@@ -400,6 +405,10 @@
                  FontSize="13"
                  TextAlignment="Center"
                  Text="Pick a session on the left, or start a new one." />
+
+      <!-- Over both rows, header included. The terminals are WebView2 windows, which no WPF
+           element can cover, so ShowSettings hides them while this is up. -->
+      <local:SettingsPane x:Name="SettingsView" Grid.RowSpan="2" Visibility="Collapsed" />
     </Grid>
   </Grid>
 </Window>
