@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace CcxShell.Core;
 
-public enum AgentRowState { Looking, Ready, SignIn, Missing }
+public enum AgentRowState { Looking, Ready, SignIn, Missing, Installing, SigningIn }
 
 /// <summary>One agent's row: its pill and the grey line under its name.</summary>
 public sealed record AgentRowView(AgentKind Kind, AgentRowState State, string Meta);
@@ -33,6 +33,38 @@ public static partial class SetupScreen
         new(AgentKind.Claude, AgentRowState.Looking, "Checking PATH and usual install folders"),
         new(AgentKind.Codex, AgentRowState.Looking, "Checking PATH and usual install folders"),
         ShowPicker: false, OptionsEnabled: false, "Takes about a second.", CanOpen: false);
+
+    /// <summary>
+    /// #installing: Install's PowerShell window is open. Nothing else can be done meanwhile;
+    /// the other row stays as it was.
+    /// </summary>
+    public static SetupView Installing(SetupView found, AgentKind kind) => Waiting(found, kind, new(kind, AgentRowState.Installing,
+            kind == AgentKind.Claude ? "Running the official installer…" : "Running npm install -g @openai/codex…"))
+        with
+        {
+            Title = $"Installing {Name(kind)}",
+            Intro = "Follow along in the PowerShell window. Clayo checks again when it closes.",
+            Note = "Then sign in once, and Clayo is ready."
+        };
+
+    /// <summary>The same while Sign in's window is open.</summary>
+    public static SetupView SigningIn(SetupView found, AgentKind kind) =>
+        Waiting(found, kind, new(kind, AgentRowState.SigningIn, "Finish in the PowerShell window"))
+        with
+        {
+            Title = $"Signing in to {Name(kind)}",
+            Intro = "Follow along in the PowerShell window. Clayo checks again when it closes.",
+            Note = "Your browser may open to sign in."
+        };
+
+    private static SetupView Waiting(SetupView found, AgentKind kind, AgentRowView row) => found with
+    {
+        Claude = kind == AgentKind.Claude ? row : found.Claude,
+        Codex = kind == AgentKind.Codex ? row : found.Codex,
+        ShowPicker = false,
+        OptionsEnabled = false,
+        CanOpen = false
+    };
 
     public static AgentRowState StateOf(AgentInfo a) =>
         a.Exe is null ? AgentRowState.Missing : a.SignedIn ? AgentRowState.Ready : AgentRowState.SignIn;

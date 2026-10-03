@@ -20,7 +20,8 @@
                   Click="UseTick_Click" />
         <Button x:Name="SignIn" DockPanel.Dock="Right" Content="Sign in" Margin="12,0,0,0"
                 Style="{StaticResource GhostButton}" Background="{StaticResource Working}"
-                BorderBrush="{StaticResource Working}" Foreground="#14171C" FontWeight="SemiBold" />
+                BorderBrush="{StaticResource Working}" Foreground="#14171C" FontWeight="SemiBold"
+                Click="SignIn_Click" />
 
         <Border x:Name="Pill" DockPanel.Dock="Right" CornerRadius="10" Padding="10,3"
                 VerticalAlignment="Center" Margin="12,0,0,0">
@@ -39,11 +40,11 @@
 
       <DockPanel x:Name="Fix" Margin="50,10,0,0">
         <TextBlock DockPanel.Dock="Right" Margin="10,0,0,0" FontSize="12" VerticalAlignment="Center">
-          <Hyperlink x:Name="Locate" Foreground="#E39A7E">Locate…</Hyperlink>
+          <Hyperlink x:Name="Locate" Foreground="#E39A7E" Click="Locate_Click">Locate…</Hyperlink>
         </TextBlock>
         <Button x:Name="Install" DockPanel.Dock="Right" Content="Install" Margin="10,0,0,0"
                 Style="{StaticResource GhostButton}" BorderBrush="{StaticResource Clay}"
-                Foreground="#E39A7E" FontWeight="SemiBold" />
+                Foreground="#E39A7E" FontWeight="SemiBold" Click="Install_Click" />
         <TextBlock x:Name="GetNode" DockPanel.Dock="Right" Margin="10,0,0,0" FontSize="12"
                    VerticalAlignment="Center">
           <Hyperlink NavigateUri="https://nodejs.org" Foreground="#E39A7E"
