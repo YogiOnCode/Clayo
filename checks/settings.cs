@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 
 // Never the real settings file: a throwaway folder, removed at the end.

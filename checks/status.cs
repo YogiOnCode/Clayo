@@ -1,5 +1,5 @@
 #:property TargetFramework=net8.0-windows
-#:project ../CcxShell.csproj
+#:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 
 // Captured from Claude Code 2.1.288 through the relay, on start-up before any prompt, with

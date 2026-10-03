@@ -20,15 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- checks/ holds runnable self-checks (dotnet run checks/scan.cs). Each has its
-         own entry point, so they must not compile into the app. -->
-    <Compile Remove="checks/**" />
-    <!-- docs/ is local notes, drafts of later code among them. -->
-    <Compile Remove="docs/**" />
-    <Page Remove="docs/**" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- Assets are served to WebView2 via SetVirtualHostNameToFolderMapping,
          so they must land next to the exe. -->
     <None Update="Assets\**\*">
