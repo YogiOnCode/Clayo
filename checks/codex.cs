@@ -120,6 +120,72 @@ try
     // A line half written: the one before it counts.
     File.AppendAllText(resumed, """{"timestamp":"2026-10-02T18:00:00.000Z","type":"event_ms""");
     Check("half-written last line ignored", store.Scan().First(s => s.SessionId == b).LastActivity, Local("2026-10-02T17:00:05.000Z"));
+
+    // Binding a pane Clayo started to the transcript Codex then writes (docs/SETUP.md,
+    // "Finding a new Codex session").
+    var all = store.Scan();
+    var none = new HashSet<string>();
+    Check("started: from session_meta", rows[a].Started, Local("2026-10-02T15:38:24.825Z"));
+    Check("new pane: the session started in its folder after it",
+        CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo\", null, Local("2026-10-02T15:30:00Z"), none)?.SessionId, a);
+    Check("new pane: not one started before it",
+        CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo", null, Local("2026-10-02T15:39:00Z"), none)?.SessionId, null);
+    Check("new pane: not one another pane has",
+        CodexSessionStore.FindStarted(all, @"c:\yogi\clayo", null, Local("2026-10-02T15:30:00Z"), new HashSet<string> { a })?.SessionId, null);
+    Check("new pane: not a fork in the same folder",
+        CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo", null, Local("2026-10-02T16:00:00Z"), none)?.SessionId, null);
+    Check("new pane: not another folder's",
+        CodexSessionStore.FindStarted(all, @"C:\Other", null, Local("2026-10-02T15:30:00Z"), none)?.SessionId, null);
+    Check("fork pane: the session naming its parent",
+        CodexSessionStore.FindStarted(all, @"C:\Elsewhere", a, Local("2026-10-02T16:00:00Z"), none)?.SessionId, fork);
+    Check("fork pane: nothing forked from another",
+        CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo", b, Local("2026-10-02T16:00:00Z"), none)?.SessionId, null);
+
+    // Status (step 7): the turn's state, and the strip's numbers from turn_context and token_count.
+    Check("turn: complete is done", rows[a].Turn, TurnState.Done);
+    Check("turn: aborted is stopped", rows[noIndex].Turn, TurnState.Stopped);
+    Check("no token_count, no model: nothing for the strip", rows[a].Status, null);
+
+    string TurnContext(string at, string model, string? effort) =>
+        "{\"timestamp\":\"" + at + "\",\"type\":\"turn_context\",\"payload\":{\"model\":\"" + model
+        + "\",\"collaboration_mode\":{\"mode\":\"default\",\"settings\":{\"model\":\"" + model + "\",\"reasoning_effort\":"
+        + (effort is null ? "null" : "\"" + effort + "\"") + "}}}}";
+    string TokenCount(string at, long total, long window, string limits) =>
+        "{\"timestamp\":\"" + at + "\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":"
+        + (total - 268) + ",\"output_tokens\":268,\"total_tokens\":" + total + "},\"model_context_window\":" + window
+        + "},\"rate_limits\":{\"limit_id\":\"codex\"," + limits + "}}}";
+    string Window(int percent, int minutes, long resets) =>
+        "{\"used_percent\":" + percent + ".5,\"window_minutes\":" + minutes + ",\"resets_at\":" + resets + "}";
+
+    const string working = "01a0fd70-0000-7000-8000-000000000001";
+    Write($"rollout-2026-10-02T19-00-00-{working}.jsonl",
+        Meta(working, @"C:\Yogi\Clayo", "2026-10-02T17:00:00.000Z"),
+        TurnContext("2026-10-02T17:00:01.000Z", "gpt-6-luna", null),
+        Event("2026-10-02T17:00:02.000Z", "task_started"),
+        User("2026-10-02T17:00:02.100Z", "write the tests"),
+        TokenCount("2026-10-02T17:00:05.000Z", 46800, 258400,
+            "\"primary\":" + Window(12, 300, 1790000000) + ",\"secondary\":" + Window(40, 10080, 1790500000)),
+        TurnContext("2026-10-02T17:00:06.000Z", "gpt-6-luna", "high"),
+        Event("2026-10-02T17:00:07.000Z", "task_complete"),
+        Event("2026-10-02T17:00:08.000Z", "task_started"));
+    const string monthly = "01a0fd70-0000-7000-8000-000000000002";
+    Write($"rollout-2026-10-02T19-10-00-{monthly}.jsonl",
+        Meta(monthly, @"C:\Yogi\Clayo", "2026-10-02T17:10:00.000Z"),
+        TokenCount("2026-10-02T17:10:05.000Z", 1000, 258400, "\"primary\":" + Window(3, 43200, 1793547537) + ",\"secondary\":null"),
+        Event("2026-10-02T17:10:06.000Z", "task_complete"));
+
+    var now = store.Scan().ToDictionary(s => s.SessionId);
+    var st = now[working].Status!;
+    Check("turn: started after the last complete is working", now[working].Turn, TurnState.Working);
+    Check("strip: model from the latest turn_context", st.Model, "gpt-6-luna");
+    Check("strip: effort from the latest turn_context", st.Effort, "high");
+    Check("strip: context is the last request's total", (st.ContextUsed, st.ContextSize, st.ContextPercent), (46800L, 258400L, 18));
+    Check("strip: a 5-hour window, floored", st.FiveHour, new Limit(12, DateTimeOffset.FromUnixTimeSeconds(1790000000)));
+    Check("strip: a 7-day window", st.SevenDay, new Limit(40, DateTimeOffset.FromUnixTimeSeconds(1790500000)));
+    Check("strip: folder", st.Cwd, @"C:\Yogi\Clayo");
+    var mo = now[monthly].Status!;
+    Check("strip: a 30-day window fits neither", (mo.FiveHour, mo.SevenDay), ((Limit?)null, (Limit?)null));
+    Check("strip: no turn_context, no effort", mo.Effort, "");
 }
 finally
 {

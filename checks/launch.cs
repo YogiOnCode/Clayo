@@ -41,6 +41,19 @@ Check("own ids, new: no id passed", picksOwnId.LastNewId, null);
 Check("own ids, fork: not the parent's id", SessionLauncher.Plan(picksOwnId, LaunchMode.Fork, @"C:\work", "abc").ExpectedSessionId, null);
 Check("own ids, resume: the existing id", SessionLauncher.Plan(picksOwnId, LaunchMode.Resume, @"C:\work", "abc").ExpectedSessionId, "abc");
 
+// Codex: the full path, no id of ours, the pane's shell already in the folder.
+var codex = new CodexAgent(() => @"C:\Users\O'Neil\AppData\Roaming\npm\codex.cmd", new NoSessions());
+const string cx = "& 'C:\\Users\\O''Neil\\AppData\\Roaming\\npm\\codex.cmd'";
+plan = SessionLauncher.Plan(codex, LaunchMode.New, @"C:\work");
+Check("codex new: command", plan.AgentCommand, cx);
+Check("codex new: no id yet", plan.ExpectedSessionId, null);
+Check("codex new: says whose pane", plan.Agent, AgentKind.Codex);
+Check("codex resume: command", SessionLauncher.Plan(codex, LaunchMode.Resume, @"C:\work", "abc").AgentCommand, $"{cx} resume abc");
+plan = SessionLauncher.Plan(codex, LaunchMode.Fork, @"C:\work", "abc");
+Check("codex fork: command", plan.AgentCommand, $"{cx} fork abc");
+Check("codex fork: no id yet", plan.ExpectedSessionId, null);
+Check("claude: says whose pane", SessionLauncher.Plan(claude, LaunchMode.New, @"C:\work").Agent, AgentKind.Claude);
+
 bool threw;
 try { SessionLauncher.Plan(claude, LaunchMode.Fork, @"C:\work"); threw = false; }
 catch (ArgumentException) { threw = true; }

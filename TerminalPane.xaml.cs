@@ -49,8 +49,13 @@ public partial class TerminalPane : UserControl
     private bool _flushQueued;
     private readonly System.Windows.Threading.DispatcherTimer _flushTimer;
 
-    /// <summary>Session id once known. For a fork this is set before the child exists.</summary>
-    public string? SessionId { get; }
+    /// <summary>
+    /// Session id once known. For a Claude fork this is set before the child exists; a new
+    /// Codex pane or fork gets it from MainWindow once its transcript appears.
+    /// </summary>
+    public string? SessionId { get; set; }
+
+    public AgentKind Agent => _plan.Agent;
 
     public string WorkingDirectory => _plan.WorkingDirectory;
 
@@ -102,6 +107,11 @@ public partial class TerminalPane : UserControl
             if (Status == PaneStatus.Exited) return;
 
             var now = DateTime.UtcNow;
+            if (_turnKnown)
+            {
+                if ((now - _lastOutput).TotalMilliseconds > 1500) TypePrefill();
+                return;
+            }
             var quietFor = (now - _lastOutput).TotalMilliseconds;
 
             int burst;
@@ -246,8 +256,12 @@ public partial class TerminalPane : UserControl
                     _recent.Enqueue(now);
                     while (_recent.Count > 12) _recent.Dequeue();
                 }
-            var seen = Scan(bytes, ref _carry);
-            if (seen is { } s) Dispatcher.BeginInvoke(() => Status = s);
+            var seen = Scan(bytes, ref _carry, codex: Agent == AgentKind.Codex);
+            if (seen is { } s) Dispatcher.BeginInvoke(() =>
+            {
+                if (s == PaneStatus.NeedsInput) _askedAt = DateTime.Now;
+                Status = s;
+            });
 
             // ConPTY hands over one redraw in several reads. Posted one by one, xterm can
             // paint between them and show a half-drawn screen, which is the flicker. So
@@ -322,6 +336,12 @@ public partial class TerminalPane : UserControl
     private static readonly byte[] ErrorMark = "API Error:"u8.ToArray();
     private static readonly byte[] AskMark = "Do you want to"u8.ToArray();
 
+    // Codex asks before a command, an edit, input to a terminal or new permissions, all
+    // "Would you like to ..." (read from codex.exe 0.160.0). Network access is the one
+    // "Do you want to", which AskMark already matches. Codex panes only: Claude's own replies
+    // say "Would you like to" too often.
+    private static readonly byte[] CodexAskMark = "Would you like to"u8.ToArray();
+
     private byte[] _carry = [];
 
     /// <summary>
@@ -329,16 +349,46 @@ public partial class TerminalPane : UserControl
     /// holds the tail of the previous chunk so a marker straddling two pipe reads still
     /// matches. Called from the pty read thread only.
     /// </summary>
-    public static PaneStatus? Scan(byte[] chunk, ref byte[] carry)
+    public static PaneStatus? Scan(byte[] chunk, ref byte[] carry, bool codex = false)
     {
         byte[] buf = carry.Length == 0 ? chunk : [.. carry, .. chunk];
-        int keep = Math.Max(ErrorMark.Length, AskMark.Length) - 1;
+        int keep = Math.Max(ErrorMark.Length, Math.Max(AskMark.Length, CodexAskMark.Length)) - 1;
         carry = buf.Length <= keep ? buf : buf[^keep..];
 
         var span = buf.AsSpan();
         if (span.IndexOf(ErrorMark) >= 0) return PaneStatus.Error;
         if (span.IndexOf(AskMark) >= 0) return PaneStatus.NeedsInput;
+        if (codex && span.IndexOf(CodexAskMark) >= 0) return PaneStatus.NeedsInput;
         return null;
+    }
+
+    // A Codex pane's transcript has reported a turn, so its status is exact from here on (ShowTurn).
+    private bool _turnKnown;
+
+    // When a question last appeared on screen, local time, as the transcript's timestamps are.
+    private DateTime _askedAt;
+
+    /// <summary>
+    /// A Codex pane's status from its transcript (docs/SETUP.md, "Codex status from the
+    /// transcript"): working and done are exact there. MainWindow calls it whenever the
+    /// transcript changes; at is its last line's time.
+    /// </summary>
+    public void ShowTurn(TurnState turn, DateTime at)
+    {
+        _turnKnown = true;
+        if (FromTurn(Status, turn, at, _askedAt) is { } next) Status = next;
+    }
+
+    /// <summary>
+    /// Null leaves the status as it is. A question on screen is not in the transcript, and the
+    /// tool call it asks about is written just before it appears, so only a line newer than
+    /// the question means it was answered. A stopped turn reads as done: nothing is running.
+    /// </summary>
+    public static PaneStatus? FromTurn(PaneStatus current, TurnState turn, DateTime at, DateTime askedAt)
+    {
+        if (current == PaneStatus.Exited) return null;
+        if (current == PaneStatus.NeedsInput && at <= askedAt) return null;
+        return turn == TurnState.Working ? PaneStatus.Working : PaneStatus.Done;
     }
 
     private void FlushOutput()

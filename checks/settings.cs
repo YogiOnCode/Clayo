@@ -69,6 +69,11 @@ try
     setup.Save(path);
     Check("setup choices load back", ClayoSettings.Load(path), setup);
     Check("no path saved is no key", File.ReadAllText(path).Contains("codexPath"), false);
+    Check("new session: claude by default", defaults.NewSessionKind, AgentKind.Claude);
+    Check("new session: codex when chosen", (defaults with { DefaultAgent = NewSessionAgent.Codex }).NewSessionKind, AgentKind.Codex);
+    Check("new session: ask each time", (defaults with { DefaultAgent = NewSessionAgent.Ask }).NewSessionKind, null);
+    Check("new session: never asks with one agent in use", setup.NewSessionKind, AgentKind.Claude);
+    Check("new session: never an agent not in use", (defaults with { UseClaude = false }).NewSessionKind, AgentKind.Codex);
     Check("an agent saved by its name", File.ReadAllText(path).Contains("\"defaultAgent\": \"ask\""), true);
     File.WriteAllText(path, """{"defaultAgent":"gemini","claudePath":"","codexPath":3}""");
     Check("an agent not offered is claude", ClayoSettings.Load(path).DefaultAgent, NewSessionAgent.Claude);

@@ -37,6 +37,17 @@ public sealed record ClayoSettings(
     /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
     public static readonly int[] ReserveSteps = [0, 70, 80, 90];
 
+    /// <summary>Who starts a New session; null asks. Never an agent whose Use is off, so one in use never asks.</summary>
+    public AgentKind? NewSessionKind =>
+        !UseCodex ? AgentKind.Claude
+        : !UseClaude ? AgentKind.Codex
+        : DefaultAgent switch
+        {
+            NewSessionAgent.Codex => AgentKind.Codex,
+            NewSessionAgent.Ask => null,
+            _ => AgentKind.Claude
+        };
+
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clayo", "settings.json");
 
