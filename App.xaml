@@ -312,6 +312,43 @@
       <Setter Property="Foreground" Value="#E6E9EE" />
     </Style>
 
+    <!-- The setup window's one way forward (design/setup): a filled clay face with dark text,
+         graphite and faint when it can't be used yet. -->
+    <Style x:Key="ClayButton" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource Clay}" />
+      <Setter Property="Foreground" Value="#14171C" />
+      <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="Padding" Value="18,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" CornerRadius="8" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+              <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center"
+                                VerticalAlignment="Center" RecognizesAccessKey="True" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#DC8466" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#B9654A" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Background" Value="#2A2F38" />
+                <Setter Property="Foreground" Value="#6C7480" />
+                <Setter Property="Cursor" Value="Arrow" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="SearchBox" TargetType="TextBox">
       <Setter Property="Background" Value="{StaticResource TerminalBg}" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />

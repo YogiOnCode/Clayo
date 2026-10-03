@@ -6,9 +6,13 @@ namespace CcxShell.Core;
 /// <summary>How the status strip and footer draw their numbers (design/settings, D6: these four of its six).</summary>
 public enum StatusTheme { Numbers, Bars, Rings, Chips }
 
+/// <summary>Which agent New session starts when both are in use (the setup window, docs/SETUP.md).</summary>
+public enum NewSessionAgent { Claude, Codex, Ask }
+
 /// <summary>
 /// What you chose in Settings, kept in %LOCALAPPDATA%\Clayo\settings.json. Start at login is
-/// not here: it lives in the Run key (LoginStartup).
+/// not here: it lives in the Run key (LoginStartup). The rest is what the setup window chose
+/// (docs/SETUP.md); until SetupDone, setup shows before the window.
 /// </summary>
 public sealed record ClayoSettings(
     bool StatusHeader = true,
@@ -22,7 +26,13 @@ public sealed record ClayoSettings(
     int ReserveAt = 0,
     bool ReserveFiveHour = true,
     bool ReserveSevenDay = true,
-    StatusTheme Theme = StatusTheme.Numbers)
+    StatusTheme Theme = StatusTheme.Numbers,
+    bool SetupDone = false,
+    bool UseClaude = true,
+    bool UseCodex = true,
+    NewSessionAgent DefaultAgent = NewSessionAgent.Claude,
+    string? ClaudePath = null,
+    string? CodexPath = null)
 {
     /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
     public static readonly int[] ReserveSteps = [0, 70, 80, 90];
@@ -51,6 +61,17 @@ public sealed record ClayoSettings(
                 ? v.GetBoolean()
                 : fallback;
 
+        string? S(string name) =>
+            root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && v.GetString() is { Length: > 0 } text
+                ? text
+                : null;
+
+        // By name only: Enum.TryParse would also take "2".
+        T E<T>(string name, T fallback) where T : struct, Enum =>
+            S(name) is { } text && Enum.GetNames<T>().FirstOrDefault(n => n.Equals(text, StringComparison.OrdinalIgnoreCase)) is { } found
+                ? Enum.Parse<T>(found)
+                : fallback;
+
         return new ClayoSettings(
             B("statusHeader", d.StatusHeader),
             B("statusFooter", d.StatusFooter),
@@ -64,10 +85,13 @@ public sealed record ClayoSettings(
                 && r.TryGetInt32(out var at) && ReserveSteps.Contains(at) ? at : d.ReserveAt,
             B("reserveFiveHour", d.ReserveFiveHour),
             B("reserveSevenDay", d.ReserveSevenDay),
-            // By name only: Enum.TryParse would also take "2".
-            root.TryGetProperty("theme", out var t) && t.ValueKind == JsonValueKind.String
-                && Enum.GetNames<StatusTheme>().FirstOrDefault(n => n.Equals(t.GetString(), StringComparison.OrdinalIgnoreCase)) is { } theme
-                ? Enum.Parse<StatusTheme>(theme) : d.Theme);
+            E("theme", d.Theme),
+            B("setupDone", d.SetupDone),
+            B("useClaude", d.UseClaude),
+            B("useCodex", d.UseCodex),
+            E("defaultAgent", d.DefaultAgent),
+            S("claudePath"),
+            S("codexPath"));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -94,6 +118,12 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("reserveFiveHour", ReserveFiveHour);
                 w.WriteBoolean("reserveSevenDay", ReserveSevenDay);
                 w.WriteString("theme", Theme.ToString().ToLowerInvariant());
+                w.WriteBoolean("setupDone", SetupDone);
+                w.WriteBoolean("useClaude", UseClaude);
+                w.WriteBoolean("useCodex", UseCodex);
+                w.WriteString("defaultAgent", DefaultAgent.ToString().ToLowerInvariant());
+                if (ClaudePath is not null) w.WriteString("claudePath", ClaudePath);
+                if (CodexPath is not null) w.WriteString("codexPath", CodexPath);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

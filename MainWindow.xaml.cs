@@ -225,7 +225,8 @@ public sealed class BrushKeyConverter : IValueConverter
 
 public partial class MainWindow : Window
 {
-    private readonly SessionStore _store = new();
+    private readonly IAgent _claude;
+    private ISessionSource _store => _claude.Sessions;
     private readonly SessionNames _names = new();
     private readonly SessionParents _parents = new();
 
@@ -267,7 +268,9 @@ public partial class MainWindow : Window
 
     public MainWindow(string folder, bool startSession)
     {
+        _claude = ClaudeAgent.ForThisUser(() => _settings.ClaudePath);
         InitializeComponent();
+        SettingsView.SetupRequested += () => ShowSetup();
         SettingsView.CloseRequested += HideSettings;
         SettingsView.SettingsChanged += s =>
         {
@@ -313,7 +316,7 @@ public partial class MainWindow : Window
             // Opening Clayo in a folder should land you in a live session, not an
             // empty pane. Same thing the Explorer handoff does in AdoptFolder.
             if (startSession)
-                StartPane(SessionLauncher.Plan(LaunchMode.New, _folder),
+                StartPane(SessionLauncher.Plan(_claude, LaunchMode.New, _folder),
                           title: $"new · {Path.GetFileName(_folder.TrimEnd('\\'))}");
         };
     }
@@ -334,10 +337,16 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        DarkCaption(hwnd);
+        PlaceOnPrimary(hwnd);
+    }
 
+    /// <summary>The caption look, shared with the setup window.</summary>
+    internal static void DarkCaption(IntPtr hwnd)
+    {
         // A white system title bar above a near-black app reads as a bug. This is the
         // supported way to darken it without taking over the whole non-client area.
-        var hwnd = new WindowInteropHelper(this).Handle;
         int on = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
 
@@ -355,8 +364,6 @@ public partial class MainWindow : Window
         // No return values checked on purpose: dwmapi answers E_INVALIDARG for an
         // attribute the running build doesn't know, so anything older than 22H2 keeps
         // the plain dark title bar instead of failing.
-
-        PlaceOnPrimary(hwnd);
     }
 
     // -------------------------------------------------------------- placement
@@ -446,8 +453,10 @@ public partial class MainWindow : Window
         _folder = folder;
         ShowFolder(folder);
         Reveal();
+        // Setup came up instead: there may be no agent to start yet. New session will use the folder.
+        if (!IsVisible) return;
 
-        StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
+        StartPane(SessionLauncher.Plan(_claude, LaunchMode.New, folder),
                   title: $"new · {Path.GetFileName(folder.TrimEnd('\\'))}").Prefill = prefill;
     }
 
@@ -455,12 +464,65 @@ public partial class MainWindow : Window
     /// Brings the window forward from wherever it is: hidden (closed, or never shown after a
     /// login start), minimized, or behind. RestoreWindow rather than WindowState = Normal, so
     /// a window that was maximized before it was minimized comes back maximized.
+    /// The setup window comes first while setup is needed (NeedsSetup), and this window
+    /// once you press its Open Clayo.
     /// </summary>
     public void Reveal()
     {
+        if (!IsVisible && NeedsSetup)
+        {
+            ShowSetup();
+            return;
+        }
         Show();
         if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
         Activate();
+    }
+
+    /// <summary>
+    /// docs/SETUP.md D6: never set up, or none of the agents you use is where it was. Located
+    /// only, not run, so asking costs a few file checks.
+    /// </summary>
+    private bool NeedsSetup
+    {
+        get
+        {
+            var detector = AgentDetector.ForThisMachine();
+            return !_settings.SetupDone
+                || !(_settings.UseClaude && detector.Locate(AgentKind.Claude, _settings.ClaudePath) is not null
+                     || _settings.UseCodex && detector.Locate(AgentKind.Codex, _settings.CodexPath) is not null);
+        }
+    }
+
+    private SetupWindow? _setup;
+
+    /// <summary>
+    /// The setup window, on top of this one when it is open (from Settings), else on its own.
+    /// Closing it without Open Clayo changes nothing; the next Reveal asks again.
+    /// </summary>
+    private void ShowSetup()
+    {
+        if (_setup is not null)
+        {
+            _setup.Activate();
+            return;
+        }
+
+        _setup = new SetupWindow(_settings);
+        if (IsVisible)
+        {
+            _setup.Owner = this;
+            _setup.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        }
+        _setup.Done += s =>
+        {
+            _settings = s;
+            s.Save(ClayoSettings.DefaultPath);
+            if (SettingsView.IsVisible) SettingsView.Refresh(s);
+            Reveal();
+        };
+        _setup.Closed += (_, _) => _setup = null;
+        _setup.Show();
     }
 
     private void ShowFolder(string folder)
@@ -728,7 +790,7 @@ public partial class MainWindow : Window
         }
 
         var cwd = Directory.Exists(row.Folder) ? row.Folder : _folder;
-        StartPane(SessionLauncher.Plan(LaunchMode.Resume, cwd, row.SessionId), row.Name);
+        StartPane(SessionLauncher.Plan(_claude, LaunchMode.Resume, cwd, row.SessionId), row.Name);
     }
 
     private void NewSession_Click(object sender, RoutedEventArgs e)
@@ -795,7 +857,7 @@ public partial class MainWindow : Window
         _folder = folder;
         ShowFolder(folder);
 
-        return StartPane(SessionLauncher.Plan(LaunchMode.New, folder),
+        return StartPane(SessionLauncher.Plan(_claude, LaunchMode.New, folder),
                          title: $"new · {FolderLeaf(folder)}");
     }
 
@@ -861,7 +923,7 @@ public partial class MainWindow : Window
         if (parentId is null) return;
 
         var cwd = _active!.WorkingDirectory;
-        var plan = SessionLauncher.Plan(LaunchMode.Fork, cwd, parentId);
+        var plan = SessionLauncher.Plan(_claude, LaunchMode.Fork, cwd, parentId);
 
         // Record the link now: the fork rewrites sessionId on every line it copies, so
         // once this returns there is nothing left anywhere that says the two are related.
