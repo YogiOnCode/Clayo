@@ -7,6 +7,7 @@ namespace CcxShell;
 public partial class App : Application
 {
     private SingleInstance? _instance;
+    private IslandWindow? _island;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -20,14 +21,17 @@ public partial class App : Application
         // session markers we inherited before a pane can pass them on.
         SessionLauncher.ScrubInheritedSession();
 
+        // Started at login: no window, only the island, until you ask for Clayo.
+        bool background = e.Args.Contains(LoginStartup.BackgroundArg);
+
         // Explorer's address bar runs a command with the current folder as its
         // working directory, so this is the folder the user typed "ccx" in.
         // An explicit path argument wins, for launching from a script.
         var folder = e.Args.FirstOrDefault(a => Directory.Exists(a))
-                     ?? Environment.CurrentDirectory;
+                     ?? (background ? null : Chosen(Environment.CurrentDirectory));
 
         _instance = new SingleInstance();
-        if (!_instance.TryAcquire(folder))
+        if (!_instance.TryAcquire(background ? null : folder ?? ""))
         {
             // Another window has it. We handed the folder over; nothing left to do.
             _instance.Dispose();
@@ -37,13 +41,47 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        var window = new MainWindow(folder);
+        // With no folder there is nothing to start a session in; the window opens on your
+        // home folder for the next New session.
+        var window = new MainWindow(
+            folder ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            startSession: folder is not null);
         MainWindow = window;
 
-        _instance.FolderReceived += path =>
-            window.Dispatcher.BeginInvoke(() => window.AdoptFolder(path));
+        _instance.FolderReceived += path => window.Dispatcher.BeginInvoke(() =>
+        {
+            if (path.Length == 0) window.Reveal();
+            else window.AdoptFolder(path);
+        });
 
-        window.Show();
+        // Signing out ends the app as a real quit would, panes closed, rather than meeting a
+        // close that only hides.
+        SessionEnding += (_, _) => window.Quit();
+
+        if (!background) window.Show();
+
+        // After MainWindow is set, so this window does not become the one whose closing ends
+        // the app. ShutdownMode is OnMainWindowClose, so it never keeps the process alive.
+        _island = new IslandWindow(window);
+        if (background) _island.Greet();
+
+        // Only the per-user Run key, and only from a Release build (see LoginStartup.CanWrite).
+        // The installed exe re-registers itself on every start unless you turned it off.
+        if (Environment.ProcessPath is { } exe) LoginStartup.ForThisUser().Keep(exe);
+    }
+
+    /// <summary>
+    /// The working directory, unless nobody chose it: a shortcut or the Start menu starts
+    /// Clayo in its own folder, and some launchers in System32. A session there is never
+    /// what you wanted.
+    /// </summary>
+    private static string? Chosen(string cwd)
+    {
+        static string Norm(string p) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(p));
+        var dir = Norm(cwd);
+        return dir.Equals(Norm(AppContext.BaseDirectory), StringComparison.OrdinalIgnoreCase)
+            || dir.Equals(Norm(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase)
+            ? null : cwd;
     }
 
     protected override void OnExit(ExitEventArgs e)
