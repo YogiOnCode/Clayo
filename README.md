@@ -36,7 +36,7 @@ all in one window and tells you when one needs you, without you switching window
   has finished, even while you're in another app. It never takes focus. Click it to jump to
   that session.
 
-  ![The island: "api-refactor · needs you"](media/island.png)
+  ![The island drops in when a session needs you, then turns green when one is finished](media/island.gif)
 
 - **Drop a file or folder on the island** and it opens in Clayo.
 - **Status at a glance.** Each pane's header shows model, branch and diff, context and
