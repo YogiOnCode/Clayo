@@ -55,13 +55,26 @@ switching windows.
 
 ## Install
 
+Open PowerShell, paste this and press Enter:
+
+```powershell
+$a = (irm https://api.github.com/repos/YogiOnCode/Clayo/releases/latest).assets | ? name -like '*-win-x64.zip'; $z = "$env:TEMP\clayo.zip"; irm $a.browser_download_url -OutFile $z; Expand-Archive $z "$env:LOCALAPPDATA\Programs" -Force; Remove-Item $z; & "$env:LOCALAPPDATA\Programs\Clayo\clayo.exe"
+```
+
+It downloads the latest release, puts it in `%LOCALAPPDATA%\Programs\Clayo` and starts it.
+
+<details>
+<summary>Or by hand</summary>
+
 1. Download `clayo-<version>-win-x64.zip` from the
    [latest release](https://github.com/YogiOnCode/Clayo/releases/latest).
-2. Unzip it into `%LOCALAPPDATA%\Programs`, so you have
-   `%LOCALAPPDATA%\Programs\Clayo\clayo.exe`. Keep it there: start at login and `clayo` in
-   Explorer point at this folder.
+2. Unzip it into `%LOCALAPPDATA%\Programs` (paste that into Explorer's address bar), so you
+   have `%LOCALAPPDATA%\Programs\Clayo\clayo.exe`. Keep it there: start at login and `clayo`
+   in Explorer point at this folder.
 3. Run `clayo.exe`. Clayo isn't signed yet, so Windows may say "Windows protected your PC":
    click **More info**, then **Run anyway**.
+
+</details>
 
 You need Windows 10 or 11, 64-bit, and nothing else first: .NET comes inside the zip, and the
 [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) is already on
@@ -84,7 +97,8 @@ install them by hand: [docs/AGENTS.md](docs/AGENTS.md).
 
 ### Updating
 
-Quit Clayo, then unzip the new release over the old folder. Your settings are kept.
+Quit Clayo, then run the install command again: it puts the latest release over the old one.
+Your settings are kept.
 
 ### Uninstalling
 
