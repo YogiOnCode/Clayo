@@ -62,16 +62,19 @@ public sealed class StatusStore : IDisposable
         get
         {
             AccountLimits? fromClaude;
-            lock (_lock)
-            {
-                var newest = _byId.Values
-                    .Where(s => s.FiveHour is not null || s.SevenDay is not null)
-                    .MaxBy(s => s.Updated);
-                fromClaude = newest is null ? null : new AccountLimits(newest.FiveHour, newest.SevenDay, newest.Updated);
-            }
+            lock (_lock) fromClaude = Newest(_byId.Values);
             var cached = ReadUsageCache(_usageCache);
             return cached is null || fromClaude?.Updated >= cached.Updated ? fromClaude : cached;
         }
+    }
+
+    /// <summary>The newest limits any of these sessions reported; null when none has any.</summary>
+    public static AccountLimits? Newest(IEnumerable<SessionStatus> statuses)
+    {
+        var newest = statuses
+            .Where(s => s.FiveHour is not null || s.SevenDay is not null)
+            .MaxBy(s => s.Updated);
+        return newest is null ? null : new AccountLimits(newest.FiveHour, newest.SevenDay, newest.Updated);
     }
 
     /// <summary>
