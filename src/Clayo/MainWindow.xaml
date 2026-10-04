@@ -253,6 +253,12 @@
       <StackPanel Margin="14,12,14,14">
       <!-- The account's 5h and 7d limits, above the actions; gone while there are none to show. -->
       <local:LimitsView x:Name="FootLimits" Margin="0,0,0,12" />
+      <!-- A newer release on GitHub (Updater); gone until there is one. -->
+      <Button x:Name="UpdateButton" Tag="&#xE896;"
+              Style="{StaticResource GhostButton}"
+              HorizontalAlignment="Left" Margin="0,0,0,12"
+              Visibility="Collapsed"
+              Click="Update_Click" />
       <DockPanel LastChildFill="False">
         <Button x:Name="NewButton" Content="New session" Tag="&#xE710;"
                 Style="{StaticResource AccentButton}"

@@ -52,16 +52,19 @@ switching windows.
 - **Type `clayo` in any Explorer address bar** to open a session in that folder.
 - **Stays out of the way.** Start at login, hidden until the island has something to say.
   Closing the window keeps sessions running.
+- **Updates itself.** When a new release is out, one click updates Clayo and opens it again,
+  once no session is working.
 
 ## Install
 
 Open PowerShell, paste this and press Enter:
 
 ```powershell
-$a = (irm https://api.github.com/repos/YogiOnCode/Clayo/releases/latest).assets | ? name -like '*-win-x64.zip'; $z = "$env:TEMP\clayo.zip"; irm $a.browser_download_url -OutFile $z; Expand-Archive $z "$env:LOCALAPPDATA\Programs" -Force; Remove-Item $z; & "$env:LOCALAPPDATA\Programs\Clayo\clayo.exe"
+irm https://raw.githubusercontent.com/YogiOnCode/Clayo/main/scripts/install.ps1 | iex
 ```
 
-It downloads the latest release, puts it in `%LOCALAPPDATA%\Programs\Clayo` and starts it.
+It runs [scripts/install.ps1](scripts/install.ps1): it downloads the latest release, puts it in
+`%LOCALAPPDATA%\Programs\Clayo` and starts it.
 
 <details>
 <summary>Or by hand</summary>
@@ -97,8 +100,13 @@ install them by hand: [docs/AGENTS.md](docs/AGENTS.md).
 
 ### Updating
 
-Quit Clayo, then run the install command again: it puts the latest release over the old one.
-Your settings are kept.
+When a new release is out, an **Update to …** button shows above **New session**. Press it:
+Clayo closes, updates and opens again. A session that is working or asking you something is
+never cut off: the update waits until none is. Idle sessions close; resume them from the
+sidebar. Clayo asks GitHub for the latest release when it starts and every 12 hours after.
+
+Or quit Clayo from the gear menu and run the install command again. Either way your settings
+are kept.
 
 ### Uninstalling
 
@@ -158,7 +166,8 @@ not in an issue.
 ## Notes
 
 Not affiliated with Anthropic or OpenAI. Clayo reads `~/.claude` and `~/.codex` and never
-writes to either. Where it does keep files is listed in
+writes to either. Its only network call of its own is asking GitHub for the latest release,
+at start and every 12 hours. Where it does keep files is listed in
 [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works#where-clayo-keeps-its-files).
 
 MIT licensed, see [LICENSE](LICENSE). Bundles [xterm.js](https://github.com/xtermjs/xterm.js)
