@@ -261,6 +261,8 @@ public partial class MainWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer _gitPoll = new() { Interval = TimeSpan.FromSeconds(3) };
     // The reset countdowns run down, and limits go stale, between Claude's reports.
     private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(30) };
+    // Clayo starts at login and runs for days, so a check at start alone would miss releases.
+    private readonly System.Windows.Threading.DispatcherTimer _updateCheck = new() { Interval = TimeSpan.FromHours(12) };
 
     // Panes stay alive when you switch away, so switching back is instant and the
     // process keeps working in the background. PaneHost.Children is the set of them.
@@ -336,6 +338,9 @@ public partial class MainWindow : Window
             };
             _clock.Start();
             ShowStatusBar();
+            _updateCheck.Tick += async (_, _) => await CheckForUpdate();
+            _updateCheck.Start();
+            _ = CheckForUpdate();
 
             // Opening Clayo in a folder should land you in a live session, not an
             // empty pane. Same thing the Explorer handoff does in AdoptFolder.
@@ -1043,6 +1048,7 @@ public partial class MainWindow : Window
         // Nothing left to jump to, so a pending note about it would only mislead.
         SessionNotice?.Invoke(pane, "", null);
         SessionWorking?.Invoke(pane, false);
+        UpdateWhenIdle();
         if (_rows.Values.FirstOrDefault(r => ReferenceEquals(r.Pane, pane)) is { } row)
         {
             row.Pane = null;
@@ -1189,6 +1195,7 @@ public partial class MainWindow : Window
             SessionNotice?.Invoke(pane, row.Name, kind);
             if (status == PaneStatus.Working) SessionWorking?.Invoke(pane, true);
             else if (was == PaneStatus.Working) SessionWorking?.Invoke(pane, false);
+            UpdateWhenIdle();
         });
 
         PaneHost.Children.Add(pane);
@@ -1352,6 +1359,53 @@ public partial class MainWindow : Window
     private void SettingsLogin_Click(object sender, RoutedEventArgs e) => ApplyLoginState(SettingsLoginItem);
 
     private void SettingsQuit_Click(object sender, RoutedEventArgs e) => Quit();
+
+    // ---------------------------------------------------------------- updates
+
+    // Pressed while a session was busy: the update runs once none is (UpdateWhenIdle).
+    private bool _updateWaiting;
+
+    private async Task CheckForUpdate()
+    {
+        if (_updateWaiting || await Updater.NewerAsync() is not { } version) return;
+        UpdateButton.Content = $"Update to {version.ToString(3)}";
+        UpdateButton.ToolTip = $"Clayo {version.ToString(3)} is out (you have {Updater.Current.ToString(3)}). "
+                               + "Clayo closes, updates and opens again, once no session is working.";
+        UpdateButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// The install script waits for this Clayo to quit, puts the new one in its place and starts
+    /// it. A session that is working or asking you something is never closed for it: the update
+    /// waits for those. Pressing again while it waits calls it off.
+    /// </summary>
+    private async void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateWaiting)
+        {
+            _updateWaiting = false;
+            await CheckForUpdate();
+            return;
+        }
+        if (PaneHost.Children.OfType<TerminalPane>().Any()
+            && MessageBox.Show(this, "Clayo closes to update and opens again. Open sessions close and resume from the sidebar; "
+                                     + "any that are still working are waited for.",
+                               "Update Clayo", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
+            return;
+        _updateWaiting = true;
+        UpdateButton.Content = "Update waits for running sessions";
+        UpdateButton.ToolTip = "Clayo updates as soon as no session is working. Press to call it off.";
+        UpdateWhenIdle();
+    }
+
+    /// <summary>Called on every pane status change too, so the update goes the moment the last busy session settles.</summary>
+    private void UpdateWhenIdle()
+    {
+        if (!_updateWaiting || PaneHost.Children.OfType<TerminalPane>()
+                .Any(p => p.Status is PaneStatus.Working or PaneStatus.NeedsInput)) return;
+        Updater.Start();
+        Quit();
+    }
 
     /// <summary>
     /// Closing only hides. The sessions keep running, so a long task is not lost to a reflex
