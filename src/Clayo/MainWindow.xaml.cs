@@ -1231,32 +1231,31 @@ public partial class MainWindow : Window
     /// <summary>
     /// The active pane's strip and the footer's limits. A pane Claude has not reported on yet,
     /// or none at all, shows an empty strip, not zeros; the limits are the account's, so they
-    /// show whichever pane is open.
+    /// show whichever pane is open. Each agent has its own account: the footer shows the open
+    /// pane's agent's, or Codex's with no pane open when Codex is the only one in use.
     /// </summary>
     private void ShowStatusBar()
     {
         var now = DateTimeOffset.Now;
-        var limits = _status.Limits;
+        bool codex = _active is null ? !_settings.UseClaude : _active.Agent == AgentKind.Codex;
+        var limits = codex ? CodexLimits() : _status.Limits;
         HeadStrip.Show(_active?.SessionId is { } id
-            ? _active.Agent == AgentKind.Codex
-                ? CodexStrip(id, now)
-                : StatusStrip.For(_status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
+            ? StatusStrip.For(codex ? CodexStatus(id) : _status.Get(id), _git.Get(_active.WorkingDirectory), limits, _settings, now)
             : null, _settings.Theme);
         FootLimits.Show(StatusStrip.Footer(limits, _settings, now), _settings.Theme);
     }
 
+    /// <summary>A Codex pane's status, from what its transcript says (CodexSessionStore).</summary>
+    private SessionStatus? CodexStatus(string id) =>
+        _rows.TryGetValue(id, out var row) ? row.Info?.Status : null;
+
     /// <summary>
-    /// A Codex pane's strip, from what its transcript says (CodexSessionStore). Its limits are
-    /// Codex's own account's, which the footer (Claude's) doesn't show, so they ride in the
-    /// header, as everyone's do with the footer off.
+    /// Codex's account limits: the newest any of its transcripts reported, not the open
+    /// session's, which are as old as its last turn.
     /// </summary>
-    private Strip? CodexStrip(string id, DateTimeOffset now)
-    {
-        if (!_rows.TryGetValue(id, out var row) || row.Info?.Status is not { } status) return null;
-        return StatusStrip.For(status, _git.Get(_active!.WorkingDirectory),
-            new AccountLimits(status.FiveHour, status.SevenDay, status.Updated),
-            _settings with { StatusFooter = false }, now);
-    }
+    private AccountLimits? CodexLimits() => StatusStore.Newest(
+        _rows.Values.Where(r => r.Info?.Agent == AgentKind.Codex)
+                    .Select(r => r.Info!.Status).OfType<SessionStatus>());
 
     /// <summary>
     /// Tells the island about a limit that has just gone past the reserve. Only a warning:
