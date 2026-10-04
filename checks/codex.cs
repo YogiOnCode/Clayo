@@ -173,6 +173,12 @@ try
         Meta(monthly, @"C:\Yogi\Clayo", "2026-10-02T17:10:00.000Z"),
         TokenCount("2026-10-02T17:10:05.000Z", 1000, 258400, "\"primary\":" + Window(3, 43200, 1793547537) + ",\"secondary\":null"),
         Event("2026-10-02T17:10:06.000Z", "task_complete"));
+    const string older = "01a0fd70-0000-7000-8000-000000000003";
+    Write($"rollout-2026-10-02T18-00-00-{older}.jsonl",
+        Meta(older, @"C:\Yogi\Clayo", "2026-10-02T16:00:00.000Z"),
+        TokenCount("2026-10-02T16:00:05.000Z", 1000, 258400,
+            "\"primary\":" + Window(80, 300, 1789990000) + ",\"secondary\":" + Window(70, 10080, 1790500000)),
+        Event("2026-10-02T16:00:06.000Z", "task_complete"));
 
     var now = store.Scan().ToDictionary(s => s.SessionId);
     var st = now[working].Status!;
@@ -186,6 +192,9 @@ try
     var mo = now[monthly].Status!;
     Check("strip: a 30-day window fits neither", (mo.FiveHour, mo.SevenDay), ((Limit?)null, (Limit?)null));
     Check("strip: no turn_context, no effort", mo.Effort, "");
+    var account = StatusStore.Newest(now.Values.Select(s => s.Status).OfType<SessionStatus>());
+    Check("account: the newest report wins, not an older session's", account?.FiveHour?.Percent, 12);
+    Check("account: a session without 5h/7d windows does not blank them", account?.SevenDay?.Percent, 40);
 }
 finally
 {
