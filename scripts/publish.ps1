@@ -13,6 +13,7 @@ $folder = Join-Path $out 'Clayo'
 $zip = Join-Path $out "clayo-$version-win-x64.zip"
 if (Test-Path $folder) { Remove-Item $folder -Recurse -Force }
 if (Test-Path $zip) { Remove-Item $zip -Force }
+if (Test-Path "$zip.sha256") { Remove-Item "$zip.sha256" -Force }
 
 # English only: Clayo's own text is, so WPF's other languages are dead weight.
 dotnet publish $project -c Release -r win-x64 --self-contained true -p:SatelliteResourceLanguages=en -o $folder
@@ -34,6 +35,10 @@ try {
     }
 }
 finally { $archive.Dispose() }
+
+# Uploaded beside the zip: install.ps1 refuses a zip whose hash is not this one.
+$hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content "$zip.sha256" "$hash  $(Split-Path $zip -Leaf)" -Encoding ascii -NoNewline
 $folderMb = (Get-ChildItem $folder -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
 $zipMb = (Get-Item $zip).Length / 1MB
-'Clayo {0}: {1:N0} MB in {2}, zipped to {3} ({4:N0} MB)' -f $version, $folderMb, $folder, $zip, $zipMb
+'Clayo {0}: {1:N0} MB in {2}, zipped to {3} ({4:N0} MB), SHA-256 {5}' -f $version, $folderMb, $folder, $zip, $zipMb, $hash

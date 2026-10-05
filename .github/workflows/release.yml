@@ -1,0 +1,47 @@
+# Pushing a v* tag builds the release zip on GitHub, attests where it was built, and puts the
+# zip and its .sha256 on a draft release for that tag. Check the draft, write the notes, publish.
+# Anyone can then check a download: gh attestation verify <zip> --repo YogiOnCode/Clayo
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write       # the draft release
+  id-token: write       # signing the attestation
+  attestations: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build the zip
+        shell: pwsh
+        run: ./scripts/publish.ps1
+
+      - name: The tag matches the version
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem publish/clayo-*-win-x64.zip
+          if ($zip.Name -ne "clayo-$($env:GITHUB_REF_NAME.TrimStart('v'))-win-x64.zip") {
+            throw "$($zip.Name) does not match the tag $env:GITHUB_REF_NAME"
+          }
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: publish/clayo-*-win-x64.zip
+
+      - name: Draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME --draft --verify-tag --title "Clayo $($env:GITHUB_REF_NAME.TrimStart('v'))" `
+            (Get-ChildItem publish/clayo-*-win-x64.zip).FullName (Get-ChildItem publish/clayo-*-win-x64.zip.sha256).FullName

@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>clayo</AssemblyName>
     <!-- The one place the version lives: the exe, the release zip's name and the git tag follow it. -->
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <RootNamespace>CcxShell</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>clayo.ico</ApplicationIcon>

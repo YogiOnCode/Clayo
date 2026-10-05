@@ -165,6 +165,13 @@ public sealed class IslandGlow : Window
         }
     }
 
+    /// <summary>Stops the breathing and holds the light as it is. The next Light breathes again.</summary>
+    public void Rest()
+    {
+        _breath.BeginAnimation(OpacityProperty, null);
+        _core.BeginAnimation(OpacityProperty, null);
+    }
+
     /// <summary>Slides and fades out with the pill, then hides the window unless a dwell needs it.</summary>
     public void Dim(double slide)
     {

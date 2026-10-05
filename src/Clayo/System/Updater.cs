@@ -12,7 +12,12 @@ namespace CcxShell.Core;
 /// </summary>
 public static class Updater
 {
-    public const string ScriptUrl = "https://raw.githubusercontent.com/YogiOnCode/Clayo/main/scripts/install.ps1";
+    /// <summary>
+    /// The script as it was released with that version, not as main has it now: a push to main
+    /// never reaches anyone's Update button.
+    /// </summary>
+    public static string ScriptUrl(Version version) =>
+        $"https://raw.githubusercontent.com/YogiOnCode/Clayo/v{version.ToString(3)}/scripts/install.ps1";
     private const string LatestUrl = "https://api.github.com/repos/YogiOnCode/Clayo/releases/latest";
 
 #if DEBUG
@@ -51,16 +56,16 @@ public static class Updater
     private static Version Plain(Version v) => new(v.Major, v.Minor, Math.Max(v.Build, 0));
 
     /// <summary>Starts the install script in a window you can watch; the caller then quits.</summary>
-    public static void Start() => Process.Start(new ProcessStartInfo("powershell.exe")
+    public static void Start(Version version) => Process.Start(new ProcessStartInfo("powershell.exe")
     {
         ArgumentList =
         {
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
             // On a failure the window would close before the error could be read.
-            $"try {{ irm '{ScriptUrl}' | iex }} catch {{ Write-Host $_ -ForegroundColor Red; pause }}",
+            $"try {{ irm '{ScriptUrl(version)}' | iex }} catch {{ Write-Host $_ -ForegroundColor Red; pause }}",
         },
         // Update this Clayo where it is, not a copy in the default folder.
         Environment = { ["CLAYO_DIR"] = AppContext.BaseDirectory },
         UseShellExecute = false,
-    });
+    })?.Dispose();
 }

@@ -1365,9 +1365,13 @@ public partial class MainWindow : Window
     // Pressed while a session was busy: the update runs once none is (UpdateWhenIdle).
     private bool _updateWaiting;
 
+    // The release the Update button installs, from the last check.
+    private Version? _updateTo;
+
     private async Task CheckForUpdate()
     {
         if (_updateWaiting || await Updater.NewerAsync() is not { } version) return;
+        _updateTo = version;
         UpdateButton.Content = $"Update to {version.ToString(3)}";
         UpdateButton.ToolTip = $"Clayo {version.ToString(3)} is out (you have {Updater.Current.ToString(3)}). "
                                + "Clayo closes, updates and opens again, once no session is working.";
@@ -1403,7 +1407,7 @@ public partial class MainWindow : Window
     {
         if (!_updateWaiting || PaneHost.Children.OfType<TerminalPane>()
                 .Any(p => p.Status is PaneStatus.Working or PaneStatus.NeedsInput)) return;
-        Updater.Start();
+        if (_updateTo is { } version) Updater.Start(version);
         Quit();
     }
 

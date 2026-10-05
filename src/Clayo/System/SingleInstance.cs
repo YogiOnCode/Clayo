@@ -14,11 +14,16 @@ public sealed class SingleInstance : IDisposable
 #if DEBUG
     // A dev build runs beside the installed (Release) Clayo instead of handing its folder over.
     private const string MutexName = @"Local\CcxShell.SingleInstance.Dev";
-    private const string PipeName = "CcxShell.Handoff.Dev";
+    private const string PipeBase = "CcxShell.Handoff.Dev";
 #else
     private const string MutexName = @"Local\CcxShell.SingleInstance";
-    private const string PipeName = "CcxShell.Handoff";
+    private const string PipeBase = "CcxShell.Handoff";
 #endif
+
+    // Pipe names are machine-wide, unlike the Local\ mutex: per user, so on a shared PC another
+    // account can neither take the name first nor be handed our folders.
+    private static readonly string PipeName =
+        $"{PipeBase}.{System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value}";
 
     private Mutex? _mutex;
     private CancellationTokenSource? _cts;
@@ -60,7 +65,7 @@ public sealed class SingleInstance : IDisposable
                 {
                     using var server = new NamedPipeServerStream(
                         PipeName, PipeDirection.In, 1,
-                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
                     await server.WaitForConnectionAsync(token).ConfigureAwait(false);
 
@@ -71,6 +76,8 @@ public sealed class SingleInstance : IDisposable
                 }
                 catch (OperationCanceledException) { break; }
                 catch (IOException) { /* client vanished — keep serving */ }
+                // Someone else holds the name: serving it is impossible, and retrying would spin.
+                catch (UnauthorizedAccessException) { break; }
             }
         }, token);
     }
@@ -83,7 +90,7 @@ public sealed class SingleInstance : IDisposable
         AllowSetForegroundWindow(ASFW_ANY);
         try
         {
-            using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
+            using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
             client.Connect(2000);
             using var writer = new StreamWriter(client, Encoding.UTF8);
             writer.Write(folder);
@@ -91,6 +98,7 @@ public sealed class SingleInstance : IDisposable
         }
         catch (TimeoutException) { /* stale mutex, nothing listening — caller just exits */ }
         catch (IOException) { }
+        catch (UnauthorizedAccessException) { /* not ours */ }
     }
 
     [DllImport("user32.dll")]

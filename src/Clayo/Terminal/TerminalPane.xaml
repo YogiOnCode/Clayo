@@ -5,5 +5,7 @@
              Background="#14171C">
   <Grid>
     <wv2:WebView2 x:Name="Web" DefaultBackgroundColor="#14171C" />
+    <TextBlock x:Name="LoadError" Visibility="Collapsed" Foreground="#ECEEF1" Margin="16"
+               TextWrapping="Wrap" />
   </Grid>
 </UserControl>

@@ -52,7 +52,10 @@ public sealed class AgentDetector(Func<string, string?> env, Func<string, string
         var data = claude
             ? env("CLAUDE_CONFIG_DIR") ?? Home(".claude")
             : env("CODEX_HOME") ?? Home(".codex");
-        var (sessions, projects) = claude ? CountClaude(data) : CountCodex(data);
+        // A folder we may not list counts as none, rather than failing the whole setup window.
+        var (sessions, projects) = (0, 0);
+        try { (sessions, projects) = claude ? CountClaude(data) : CountCodex(data); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
 
         var npm = claude ? null : Find(null, ["npm.cmd"], [In("ProgramFiles", "nodejs", "npm.cmd")]);
         return new AgentInfo(kind, exe, version, signedIn, data, sessions, projects, npm);

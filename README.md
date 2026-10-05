@@ -63,8 +63,10 @@ Open PowerShell, paste this and press Enter:
 irm https://raw.githubusercontent.com/YogiOnCode/Clayo/main/scripts/install.ps1 | iex
 ```
 
-It runs [scripts/install.ps1](scripts/install.ps1): it downloads the latest release, puts it in
-`%LOCALAPPDATA%\Programs\Clayo` and starts it.
+It runs [scripts/install.ps1](scripts/install.ps1): it downloads the latest release, checks it
+against the release's SHA-256, puts it in `%LOCALAPPDATA%\Programs\Clayo` and starts it. Every
+release zip is built on GitHub Actions; to check one yourself, run
+`gh attestation verify clayo-<version>-win-x64.zip --repo YogiOnCode/Clayo`.
 
 <details>
 <summary>Or by hand</summary>

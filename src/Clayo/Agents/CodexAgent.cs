@@ -19,9 +19,10 @@ public sealed class CodexAgent(Func<string> exe, ISessionSource sessions) : IAge
 
     public string NewCommand(string? newId) => Exe;
 
-    public string ResumeCommand(string id) => $"{Exe} resume {id}";
+    // An id is read from transcript contents, so it is quoted like any other text.
+    public string ResumeCommand(string id) => $"{Exe} resume {AgentHelper.Quote(id)}";
 
-    public string ForkCommand(string parentId, string? newId) => $"{Exe} fork {parentId}";
+    public string ForkCommand(string parentId, string? newId) => $"{Exe} fork {AgentHelper.Quote(parentId)}";
 
     private string Exe => $"& {AgentHelper.Quote(exe())}";
 }

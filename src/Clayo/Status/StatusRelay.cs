@@ -57,7 +57,8 @@ public static class StatusRelay
             // Claude Code runs status lines through Git Bash, where a backslash is an escape.
             // The braces give their whole command our output, even a `cd x && ./line.sh`; the
             // newlines keep a trailing # comment of theirs from eating the closing brace.
-            var relay = $"\"{exePath.Replace('\\', '/')}\" {Arg}";
+            // Single quotes, so a $ or ` in the path stays text.
+            var relay = $"'{exePath.Replace('\\', '/').Replace("'", "'\\''")}' {Arg}";
             statusLine["type"] = "command";
             statusLine["command"] = theirs is null ? relay : $"{relay} {PassArg} | {{\n{theirs}\n}}";
 
