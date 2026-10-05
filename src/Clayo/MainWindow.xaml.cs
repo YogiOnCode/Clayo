@@ -647,13 +647,28 @@ public partial class MainWindow : Window
     /// Codex session"). Done before the rows are folded in, so the transcript lands on the
     /// pane's row instead of growing a second one.
     /// </summary>
+    // Generous: a Codex update or sign-in screen can hold up its start.
+    private static readonly TimeSpan CodexStartLimit = TimeSpan.FromMinutes(10);
+
+    private static bool SameFolder(string a, string b) => string.Equals(
+        Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
+
     private void BindCodexPanes(IReadOnlyList<SessionInfo> codex)
     {
         foreach (var wait in _unbound.ToList())
         {
             var taken = PaneHost.Children.OfType<TerminalPane>().Select(p => p.SessionId).OfType<string>()
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (CodexSessionStore.FindStarted(codex, wait.Row.Folder, wait.ParentId, wait.Since, taken) is not { } found)
+            // Codex starts within seconds of its pane. A session started after the next pane
+            // like this one opened is that pane's, and one started much later is from outside
+            // Clayo (the IDE, another terminal), so it isn't taken either.
+            var until = _unbound
+                .Where(w => w.Since > wait.Since && w.ParentId == wait.ParentId
+                            && (wait.ParentId is not null || SameFolder(w.Row.Folder, wait.Row.Folder)))
+                .Select(w => w.Since)
+                .Append(wait.Since + CodexStartLimit)
+                .Min();
+            if (CodexSessionStore.FindStarted(codex, wait.Row.Folder, wait.ParentId, wait.Since, taken, until) is not { } found)
                 continue;
 
             _unbound.Remove(wait);
@@ -727,15 +742,25 @@ public partial class MainWindow : Window
         var layout = string.Join("\n", view.View.Cast<SessionRow>().Select(r =>
             $"{r.SessionId}|{r.Bucket}|{(byFolder ? r.Project : "")}|{r.Depth}|{r.ParentId}"));
         if (layout == _shownLayout) return;
+        // A rebuild would take the rename box away mid-word. The next refresh after the edit
+        // catches up, as the layout is still not the one on screen.
+        if (_rows.Values.Any(r => r.IsEditing)) return;
         _shownLayout = layout;
 
-        Sessions.ItemsSource = view.View;
-
-        if (selected is not null)
+        // Putting the selection back is not you picking a session, so it must not pull focus
+        // into the terminal while you type in the search box (Sessions_SelectionChanged).
+        _rebinding = true;
+        try
         {
-            Sessions.SelectedItem = Sessions.Items.OfType<SessionRow>()
-                .FirstOrDefault(r => r.SessionId == selected);
+            Sessions.ItemsSource = view.View;
+
+            if (selected is not null)
+            {
+                Sessions.SelectedItem = Sessions.Items.OfType<SessionRow>()
+                    .FirstOrDefault(r => r.SessionId == selected);
+            }
         }
+        finally { _rebinding = false; }
 
         // Rebuilding the view can leave the ScrollViewer parked mid-list, which hides the
         // Open header. Put it back at the top.
@@ -818,8 +843,12 @@ public partial class MainWindow : Window
         ApplyFilter();
     }
 
+    // Set while ApplyFilter swaps the list's view and restores its selection.
+    private bool _rebinding;
+
     private void Sessions_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_rebinding) return;
         var row = Sessions.SelectedItem as SessionRow;
 
         // Leaving a row cancels an edit in progress rather than silently keeping it open.

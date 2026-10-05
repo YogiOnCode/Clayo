@@ -138,6 +138,12 @@ try
         CodexSessionStore.FindStarted(all, @"C:\Other", null, Local("2026-10-02T15:30:00Z"), none)?.SessionId, null);
     Check("fork pane: the session naming its parent",
         CodexSessionStore.FindStarted(all, @"C:\Elsewhere", a, Local("2026-10-02T16:00:00Z"), none)?.SessionId, fork);
+    // Two waiting panes in one folder: the older one must not take the newer one's session (a
+    // started 15:38:24; a pane opened at 15:38:00 bounds the one from 15:30 there).
+    Check("new pane: not a session started after the next pane opened",
+        CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo", null, Local("2026-10-02T15:30:00Z"), none, Local("2026-10-02T15:38:00Z"))?.SessionId, null);
+    Check("new pane: the newer pane gets it",
+        CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo", null, Local("2026-10-02T15:38:00Z"), none, Local("2026-10-02T15:48:00Z"))?.SessionId, a);
     Check("fork pane: nothing forked from another",
         CodexSessionStore.FindStarted(all, @"C:\Yogi\Clayo", b, Local("2026-10-02T16:00:00Z"), none)?.SessionId, null);
 
@@ -185,7 +191,10 @@ try
     Check("turn: started after the last complete is working", now[working].Turn, TurnState.Working);
     Check("strip: model from the latest turn_context", st.Model, "gpt-6-luna");
     Check("strip: effort from the latest turn_context", st.Effort, "high");
-    Check("strip: context is the last request's total", (st.ContextUsed, st.ContextSize, st.ContextPercent), (46800L, 258400L, 18));
+    // As Codex shows it: 12k baseline off both sides, 86% left (codex-rs TokenUsage).
+    Check("strip: context as Codex shows it", (st.ContextUsed, st.ContextSize, st.ContextPercent), (34800L, 246400L, 14));
+    Check("strip: a real session, Codex said 85% left", CodexSessionStore.Context(49323, 258400), (37323L, 246400L, 15));
+    Check("strip: just after the first prompt, Codex says 100% left", CodexSessionStore.Context(11008, 258400), (0L, 246400L, 0));
     Check("strip: a 5-hour window, floored", st.FiveHour, new Limit(12, DateTimeOffset.FromUnixTimeSeconds(1790000000)));
     Check("strip: a 7-day window", st.SevenDay, new Limit(40, DateTimeOffset.FromUnixTimeSeconds(1790500000)));
     Check("strip: folder", st.Cwd, @"C:\Yogi\Clayo");
