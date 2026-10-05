@@ -136,11 +136,30 @@ public sealed class CodexSessionStore(string home) : ISessionSource
             Turn = tail.Turn,
             // What the strip shows, from the same lines: Codex has no status line to relay.
             Status = tail.ContextSize > 0 || model is not null
-                ? new SessionStatus(id, model, cwd, tail.ContextUsed, tail.ContextSize,
-                    tail.ContextSize > 0 ? (int)(tail.ContextUsed * 100 / tail.ContextSize) : 0,
-                    effort ?? "", tail.FiveHour, tail.SevenDay, last ?? started)
+                ? Context(tail.ContextUsed, tail.ContextSize) is var (used, size, percent)
+                    ? new SessionStatus(id, model, cwd, used, size, percent,
+                        effort ?? "", tail.FiveHour, tail.SevenDay, last ?? started)
+                    : null
                 : null
         };
+    }
+
+    // What every Codex request carries before you type (its system prompt and tools).
+    // Codex leaves it out of both sides of its "% context left" (codex-rs TokenUsage).
+    private const long Baseline = 12_000;
+
+    /// <summary>
+    /// The context as Codex itself shows it, so the strip and Codex's own footer agree: the
+    /// baseline is taken off what is used and off the window, and the percentage is 100 minus
+    /// Codex's rounded "% left".
+    /// </summary>
+    public static (long Used, long Size, int Percent) Context(long used, long window)
+    {
+        if (window <= Baseline) return (used, window, window > 0 ? 100 : 0);
+        long size = window - Baseline;
+        long mine = Math.Max(0, used - Baseline);
+        int left = (int)Math.Round(Math.Clamp((size - mine) * 100.0 / size, 0, 100), MidpointRounding.AwayFromZero);
+        return (mine, size, 100 - left);
     }
 
     /// <summary>
@@ -148,10 +167,15 @@ public sealed class CodexSessionStore(string home) : ISessionSource
     /// session"): for a fork, the one naming parentId; else a non-fork in the pane's folder.
     /// Either way started after the pane and not another pane's. Oldest first, so two panes
     /// in one folder bind in start order.
+    ///
+    /// session_meta's time is when codex started, not the first message, so a session started
+    /// before <paramref name="until"/> (the next pane like this one opening) is this pane's.
+    /// Without that bound the older pane took the newer pane's session whenever it hadn't
+    /// written yet, and the closed pane's conversation stayed under Open.
     /// </summary>
     public static SessionInfo? FindStarted(IEnumerable<SessionInfo> sessions, string folder, string? parentId,
-                                           DateTime since, ISet<string> taken) =>
-        sessions.Where(s => s.Started >= since && !taken.Contains(s.SessionId)
+                                           DateTime since, ISet<string> taken, DateTime? until = null) =>
+        sessions.Where(s => s.Started >= since && s.Started < (until ?? DateTime.MaxValue) && !taken.Contains(s.SessionId)
                             && (parentId is null
                                 ? s.ParentId is null && string.Equals(Path.TrimEndingDirectorySeparator(s.ProjectDir),
                                       Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase)

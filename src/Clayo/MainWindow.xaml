@@ -95,6 +95,7 @@
                ItemContainerStyle="{StaticResource SessionItem}"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                VirtualizingPanel.IsVirtualizing="False"
+               IsSynchronizedWithCurrentItem="False"
                SelectionChanged="Sessions_SelectionChanged"
                MouseDoubleClick="Sessions_DoubleClick"
                KeyDown="Sessions_KeyDown">
