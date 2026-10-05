@@ -54,7 +54,7 @@ public sealed class GitInfo(TimeSpan interval)
     {
         if (!IsRepo(folder)) return null;
         if (Git(folder, "rev-parse", "--abbrev-ref", "HEAD")?.Trim() is not { Length: > 0 } branch) return null;
-        var (added, deleted) = ParseNumstat(Git(folder, "diff", "--numstat") ?? "");
+        var (added, deleted) = ParseNumstat(Git(folder, "diff", "--numstat", "--no-ext-diff", "--no-textconv") ?? "");
         return new GitStatus(branch, added, deleted);
     }
 
@@ -100,6 +100,9 @@ public sealed class GitInfo(TimeSpan interval)
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
+        // A folder may be anything you opened, and its .git/config can name a program to run
+        // (core.fsmonitor, or a diff driver, which the diff call turns off). Not from our timer.
+        foreach (var a in new[] { "-c", "core.fsmonitor=false", "--no-optional-locks" }) psi.ArgumentList.Add(a);
         psi.ArgumentList.Add("-C");
         psi.ArgumentList.Add(folder);
         foreach (var a in args) psi.ArgumentList.Add(a);

@@ -121,9 +121,9 @@ public sealed class SessionStore : ISessionSource
                 if (line is null) break;
                 if (line.Length == 0) continue;
 
-                JsonElement el;
-                try { el = JsonDocument.Parse(line).RootElement; }
-                catch (JsonException) { continue; }
+                using var doc = TryParse(line);
+                if (doc is null) continue;
+                var el = doc.RootElement;
 
                 cwd ??= GetString(el, "cwd");
                 sessionId ??= GetString(el, "sessionId");
@@ -197,9 +197,9 @@ public sealed class SessionStore : ISessionSource
                 bool maybePrompt = line.Contains("\"last-prompt\"", StringComparison.Ordinal);
                 if (!maybeTitle && !maybePrompt) continue;
 
-                JsonElement el;
-                try { el = JsonDocument.Parse(line).RootElement; }
-                catch (JsonException) { continue; }
+                using var doc = TryParse(line);
+                if (doc is null) continue;
+                var el = doc.RootElement;
 
                 switch (GetString(el, "type"))
                 {
@@ -220,6 +220,13 @@ public sealed class SessionStore : ISessionSource
 
         return (cleanTitle.Length > 0 ? Shorten(cleanTitle, 90) : null,
                 cleanPrompt.Length > 0 ? Shorten(cleanPrompt, 120) : null);
+    }
+
+    /// <summary>Null for anything that is not JSON. The caller disposes it, which returns its buffers.</summary>
+    internal static JsonDocument? TryParse(string json)
+    {
+        try { return JsonDocument.Parse(json); }
+        catch (JsonException) { return null; }
     }
 
     internal static string? GetString(JsonElement el, string name) =>

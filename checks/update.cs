@@ -20,5 +20,9 @@ Check("an older one is not", Updater.Newer("v0.9.9", new Version(1, 0, 0, 0)), n
 Check("a tag that is no version is not", Updater.Newer("nightly", current), null);
 Check("no tag is not", Updater.Newer(null, current), null);
 
+// The script comes from the release's own tag, never from main.
+Check("script from the tag", Updater.ScriptUrl(new Version(1, 0, 2, 0)),
+    "https://raw.githubusercontent.com/YogiOnCode/Clayo/v1.0.2/scripts/install.ps1");
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;

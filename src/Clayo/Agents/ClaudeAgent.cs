@@ -23,12 +23,15 @@ public sealed class ClaudeAgent(Func<string> exe, ISessionSource sessions, Func<
 
     public ISessionSource Sessions => sessions;
 
-    public string NewCommand(string? newId) => Command($"--session-id {newId}");
+    public string NewCommand(string? newId) => Command($"--session-id {Id(newId)}");
 
-    public string ResumeCommand(string id) => Command($"--resume {id}");
+    public string ResumeCommand(string id) => Command($"--resume {Id(id)}");
 
     public string ForkCommand(string parentId, string? newId) =>
-        Command($"--resume {parentId} --fork-session --session-id {newId}");
+        Command($"--resume {Id(parentId)} --fork-session --session-id {Id(newId)}");
+
+    // An id is read from transcript contents, so it is quoted like any other text.
+    private static string Id(string? id) => AgentHelper.Quote(id ?? "");
 
     /// <summary>Single quotes throughout, because the shell is PowerShell.</summary>
     private string Command(string args)

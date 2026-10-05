@@ -113,7 +113,11 @@ public partial class App : Application
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clayo");
             Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "crash.log"),
+            var log = Path.Combine(dir, "crash.log");
+            // One older file is kept, so the log never grows past about 2 MB.
+            if (File.Exists(log) && new FileInfo(log).Length > 1024 * 1024)
+                File.Move(log, Path.Combine(dir, "crash.old.log"), overwrite: true);
+            File.AppendAllText(log,
                 $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}  {ex}{Environment.NewLine}{Environment.NewLine}");
         }
         catch (IOException) { }

@@ -47,6 +47,13 @@
     // 20000 lines cost ~29 MB of buffer per pane at this width. Claude Code's own
     // transcript is the durable record — this only needs to cover live scrollback.
     scrollback: 5000,
+    // A link in the output (OSC 8) opens in your browser, after asking, as xterm's own does.
+    // xterm's own opens a window inside the WebView, which Clayo does not allow.
+    linkHandler: {
+      activate: function (e, uri) {
+        if (confirm("Open this link in your browser?\n\n" + uri)) send({ t: "link", d: uri });
+      }
+    },
     // Claude Code paints its own colours; this palette only fills the gaps.
     theme: {
       background: "#14171c",

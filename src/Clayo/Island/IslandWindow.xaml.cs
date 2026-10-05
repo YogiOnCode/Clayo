@@ -42,6 +42,14 @@ public partial class IslandWindow : Window
     private readonly DispatcherTimer _poseTimer;
     private MascotMove _poseAfter;
 
+    // A note can stay up for hours (a question while you're at lunch). Both windows are layered
+    // and redrawn in software every frame, so after a while the island holds still.
+    private readonly DispatcherTimer _restTimer = new() { Interval = TimeSpan.FromSeconds(30) };
+
+    // The cursor is read 20 times a second near the top edge, where a peek or a drop can start,
+    // and four times a second elsewhere with nothing showing.
+    private static readonly TimeSpan PollNear = TimeSpan.FromMilliseconds(50), PollFar = TimeSpan.FromMilliseconds(250);
+
     /// <summary>What is on screen, so a new note while showing is noticed as a change.</summary>
     private IslandNote? _shown;
     private PxRect _monitor;
@@ -80,6 +88,12 @@ public partial class IslandWindow : Window
         // alerts first and then keeps talking.
         _poseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1400) };
         _poseTimer.Tick += (_, _) => { _poseTimer.Stop(); Mascot.Play(_poseAfter); };
+        _restTimer.Tick += (_, _) =>
+        {
+            _restTimer.Stop();
+            Mascot.Still = true;
+            _glow.Rest();
+        };
 
         // Only queued here; the next poll decides whether it may show (fullscreen, Clayo in front).
         _main.SessionNotice += (pane, name, kind) =>
@@ -109,6 +123,7 @@ public partial class IslandWindow : Window
         // closed window throws.
         _poll.Stop();
         _poseTimer.Stop();
+        _restTimer.Stop();
         _glow.Retire();
         base.OnClosed(e);
     }
@@ -185,6 +200,10 @@ public partial class IslandWindow : Window
 
         // After SlideIn, so the glow window is already lit when the bar stops needing it.
         _glow.Dwell(bounds, scale, _trigger.DwellProgress, _trigger.DwellLengthMs);
+
+        // Setting the interval restarts the timer, so only on a change.
+        var interval = state == IslandState.Hidden && pt.Y - bounds.Top > 200 * scale ? PollFar : PollNear;
+        if (_poll.Interval != interval) _poll.Interval = interval;
     }
 
     /// <summary>
@@ -284,6 +303,9 @@ public partial class IslandWindow : Window
         Present(pillWidth, fresh);
 
         _poseTimer.Stop();
+        Mascot.Still = false;
+        _restTimer.Stop();
+        _restTimer.Start();
         switch (note?.Kind)
         {
             case null when drop: Pose(MascotMove.Peek); break;
@@ -367,6 +389,7 @@ public partial class IslandWindow : Window
     {
         _shown = null;
         _poseTimer.Stop();
+        _restTimer.Stop();
         _glow.Dim(IslandHeight);
 
         // All the way up, however far the drop target has grown it.

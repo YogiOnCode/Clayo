@@ -31,6 +31,14 @@ try {
     Write-Host "Downloading Clayo $($release.tag_name)..."
     New-Item -ItemType Directory -Force $programs | Out-Null
     Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
+
+    # The release carries the zip's SHA-256 (scripts/publish.ps1). Nothing is unpacked unless it matches.
+    $sum = $release.assets | Where-Object name -eq "$($asset.name).sha256" | Select-Object -First 1
+    if (-not $sum) { throw "Clayo $($release.tag_name) has no checksum for $($asset.name)." }
+    Invoke-WebRequest $sum.browser_download_url -OutFile "$zip.sha256" -UseBasicParsing
+    $want = (Get-Content "$zip.sha256" -Raw).Trim().Split()[0]
+    $got = (Get-FileHash $zip -Algorithm SHA256).Hash
+    if ($got -ne $want) { throw "The download doesn't match its checksum, so it wasn't installed. Try again later." }
     Expand-Archive $zip $staging -Force
 
     # The Update button started this as Clayo quit; it holds its files open until it is gone.
@@ -57,7 +65,7 @@ catch {
     throw
 }
 finally {
-    Remove-Item $zip, $staging -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $zip, "$zip.sha256", $staging -Recurse -Force -ErrorAction SilentlyContinue
     # The new Clayo, or the old one again if the update failed.
     if (Test-Path $exe) { Start-Process $exe }
 }

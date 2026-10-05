@@ -98,9 +98,9 @@ public sealed class StatusStore : IDisposable
     /// <summary>The script's cache: as rate_limits, but "utilization" for the percentage. Null when it holds no limits.</summary>
     public static AccountLimits? ParseUsageCache(string json, DateTime updated)
     {
-        JsonElement root;
-        try { root = JsonDocument.Parse(json).RootElement; }
-        catch (JsonException) { return null; }
+        using var doc = SessionStore.TryParse(json);
+        if (doc is null) return null;
+        var root = doc.RootElement;
         var h5 = ReadLimit(Obj(root, "five_hour"), "utilization");
         var d7 = ReadLimit(Obj(root, "seven_day"), "utilization");
         return h5 is null && d7 is null ? null : new AccountLimits(h5, d7, updated);
@@ -122,7 +122,22 @@ public sealed class StatusStore : IDisposable
         _watcher.Renamed += (_, e) => Load(e.FullPath);
         _watcher.EnableRaisingEvents = true;
 
+        Prune(_dir, DateTime.UtcNow - KeepFor);
         foreach (var file in Directory.EnumerateFiles(_dir, "*.json")) Load(file);
+    }
+
+    /// <summary>A status file is written for every session ever opened; one quiet this long is gone.</summary>
+    public static readonly TimeSpan KeepFor = TimeSpan.FromDays(7);
+
+    /// <summary>Deletes the status files last written before <paramref name="before"/>.</summary>
+    public static void Prune(string dir, DateTime before)
+    {
+        foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
+        {
+            try { if (File.GetLastWriteTimeUtc(file) < before) File.Delete(file); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     /// <summary>Reads one file. Anything unreadable keeps the last good status.</summary>
@@ -158,9 +173,9 @@ public sealed class StatusStore : IDisposable
     /// </summary>
     public static SessionStatus? Parse(string json, DateTime updated, Func<string> fallbackEffort)
     {
-        JsonElement root;
-        try { root = JsonDocument.Parse(json).RootElement; }
-        catch (JsonException) { return null; }
+        using var doc = SessionStore.TryParse(json);
+        if (doc is null) return null;
+        var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
 
         if (Str(root, "session_id") is not { } id || !Guid.TryParse(id, out _)) return null;

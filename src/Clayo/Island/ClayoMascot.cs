@@ -35,6 +35,7 @@ public sealed class ClayoMascot : Viewbox
     private readonly TranslateTransform _pupils = new(), _glasses = new();
 
     private MascotMove[] _moves = [];
+    private bool _still;
 
     public ClayoMascot()
     {
@@ -107,13 +108,25 @@ public sealed class ClayoMascot : Viewbox
         Apply();
     }
 
+    /// <summary>Holds the current pose without moving: the island rests once a note has been up a while.</summary>
+    public bool Still
+    {
+        get => _still;
+        set
+        {
+            if (_still == value) return;
+            _still = value;
+            Apply();
+        }
+    }
+
     private bool Has(MascotMove m) => Array.IndexOf(_moves, m) >= 0;
 
     private void Apply()
     {
         // Hidden or with animations turned off in Windows there are no clocks at all, only the
         // held pose. That pose is also what RenderTargetBitmap sees for an unshown control.
-        bool animate = IsVisible && SystemParameters.ClientAreaAnimation;
+        bool animate = IsVisible && SystemParameters.ClientAreaAnimation && !_still;
         double glassesY = Has(MascotMove.Peek) ? 9 : 0;
 
         Run(_wholeScale, ScaleTransform.ScaleXProperty, null);

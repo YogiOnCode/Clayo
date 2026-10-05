@@ -135,10 +135,15 @@ public sealed class PtyProcess : IDisposable
         // Two anonymous pipes. Naming is from *our* point of view:
         //   inputWrite  -> we write keystrokes here
         //   outputRead  -> we read the child's screen output here
+        // Each handle is owned as soon as it exists, so a failure further down still closes it.
         if (!Native.CreatePipe(out var inputRead, out var inputWrite, IntPtr.Zero, 0))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe (input) failed");
+        using var theirInput = new SafeFileHandle(inputRead, ownsHandle: true);
+        _stdin = new FileStream(new SafeFileHandle(inputWrite, ownsHandle: true), FileAccess.Write, bufferSize: 1, isAsync: false);
         if (!Native.CreatePipe(out var outputRead, out var outputWrite, IntPtr.Zero, 0))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe (output) failed");
+        using var theirOutput = new SafeFileHandle(outputWrite, ownsHandle: true);
+        _stdout = new FileStream(new SafeFileHandle(outputRead, ownsHandle: true), FileAccess.Read, bufferSize: 1, isAsync: false);
 
         var size = new Native.COORD { X = cols, Y = rows };
         int hr = Native.CreatePseudoConsole(size, inputRead, outputWrite, 0, out _hPC);
@@ -147,8 +152,8 @@ public sealed class PtyProcess : IDisposable
 
         // ConPTY duplicates the handles it was given. Our copies must go, or the
         // read loop will never see EOF when the child exits.
-        Native.CloseHandle(inputRead);
-        Native.CloseHandle(outputWrite);
+        theirInput.Dispose();
+        theirOutput.Dispose();
 
         var si = new Native.STARTUPINFOEX();
         si.StartupInfo.cb = Marshal.SizeOf<Native.STARTUPINFOEX>();
@@ -184,9 +189,6 @@ public sealed class PtyProcess : IDisposable
                 ref si, out _pi))
             throw new Win32Exception(Marshal.GetLastWin32Error(), $"CreateProcess failed for: {commandLine}");
 
-        _stdin = new FileStream(new SafeFileHandle(inputWrite, ownsHandle: true), FileAccess.Write, bufferSize: 1, isAsync: false);
-        _stdout = new FileStream(new SafeFileHandle(outputRead, ownsHandle: true), FileAccess.Read, bufferSize: 1, isAsync: false);
-
         // Anonymous pipes aren't opened for overlapped I/O, so ReadAsync would just
         // park a thread-pool thread anyway. Use a dedicated one and be honest about it.
         _readThread = new Thread(ReadLoop)
@@ -202,10 +204,13 @@ public sealed class PtyProcess : IDisposable
         var buffer = new byte[16 * 1024];
         try
         {
-            while (!_disposed)
+            // Until EOF, even once disposed: ClosePseudoConsole waits for its last output to be
+            // read, so stopping early would leave it waiting.
+            while (true)
             {
                 int read = _stdout!.Read(buffer, 0, buffer.Length);
                 if (read <= 0) break;
+                if (_disposed) continue;
 
                 var chunk = new byte[read];
                 Buffer.BlockCopy(buffer, 0, chunk, 0, read);
@@ -246,6 +251,7 @@ public sealed class PtyProcess : IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        // Here, so the shell is gone even when Clayo exits before the teardown below runs.
         try
         {
             if (_pi.hProcess != IntPtr.Zero)
@@ -253,6 +259,13 @@ public sealed class PtyProcess : IDisposable
         }
         catch { }
 
+        // Before Windows 11 24H2, ClosePseudoConsole blocks until conhost has flushed, so a
+        // busy pane would hang the UI thread that closes it. Off that thread, then.
+        Task.Run(Teardown);
+    }
+
+    private void Teardown()
+    {
         // Order matters. ClosePseudoConsole can block while the client is still
         // attached, so kill first, close the console, then tear down our streams.
         if (_hPC != IntPtr.Zero)

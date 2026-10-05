@@ -139,15 +139,34 @@ public partial class TerminalPane : UserControl
         Loaded += OnLoaded;
     }
 
+    // Only our own page may drive the pane: a message from it is typed into the shell.
+    private const string Origin = $"https://{VirtualHost}/";
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
 
+        // An exception here would end Clayo and every session in it (App only logs them), so a
+        // pane that cannot load says so and the rest carry on.
+        try { await LoadWeb(); }
+        catch (Exception ex) when (!_closed)
+        {
+            LoadError.Text = $"Couldn't load the terminal: {ex.Message}";
+            LoadError.Visibility = Visibility.Visible;
+        }
+        catch when (_closed) { /* closed while WebView2 was still starting */ }
+    }
+
+    private async Task LoadWeb()
+    {
         // One shared user-data folder keeps startup fast across panes.
         var userData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "CcxShell", "WebView2");
         Directory.CreateDirectory(userData);
+
+        // A file or link dropped on the pane would otherwise navigate away to it.
+        Web.AllowExternalDrop = false;
 
         var env = await CoreWebView2Environment.CreateAsync(null, userData);
         if (_closed) return;
@@ -157,35 +176,64 @@ public partial class TerminalPane : UserControl
         var core = Web.CoreWebView2;
         core.Settings.AreDefaultContextMenusEnabled = false;
         core.Settings.IsZoomControlEnabled = false;
-        core.Settings.AreDevToolsEnabled = true;   // F12 while you're building this
         core.Settings.IsStatusBarEnabled = false;
+#if DEBUG
+        core.Settings.AreDevToolsEnabled = true;   // F12 while you're building this
+#else
+        core.Settings.AreDevToolsEnabled = false;
+        core.Settings.AreBrowserAcceleratorKeysEnabled = false;   // F5, Ctrl+P and the like
+#endif
 
         var assets = Path.Combine(AppContext.BaseDirectory, "Assets");
         core.SetVirtualHostNameToFolderMapping(
-            VirtualHost, assets, CoreWebView2HostResourceAccessKind.Allow);
+            VirtualHost, assets, CoreWebView2HostResourceAccessKind.DenyCors);
+
+        core.NavigationStarting += (_, args) =>
+        {
+            if (!args.Uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase)) args.Cancel = true;
+        };
+        // No windows inside Clayo. Links in the output come over as "link" messages instead.
+        core.NewWindowRequested += (_, args) => args.Handled = true;
+        // A crashed renderer leaves a blank pane; the shell behind it is still running.
+        core.ProcessFailed += (_, args) =>
+        {
+            if (!_closed && args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited)
+                core.Reload();
+        };
 
         core.WebMessageReceived += OnWebMessage;
-        core.Navigate($"https://{VirtualHost}/terminal.html");
+        core.Navigate($"{Origin}terminal.html");
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
-        JsonElement msg;
-        try { msg = JsonDocument.Parse(e.WebMessageAsJson).RootElement; }
-        catch (JsonException) { return; }
+        if (!e.Source.StartsWith(Origin, StringComparison.OrdinalIgnoreCase)) return;
 
-        // WebMessageAsJson wraps a posted string as a JSON string literal.
-        if (msg.ValueKind == JsonValueKind.String)
+        JsonElement msg;
+        try
         {
-            try { msg = JsonDocument.Parse(msg.GetString() ?? "{}").RootElement; }
-            catch (JsonException) { return; }
+            using var outer = JsonDocument.Parse(e.WebMessageAsJson);
+            // WebMessageAsJson wraps a posted string as a JSON string literal.
+            if (outer.RootElement.ValueKind != JsonValueKind.String) msg = outer.RootElement.Clone();
+            else
+            {
+                using var inner = JsonDocument.Parse(outer.RootElement.GetString() ?? "{}");
+                msg = inner.RootElement.Clone();
+            }
         }
+        catch (JsonException) { return; }
 
         var type = msg.TryGetProperty("t", out var t) ? t.GetString() : null;
 
         switch (type)
         {
             case "ready":
+                // A reloaded page reports ready again; the shell it belongs to is already running.
+                if (_started)
+                {
+                    _pty.Resize(_ptySize.Item1, _ptySize.Item2);   // repaints the screen
+                    break;
+                }
                 StartPty(
                     (short)(msg.TryGetProperty("cols", out var c) ? c.GetInt32() : 80),
                     (short)(msg.TryGetProperty("rows", out var r) ? r.GetInt32() : 24));
@@ -212,6 +260,13 @@ public partial class TerminalPane : UserControl
 
             case "paste":
                 PasteFilesFromClipboard();
+                break;
+
+            case "link":
+                // Web links only: a file: or other scheme from the output would run something.
+                if (msg.TryGetProperty("d", out var l) && Uri.TryCreate(l.GetString(), UriKind.Absolute, out var uri)
+                    && uri.Scheme is "http" or "https")
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
                 break;
         }
     }
@@ -241,8 +296,11 @@ public partial class TerminalPane : UserControl
         _pty.Write(Encoding.UTF8.GetBytes(text + " "));
     }
 
+    private bool _started;
+
     private void StartPty(short cols, short rows)
     {
+        _started = true;
         _pty.OutputReceived += bytes =>
         {
             var now = DateTime.UtcNow;

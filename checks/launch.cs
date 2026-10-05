@@ -21,19 +21,23 @@ const string relay = " --settings 'C:\\s\\relay.json'";
 
 var plan = SessionLauncher.Plan(claude, LaunchMode.New, @"C:\work");
 Check("new: picks an id", Guid.TryParse(plan.ExpectedSessionId, out _), true);
-Check("new: passes it to claude", plan.AgentCommand, $"{exe} --session-id {plan.ExpectedSessionId}{relay}");
+Check("new: passes it to claude", plan.AgentCommand, $"{exe} --session-id '{plan.ExpectedSessionId}'{relay}");
 Check("new: in the folder", plan.WorkingDirectory, @"C:\work");
 Check("new: a fresh id each time", SessionLauncher.Plan(claude, LaunchMode.New, @"C:\work").ExpectedSessionId != plan.ExpectedSessionId, true);
 
 plan = SessionLauncher.Plan(claude, LaunchMode.Resume, @"C:\work", "abc");
 Check("resume: keyed on the existing id", plan.ExpectedSessionId, "abc");
-Check("resume: command", plan.AgentCommand, $"{exe} --resume abc{relay}");
+Check("resume: command", plan.AgentCommand, $"{exe} --resume 'abc'{relay}");
 
 plan = SessionLauncher.Plan(claude, LaunchMode.Fork, @"C:\work", "abc");
 Check("fork: a new id for the child", Guid.TryParse(plan.ExpectedSessionId, out _), true);
-Check("fork: command", plan.AgentCommand, $"{exe} --resume abc --fork-session --session-id {plan.ExpectedSessionId}{relay}");
+Check("fork: command", plan.AgentCommand, $"{exe} --resume 'abc' --fork-session --session-id '{plan.ExpectedSessionId}'{relay}");
 
-Check("no relay settings: no --settings", SessionLauncher.Plan(bare, LaunchMode.Resume, @"C:\work", "abc").AgentCommand, "& 'claude' --resume abc");
+Check("no relay settings: no --settings", SessionLauncher.Plan(bare, LaunchMode.Resume, @"C:\work", "abc").AgentCommand, "& 'claude' --resume 'abc'");
+Check("an id is quoted, so a crafted transcript types no command",
+    SessionLauncher.Plan(bare, LaunchMode.Resume, @"C:\work", "x'; calc; '").AgentCommand, "& 'claude' --resume 'x''; calc; '''");
+Check("typographic quotes are doubled, as PowerShell reads them as quotes",
+    AgentHelper.Quote(@"C:\Users\O’Brien‘‚‛"), @"'C:\Users\O’’Brien‘‘‚‚‛‛'");
 
 // An agent that picks its own ids (Codex): Clayo expects none, and never the parent's.
 Check("own ids, new: none expected", SessionLauncher.Plan(picksOwnId, LaunchMode.New, @"C:\work").ExpectedSessionId, null);
@@ -48,9 +52,9 @@ plan = SessionLauncher.Plan(codex, LaunchMode.New, @"C:\work");
 Check("codex new: command", plan.AgentCommand, cx);
 Check("codex new: no id yet", plan.ExpectedSessionId, null);
 Check("codex new: says whose pane", plan.Agent, AgentKind.Codex);
-Check("codex resume: command", SessionLauncher.Plan(codex, LaunchMode.Resume, @"C:\work", "abc").AgentCommand, $"{cx} resume abc");
+Check("codex resume: command", SessionLauncher.Plan(codex, LaunchMode.Resume, @"C:\work", "abc").AgentCommand, $"{cx} resume 'abc'");
 plan = SessionLauncher.Plan(codex, LaunchMode.Fork, @"C:\work", "abc");
-Check("codex fork: command", plan.AgentCommand, $"{cx} fork abc");
+Check("codex fork: command", plan.AgentCommand, $"{cx} fork 'abc'");
 Check("codex fork: no id yet", plan.ExpectedSessionId, null);
 Check("claude: says whose pane", SessionLauncher.Plan(claude, LaunchMode.New, @"C:\work").Agent, AgentKind.Claude);
 

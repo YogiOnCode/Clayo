@@ -41,6 +41,18 @@ public static class AgentHelper
         if (process is not null) await process.WaitForExitAsync();
     }
 
-    /// <summary>A PowerShell single-quoted string.</summary>
-    public static string Quote(string s) => $"'{s.Replace("'", "''")}'";
+    /// <summary>
+    /// A PowerShell single-quoted string. PowerShell also reads the typographic quotes ‘ ’ ‚ ‛
+    /// as single quotes, so a name like O’Brien needs them doubled too.
+    /// </summary>
+    public static string Quote(string s)
+    {
+        var b = new System.Text.StringBuilder("'");
+        foreach (var c in s)
+        {
+            if (c is '\'' or '‘' or '’' or '‚' or '‛') b.Append(c);
+            b.Append(c);
+        }
+        return b.Append('\'').ToString();
+    }
 }
