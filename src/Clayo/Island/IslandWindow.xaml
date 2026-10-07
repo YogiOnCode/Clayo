@@ -59,6 +59,10 @@
                      Foreground="#8B919A" FontSize="12.5" />
         </StackPanel>
       </Grid>
+
+      <!-- "Send screenshot to…": which session the image is for (docs/SCREENSHOT.md). One
+           row per open session, then New session; built in code (BuildPickRows). -->
+      <StackPanel x:Name="PickBody" Margin="10,0,10,12" Visibility="Collapsed" />
     </StackPanel>
   </Border>
 </Window>

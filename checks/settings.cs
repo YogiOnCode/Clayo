@@ -35,6 +35,13 @@ try
     Check("a key of the wrong type falls back, the others still count",
         ClayoSettings.Load(path), defaults with { StatusBranch = false });
 
+    // Screenshot picker (docs/SCREENSHOT.md D1): the hotkey on, the automatic offer off.
+    Check("screenshot hotkey is on by default", defaults.ScreenshotHotkey, true);
+    Check("offering every screenshot is off by default", defaults.ScreenshotOffer, false);
+    var shots = defaults with { ScreenshotHotkey = false, ScreenshotOffer = true };
+    shots.Save(path);
+    Check("screenshot settings load back", ClayoSettings.Load(path), shots);
+
     // Reserve (step 6): off by default, one of the offered thresholds, else off.
     Check("reserve is off by default", defaults.ReserveAt, 0);
     var reserve = defaults with { ReserveAt = 80, ReserveSevenDay = false };

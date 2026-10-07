@@ -3,15 +3,17 @@ namespace CcxShell.Core;
 /// <summary>
 /// Compact is the small pill the island shows by itself while a session works: only the mascot
 /// and a status dot, and click-through, so it never stands between you and the tabs under it.
-/// Drop is the "Drop here" target a file drag brings out.
+/// Drop is the "Drop here" target a file drag brings out. Pick asks which session a screenshot
+/// is for (docs/SCREENSHOT.md).
 /// </summary>
-public enum IslandState { Hidden, Compact, Peek, Notify, Drop }
+public enum IslandState { Hidden, Compact, Peek, Notify, Drop, Pick }
 
 /// <summary>
 /// What a session wants you to know. NeedsYou and Error block the session, Done does not.
-/// Reserve is the account's: a limit went past the reserve set in Settings.
+/// Reserve is the account's: a limit went past the reserve set in Settings. Tip is Clayo's own
+/// short hint (the screenshot shortcut), gone after a Done's 4 s.
 /// </summary>
-public enum NoteKind { NeedsYou, Error, Done, Reserve }
+public enum NoteKind { NeedsYou, Error, Done, Reserve, Tip }
 
 /// <summary>
 /// One notification. Source is whatever identifies the session to the caller (the pane), or
@@ -80,6 +82,9 @@ public sealed class IslandTrigger
     /// <summary>Resting on the compact pill this long opens the full island. The edge dwell's length, so both feel alike.</summary>
     public const long RestMs = 600;
 
+    /// <summary>The screenshot picker gives up after this with no answer; a cursor on it holds it.</summary>
+    public const long PickMs = 15_000;
+
     /// <summary>The login greeting is out this long: one wave, then gone.</summary>
     public const long GreetMs = 2500;
 
@@ -115,6 +120,8 @@ public sealed class IslandTrigger
     private long? _selfPeekAt;
     private long _compactSince;
     private long? _restSince;
+
+    private long _pickSince;
 
     private bool _greetPending;
     private long? _greetSince;
@@ -181,8 +188,34 @@ public sealed class IslandTrigger
     /// <summary>Clayo started at login: say hello once with the compact pill, on a later Update.</summary>
     public void Greet() => _greetPending = true;
 
+    /// <summary>
+    /// Asks which session a screenshot is for. You asked for it, so it shows over everything,
+    /// also while busy or with Clayo in front; notes wait behind it.
+    /// </summary>
+    public void Pick(long nowMs)
+    {
+        Hide();
+        State = IslandState.Pick;
+        _pickSince = nowMs;
+    }
+
+    /// <summary>The picker was answered or cancelled. Gone, and not back until the cursor leaves the edge.</summary>
+    public void EndPick()
+    {
+        if (State != IslandState.Pick) return;
+        Hide();
+        _mustLeaveFirst = true;
+    }
+
     public IslandState Update(in IslandInput i)
     {
+        if (State == IslandState.Pick)
+        {
+            if (i.OverIsland) _pickSince = i.NowMs;
+            else if (i.NowMs - _pickSince >= PickMs) Hide();
+            return State;
+        }
+
         bool zone = InZone(i);
         if (!zone) _mustLeaveFirst = false;
         if (!i.Dragging) _dragEndFirst = false;

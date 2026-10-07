@@ -286,6 +286,17 @@ public partial class MainWindow : Window
     /// <summary>A pane went to Working (true) or out of it, closing included. The island peeks on its own for it.</summary>
     public event Action<TerminalPane, bool>? SessionWorking;
 
+    /// <summary>Settings were changed and saved. The island follows its screenshot options.</summary>
+    public event Action<ClayoSettings>? SettingsApplied;
+
+    public ClayoSettings Settings => _settings;
+
+    /// <summary>Set by the island: another app holds Ctrl+Alt+S. Settings says so.</summary>
+    public bool ScreenshotKeyTaken { get; set; }
+
+    // Open panes, the one you used last first: the screenshot picker offers these.
+    private readonly List<TerminalPane> _used = [];
+
     /// <summary>A limit went past the reserve set in Settings, once per limit window. The island listens.</summary>
     public event Action<Meter>? ReserveCrossed;
 
@@ -304,6 +315,9 @@ public partial class MainWindow : Window
             s.Save(ClayoSettings.DefaultPath);
             ShowStatusBar();
             WarnReserve();
+            SettingsApplied?.Invoke(s);
+            // The island has just tried for Ctrl+Alt+S; Settings says whether it got it.
+            SettingsView.ShowShots(ScreenshotKeyTaken);
         };
         // Both fire on background threads, for any pane; only the active one's strip shows,
         // and the footer shows the newest limits whichever pane reported them.
@@ -322,6 +336,7 @@ public partial class MainWindow : Window
             RefreshSessions();
             foreach (var source in Sources) source.StartWatching();
             _status.Start();
+            Screenshots.Prune(Screenshots.Dir, DateTime.UtcNow - Screenshots.KeepFor);
 
             // A hidden window shows no branch, so it reads none.
             _gitPoll.Tick += (_, _) =>
@@ -544,7 +559,8 @@ public partial class MainWindow : Window
         {
             _settings = s;
             s.Save(ClayoSettings.DefaultPath);
-            if (SettingsView.IsVisible) SettingsView.Refresh(s);
+            SettingsApplied?.Invoke(s);
+            if (SettingsView.IsVisible) SettingsView.Refresh(s, ScreenshotKeyTaken);
             RefreshSessions();
             Reveal();
         };
@@ -1089,6 +1105,7 @@ public partial class MainWindow : Window
             if (_unbound.RemoveAll(w => ReferenceEquals(w.Row, row)) > 0) _rows.Remove(row.SessionId);
         }
 
+        _used.Remove(pane);
         _active = PaneHost.Children.OfType<TerminalPane>().LastOrDefault();
 
         if (_active is not null)
@@ -1249,6 +1266,8 @@ public partial class MainWindow : Window
             child.Visibility = ReferenceEquals(child, pane) ? Visibility.Visible : Visibility.Collapsed;
 
         _active = pane;
+        _used.Remove(pane);
+        _used.Insert(0, pane);
         PaneTitle.Text = title;
         ForkButton.IsEnabled = pane.SessionId is not null;
         AttachButton.IsEnabled = true;
@@ -1259,6 +1278,40 @@ public partial class MainWindow : Window
         _git.Refresh(pane.WorkingDirectory);
         ShowStatusBar();
         pane.FocusTerminal();
+    }
+
+    // ------------------------------------------------------------ screenshots
+
+    /// <summary>
+    /// Up to <paramref name="max"/> open sessions for the screenshot picker, the one you used
+    /// last first (docs/SCREENSHOT.md D3).
+    /// </summary>
+    public IReadOnlyList<PickChoice> RecentSessions(int max) =>
+        _used.Concat(PaneHost.Children.OfType<TerminalPane>())
+            .Where(p => PaneHost.Children.Contains(p))
+            .Distinct()
+            .Take(max)
+            .Select(p => _rows.Values.FirstOrDefault(r => ReferenceEquals(r.Pane, p)) is { } row
+                ? new PickChoice(p, row.Name, row.Project, p.Status)
+                : new PickChoice(p, "new session", Path.GetFileName(p.WorkingDirectory), p.Status))
+            .ToList();
+
+    /// <summary>
+    /// Brings Clayo forward on that session with the image in its prompt, not sent. With no
+    /// pane, or one that has closed or whose shell exited meanwhile, a new session gets it, in
+    /// the folder of the one picked or of the session used last (D4).
+    /// </summary>
+    public void SendImage(TerminalPane? pane, string path)
+    {
+        if (pane is not null && PaneHost.Children.Contains(pane) && pane.Status != PaneStatus.Exited)
+        {
+            Reveal();
+            ShowSession(pane);
+            pane.Paste(path);
+            return;
+        }
+        var folder = pane?.WorkingDirectory ?? _used.FirstOrDefault()?.WorkingDirectory ?? _folder;
+        AdoptFolder(Directory.Exists(folder) ? folder : _folder, TerminalPane.Pasted(path));
     }
 
     private void PaintStatus(PaneStatus status) =>
@@ -1353,7 +1406,7 @@ public partial class MainWindow : Window
     private void ShowSettings()
     {
         if (SettingsView.IsVisible) return;
-        SettingsView.Refresh(_settings);
+        SettingsView.Refresh(_settings, ScreenshotKeyTaken);
         PaneHost.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
         SettingsView.Focus();
@@ -1460,3 +1513,6 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 }
+
+/// <summary>A session the screenshot picker offers: its pane, name, folder and status light.</summary>
+public sealed record PickChoice(TerminalPane Pane, string Name, string Folder, PaneStatus Status);
