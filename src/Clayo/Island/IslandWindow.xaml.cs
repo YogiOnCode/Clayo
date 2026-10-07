@@ -50,6 +50,14 @@ public partial class IslandWindow : Window
     // and four times a second elsewhere with nothing showing.
     private static readonly TimeSpan PollNear = TimeSpan.FromMilliseconds(50), PollFar = TimeSpan.FromMilliseconds(250);
 
+    // The screenshot picker (docs/SCREENSHOT.md). Ctrl+Alt+S is registered while the setting is
+    // on; 1, 2, 3, N and Esc only while the picker shows (D7), since the island never has focus.
+    private const int ShotKey = 1, PickKeys = 10;
+    private static readonly uint[] PickVks = [0x31, 0x32, 0x33, 0x4E, 0x1B];   // 1 2 3 N Esc
+    private bool _shotKey, _pickKeys, _offering, _pickAsked;
+    private uint _clipSeq;
+    private IReadOnlyList<PickChoice> _choices = [];
+
     /// <summary>What is on screen, so a new note while showing is noticed as a change.</summary>
     private IslandNote? _shown;
     private PxRect _monitor;
@@ -104,6 +112,7 @@ public partial class IslandWindow : Window
         _main.SessionWorking += (pane, working) => _trigger.SetWorking(pane, working);
         // Keyed by the limit, so a newer warning about it replaces the older one.
         _main.ReserveCrossed += m => _trigger.Notify(new IslandNote(m.Label, $"{m.Label} at {m.Percent}%", NoteKind.Reserve));
+        _main.SettingsApplied += ApplyShots;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -115,6 +124,10 @@ public partial class IslandWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         SetWindowLong(hwnd, GWL_EXSTYLE,
             GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+
+        // The hotkeys and clipboard notices arrive as window messages to this handle.
+        HwndSource.FromHwnd(hwnd).AddHook(WndProc);
+        ApplyShots(_main.Settings);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -124,6 +137,8 @@ public partial class IslandWindow : Window
         _poll.Stop();
         _poseTimer.Stop();
         _restTimer.Stop();
+        ReleasePickKeys();
+        ApplyShots(_main.Settings with { ScreenshotHotkey = false, ScreenshotOffer = false });
         _glow.Retire();
         base.OnClosed(e);
     }
@@ -162,6 +177,12 @@ public partial class IslandWindow : Window
 
         var was = _trigger.State;
         if (was != IslandState.Hidden && escPressed) _trigger.Dismiss();
+        // Here, after `was`, so the picker is seen as a change and slides in.
+        if (_pickAsked)
+        {
+            _pickAsked = false;
+            _trigger.Pick(now);
+        }
 
         // The pill grows downwards with the drop target, so its height is read again on every
         // poll rather than when it was placed.
@@ -182,6 +203,8 @@ public partial class IslandWindow : Window
             // island would only repeat it. Behind the browser it is needed again.
             ClayoActive: _main.IsActive,
             Dragging: InOleDrag()));
+
+        if (was == IslandState.Pick && state != IslandState.Pick) ReleasePickKeys();
 
         // A new note while one shows is a change too: same state, different content.
         if (state != was || !ReferenceEquals(_trigger.Note, _shown))
@@ -256,11 +279,12 @@ public partial class IslandWindow : Window
         var note = _trigger.Note;
         bool compact = _trigger.State == IslandState.Compact;
         bool drop = _trigger.State == IslandState.Drop;
+        bool pick = _trigger.State == IslandState.Pick;
         _shown = note;
         _monitor = monitor;
         _scale = scale;
 
-        double pillWidth = compact ? CompactWidth : note is null && !drop ? PeekWidth : NoteWidth;
+        double pillWidth = compact ? CompactWidth : note is null && !drop && !pick ? PeekWidth : NoteWidth;
 
         // Compact shows only the mascot and the dot; the text under it is filled in regardless.
         // The greeting's dot is the warm hello, not the blue of work.
@@ -270,8 +294,17 @@ public partial class IslandWindow : Window
         Text.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         // Only a pill with nothing under it opens Clayo on a click.
         DropBody.Visibility = drop ? Visibility.Visible : Visibility.Collapsed;
-        Pill.Cursor = drop ? Cursors.Arrow : Cursors.Hand;
-        if (drop)
+        PickBody.Visibility = pick ? Visibility.Visible : Visibility.Collapsed;
+        Pill.Cursor = drop || pick ? Cursors.Arrow : Cursors.Hand;
+        if (pick)
+        {
+            HeadName.Text = "send screenshot";
+            HeadRest.Text = " to…";
+            Sub.Text = _choices.Count == 0 ? "N for a new session · Esc to cancel" : $"1–{_choices.Count} or N · Esc to cancel";
+            Sub.Visibility = Visibility.Visible;
+            BuildPickRows();
+        }
+        else if (drop)
         {
             HeadName.Text = "clayo";
             HeadRest.Text = "";
@@ -295,6 +328,7 @@ public partial class IslandWindow : Window
                 NoteKind.NeedsYou => " · needs you",
                 NoteKind.Error => " · api error",
                 NoteKind.Reserve => " · past your reserve",
+                NoteKind.Tip => "",
                 _ => " · finished",
             };
             Sub.Visibility = Visibility.Collapsed;
@@ -308,7 +342,7 @@ public partial class IslandWindow : Window
         _restTimer.Start();
         switch (note?.Kind)
         {
-            case null when drop: Pose(MascotMove.Peek); break;
+            case null when drop || pick: Pose(MascotMove.Peek); break;
             // The login hello waves until it leaves, a couple of seconds later.
             case null when greeting: Pose(MascotMove.Wave); break;
             // Walking while the work runs; ClayoMascot stops it when the island hides.
@@ -317,6 +351,7 @@ public partial class IslandWindow : Window
             case NoteKind.NeedsYou: Pose(MascotMove.Alert, then: MascotMove.Talk); break;
             case NoteKind.Error or NoteKind.Reserve: Pose(MascotMove.Alert); break;
             case NoteKind.Done: Pose(MascotMove.Jump); break;
+            case NoteKind.Tip: Pose(MascotMove.Wave, then: MascotMove.Idle); break;
         }
 
         var light = note?.Kind switch
@@ -324,6 +359,7 @@ public partial class IslandWindow : Window
             null when compact && !greeting => IslandGlow.Blue,
             null => IslandGlow.Warm,
             NoteKind.Done => IslandGlow.Green,
+            NoteKind.Tip => IslandGlow.Warm,
             _ => IslandGlow.Amber,
         };
         Light(light);
@@ -336,9 +372,15 @@ public partial class IslandWindow : Window
     private void Present(double pillWidth, bool fresh)
     {
         _pillWidth = pillWidth;
-        bool tall = _trigger.State == IslandState.Drop;
+        double height = _trigger.State switch
+        {
+            IslandState.Drop => TallHeight,
+            // The header, a 34 px row per choice and New session, the padding and the slack.
+            IslandState.Pick => 52 + 34 * (_choices.Count + 1) + 12 + 10,
+            _ => IslandHeight,
+        };
         int w = (int)Math.Round(NoteWidth * _scale);
-        int h = (int)Math.Round((tall ? TallHeight : IslandHeight) * _scale);
+        int h = (int)Math.Round(height * _scale);
         int x = (_monitor.Left + _monitor.Right) / 2 - w / 2;
         _window = new PxRect(x, _monitor.Top, x + w, _monitor.Top + h);
 
@@ -428,8 +470,9 @@ public partial class IslandWindow : Window
 
     private void Pill_Click(object sender, MouseButtonEventArgs e)
     {
-        // A click on the drop target is meant for it, not a way into Clayo.
-        if (_trigger.State == IslandState.Drop) return;
+        // A click on the drop target is meant for it, not a way into Clayo; so is one on the
+        // picker, whose rows take their own clicks.
+        if (_trigger.State is IslandState.Drop or IslandState.Pick) return;
         var note = _trigger.Note;
         _trigger.Dismiss();
         SlideOut();
@@ -440,6 +483,207 @@ public partial class IslandWindow : Window
 
         // On the session that asked, not whichever pane was last in front.
         if (note?.Source is TerminalPane pane) _main.ShowSession(pane);
+    }
+
+    // ------------------------------------------------------------ screenshots
+
+    /// <summary>
+    /// Follows the screenshot settings: Ctrl+Alt+S on or off, and listening to the clipboard
+    /// for the automatic offer (D1, D2). Called at start, on every change, and with both off
+    /// on close.
+    /// </summary>
+    private void ApplyShots(ClayoSettings s)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        if (s.ScreenshotHotkey && !_shotKey)
+        {
+            _shotKey = RegisterHotKey(hwnd, ShotKey, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x53);   // S
+            // Another app has it (or a second Clayo): carry on without, and say so once.
+            if (!_shotKey) _trigger.Notify(new IslandNote(nameof(ShotKey), "Ctrl+Alt+S is taken by another app", NoteKind.Tip));
+        }
+        else if (!s.ScreenshotHotkey && _shotKey)
+        {
+            UnregisterHotKey(hwnd, ShotKey);
+            _shotKey = false;
+        }
+        _main.ScreenshotKeyTaken = s.ScreenshotHotkey && !_shotKey;
+
+        if (s.ScreenshotOffer && !_offering)
+        {
+            _clipSeq = GetClipboardSequenceNumber();
+            _offering = AddClipboardFormatListener(hwnd);
+        }
+        else if (!s.ScreenshotOffer && _offering)
+        {
+            RemoveClipboardFormatListener(hwnd);
+            _offering = false;
+        }
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_HOTKEY)
+        {
+            OnHotkey(wParam.ToInt32());
+            handled = true;
+        }
+        else if (msg == WM_CLIPBOARDUPDATE) OnClipboard();
+        return IntPtr.Zero;
+    }
+
+    private void OnHotkey(int id)
+    {
+        if (id == ShotKey)
+        {
+            if (_trigger.State == IslandState.Pick) return;
+            if (Screenshots.OnClipboard()) StartPick();
+            else NoShot();
+            return;
+        }
+        int key = id - PickKeys;
+        if (key >= 0 && key < _choices.Count && key <= 2) Choose(key);
+        else if (key == 3) Choose(-1);
+        else if (key == 4) CancelPick();
+    }
+
+    private void NoShot() =>
+        _trigger.Notify(new IslandNote(nameof(Screenshots), "Copy a screenshot first (Win+Shift+S)", NoteKind.Tip));
+
+    /// <summary>
+    /// The automatic offer: a new image on the clipboard brings the picker by itself. Not while
+    /// Clayo is in front (you would paste it yourself there), and not over a fullscreen app or
+    /// Do Not Disturb, which the hotkey may override but this may not.
+    /// </summary>
+    private void OnClipboard()
+    {
+        // One copy can raise several notices; the sequence number tells a new copy apart.
+        var seq = GetClipboardSequenceNumber();
+        if (seq == _clipSeq) return;
+        _clipSeq = seq;
+        if (!_offering || _trigger.State == IslandState.Pick || _main.IsActive || IsBusy()
+            || !Screenshots.OnClipboard()) return;
+        StartPick();
+    }
+
+    private void StartPick()
+    {
+        _choices = _main.RecentSessions(3);
+        _pickAsked = true;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        // A key another app holds is just not offered by keyboard; a click still works.
+        for (int i = 0; i < PickVks.Length; i++) RegisterHotKey(hwnd, PickKeys + i, MOD_NOREPEAT, PickVks[i]);
+        _pickKeys = true;
+        // Now, not on the next poll: the key press was this moment.
+        Tick(null, EventArgs.Empty);
+    }
+
+    private void ReleasePickKeys()
+    {
+        if (!_pickKeys) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        for (int i = 0; i < PickVks.Length; i++) UnregisterHotKey(hwnd, PickKeys + i);
+        _pickKeys = false;
+    }
+
+    private void CancelPick()
+    {
+        _trigger.EndPick();
+        ReleasePickKeys();
+        SlideOut();
+    }
+
+    /// <summary>
+    /// An answer: a session by its place in the list, or -1 for New session. The image is only
+    /// written now, so a cancelled offer leaves nothing on disk.
+    /// </summary>
+    private void Choose(int index)
+    {
+        if (_trigger.State != IslandState.Pick) return;
+        var pane = index >= 0 && index < _choices.Count ? _choices[index].Pane : null;
+        CancelPick();
+
+        if (Screenshots.SaveFromClipboard() is not { } path)
+        {
+            NoShot();
+            return;
+        }
+        // The key press or click was this process's input, so Clayo may come to the front.
+        _main.SendImage(pane, path);
+    }
+
+    private void BuildPickRows()
+    {
+        PickBody.Children.Clear();
+        for (int i = 0; i < _choices.Count; i++)
+        {
+            var c = _choices[i];
+            PickBody.Children.Add(PickRow((i + 1).ToString(), c.Name, c.Folder,
+                (Brush)FindResource(SessionRow.BrushKeyFor(c.Status)), i));
+        }
+        PickBody.Children.Add(PickRow("N", "New session…", _choices.FirstOrDefault()?.Folder ?? "", null, -1));
+    }
+
+    private static readonly Brush KeyFill = Frozen(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF));
+    private static readonly Brush RowHover = Frozen(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+    private static readonly Brush Bright = Frozen(Color.FromRgb(0xEC, 0xEE, 0xF1));
+    private static readonly Brush Faint = Frozen(Color.FromRgb(0x8B, 0x91, 0x9A));
+
+    private static Brush Frozen(Color c)
+    {
+        var brush = new SolidColorBrush(c);
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>One picker row: its key, the session's name and folder, and its status dot.</summary>
+    private System.Windows.Controls.Border PickRow(string key, string name, string folder, Brush? dot, int index)
+    {
+        var line = new System.Windows.Controls.DockPanel { Margin = new Thickness(8, 0, 10, 0) };
+        var badge = new System.Windows.Controls.Border
+        {
+            Width = 20, Height = 20, CornerRadius = new CornerRadius(5), Background = KeyFill,
+            Margin = new Thickness(0, 0, 10, 0),
+            Child = new System.Windows.Controls.TextBlock
+            {
+                Text = key, Foreground = Bright, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        System.Windows.Controls.DockPanel.SetDock(badge, System.Windows.Controls.Dock.Left);
+        line.Children.Add(badge);
+        if (dot is not null)
+        {
+            var light = new System.Windows.Shapes.Ellipse
+            {
+                Width = 8, Height = 8, Fill = dot, Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            System.Windows.Controls.DockPanel.SetDock(light, System.Windows.Controls.Dock.Right);
+            line.Children.Add(light);
+        }
+        var text = new System.Windows.Controls.TextBlock
+        {
+            FontSize = 13, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        text.Inlines.Add(new System.Windows.Documents.Run(name) { Foreground = Bright, FontWeight = FontWeights.SemiBold });
+        if (folder.Length > 0) text.Inlines.Add(new System.Windows.Documents.Run("  " + folder) { Foreground = Faint });
+        line.Children.Add(text);
+
+        var row = new System.Windows.Controls.Border
+        {
+            Height = 34, CornerRadius = new CornerRadius(10), Background = Brushes.Transparent,
+            Cursor = Cursors.Hand, Child = line,
+        };
+        row.MouseEnter += (_, _) => row.Background = RowHover;
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        row.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            Choose(index);
+        };
+        return row;
     }
 
     // ------------------------------------------------------------------- drop
@@ -533,6 +777,21 @@ public partial class IslandWindow : Window
     }
 
     [DllImport("user32.dll")]
+    private static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint vk);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
+
+    [DllImport("user32.dll")]
+    private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+
+    [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT point);
 
     [DllImport("user32.dll")]
@@ -568,6 +827,12 @@ public partial class IslandWindow : Window
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(
         IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private const int WM_HOTKEY = 0x0312;
+    private const int WM_CLIPBOARDUPDATE = 0x031D;
+    private const uint MOD_ALT = 0x0001;
+    private const uint MOD_CONTROL = 0x0002;
+    private const uint MOD_NOREPEAT = 0x4000;
 
     private const int MONITOR_DEFAULTTONEAREST = 2;
     private const int MDT_EFFECTIVE_DPI = 0;

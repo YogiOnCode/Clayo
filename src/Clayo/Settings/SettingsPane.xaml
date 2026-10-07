@@ -219,7 +219,8 @@
           <!-- Not a page: it opens the setup window, and the page you were on stays picked. -->
           <RadioButton x:Name="NavAgents" Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents"
                        Checked="Agents_Checked" />
-          <RadioButton Style="{StaticResource NavItem}" Tag="&#xE7F4;" Content="Island" IsEnabled="False" />
+          <RadioButton x:Name="NavIsland" Style="{StaticResource NavItem}" Tag="&#xE7F4;" Content="Island"
+                       Checked="Nav_Checked" />
         </StackPanel>
       </Border>
 
@@ -398,6 +399,48 @@
                   <CheckBox x:Name="ReserveFiveHourTick" Style="{StaticResource Tick}" Content="5-hour limit" Click="Status_Click" />
                   <CheckBox x:Name="ReserveSevenDayTick" Grid.Column="1" Style="{StaticResource Tick}" Content="7-day limit" Click="Status_Click" />
                 </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- Island: the screenshot picker (docs/SCREENSHOT.md). -->
+          <StackPanel x:Name="PageIsland" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Island" />
+            <TextBlock Style="{StaticResource PageIntro}"
+                       Text="Send a screenshot to a session: the island asks which one, and the image lands in its prompt, ready for your question." />
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Screenshots" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="7,7,0,0"
+                        Tag="{Binding ElementName=ShotKeySwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE92E;" />
+                    <CheckBox x:Name="ShotKeySwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Send a screenshot with Ctrl+Alt+S" Click="Shots_Click" />
+                    <TextBlock x:Name="ShotKeyState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Send a screenshot with Ctrl+Alt+S" />
+                      <TextBlock x:Name="ShotKeyText" Style="{StaticResource RowText}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="0,0,7,7"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Tag="{Binding ElementName=ShotOfferSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE722;" />
+                    <CheckBox x:Name="ShotOfferSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Offer to send every new screenshot" Click="Shots_Click" />
+                    <TextBlock x:Name="ShotOfferState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Offer to send every new screenshot" />
+                      <TextBlock Style="{StaticResource RowText}"
+                                 Text="The island asks each time you take one with Win+Shift+S, without the shortcut. Not while Clayo is in front." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
               </StackPanel>
             </Border>
           </StackPanel>

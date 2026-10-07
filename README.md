@@ -46,6 +46,10 @@ switching windows.
   ![The island drops in when a session needs you, then turns green when one is finished](media/island.gif)
 
 - **Drop a file or folder on the island** and it opens in Clayo.
+- **Send a screenshot to a session.** Take one with Win+Shift+S, press **Ctrl+Alt+S**, and the
+  island asks which session it's for. The image lands in that session's prompt, ready for
+  your question. Works with Claude Code and Codex. Settings › Island can also offer it after
+  every screenshot.
 - **Status at a glance.** Each pane's header shows model, branch and diff, context and
   effort. The sidebar footer shows your 5-hour and 7-day limits, drawn as Numbers, Bars,
   Rings or Chips, and the island warns you once when you get near one.

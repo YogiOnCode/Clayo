@@ -296,6 +296,15 @@ public partial class TerminalPane : UserControl
         _pty.Write(Encoding.UTF8.GetBytes(text + " "));
     }
 
+    /// <summary>
+    /// Text as a terminal paste. Claude Code and Codex both turn a pasted image path into an
+    /// attachment, where the same path typed stays text (docs/SCREENSHOT.md, P0).
+    /// </summary>
+    public static string Pasted(string text) => $"\x1b[200~{text}\x1b[201~";
+
+    /// <summary>Pastes into the prompt, without Enter: what to ask about it is yours to add.</summary>
+    public void Paste(string text) => _pty.Write(Encoding.UTF8.GetBytes(Pasted(text)));
+
     private bool _started;
 
     private void StartPty(short cols, short rows)

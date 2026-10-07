@@ -625,5 +625,31 @@ Check("busy never shows it",
     Check("a drag that wandered off brings it back when it returns", Hold(t, drag, 2050, 2400), IslandState.Drop);
 }
 
+// The screenshot picker (docs/SCREENSHOT.md): asked for, so it outranks everything, and it
+// gives up after 15 s unless the cursor is on it.
+{
+    var away = rest with { CursorY = 500 };
+    var t = new IslandTrigger();
+    t.Pick(0);
+    Check("pick: shows at once", t.Update(away with { NowMs = 50 }), IslandState.Pick);
+    Check("pick: a busy screen doesn't hide it", t.Update(away with { Busy = true, NowMs = 100 }), IslandState.Pick);
+    Check("pick: Clayo in front doesn't either", t.Update(away with { ClayoActive = true, NowMs = 150 }), IslandState.Pick);
+    t.Notify(new IslandNote("pane", "api", NoteKind.NeedsYou));
+    Check("pick: a note waits behind it", t.Update(away with { NowMs = 200 }), IslandState.Pick);
+    Check("pick: still there at 14.9 s", t.Update(away with { NowMs = 14_950 }), IslandState.Pick);
+    Check("pick: gone at 15 s with no answer", t.Update(away with { NowMs = 15_000 }), IslandState.Hidden);
+    Check("pick: then the waiting note shows", t.Update(away with { NowMs = 15_050 }), IslandState.Notify);
+}
+{
+    var away = rest with { CursorY = 500 };
+    var t = new IslandTrigger();
+    t.Pick(0);
+    t.Update(away with { OverIsland = true, NowMs = 14_000 });
+    Check("pick: a cursor on it holds it", t.Update(away with { NowMs = 28_000 }), IslandState.Pick);
+    t.EndPick();
+    Check("pick: answered, it goes", t.State, IslandState.Hidden);
+    Check("pick: and doesn't peek straight back at the edge", Hold(t, rest, 28_050, 29_000), IslandState.Hidden);
+}
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;

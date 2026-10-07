@@ -32,7 +32,9 @@ public sealed record ClayoSettings(
     bool UseCodex = true,
     NewSessionAgent DefaultAgent = NewSessionAgent.Claude,
     string? ClaudePath = null,
-    string? CodexPath = null)
+    string? CodexPath = null,
+    bool ScreenshotHotkey = true,
+    bool ScreenshotOffer = false)
 {
     /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
     public static readonly int[] ReserveSteps = [0, 70, 80, 90];
@@ -102,7 +104,9 @@ public sealed record ClayoSettings(
             B("useCodex", d.UseCodex),
             E("defaultAgent", d.DefaultAgent),
             S("claudePath"),
-            S("codexPath"));
+            S("codexPath"),
+            B("screenshotHotkey", d.ScreenshotHotkey),
+            B("screenshotOffer", d.ScreenshotOffer));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -135,6 +139,8 @@ public sealed record ClayoSettings(
                 w.WriteString("defaultAgent", DefaultAgent.ToString().ToLowerInvariant());
                 if (ClaudePath is not null) w.WriteString("claudePath", ClaudePath);
                 if (CodexPath is not null) w.WriteString("codexPath", CodexPath);
+                w.WriteBoolean("screenshotHotkey", ScreenshotHotkey);
+                w.WriteBoolean("screenshotOffer", ScreenshotOffer);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

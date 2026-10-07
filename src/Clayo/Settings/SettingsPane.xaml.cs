@@ -50,7 +50,7 @@ public partial class SettingsPane : UserControl
     /// Brings the pages up to date each time Settings opens: the login entry can be changed
     /// from the gear and island menus, or removed outside Clayo, while it was closed.
     /// </summary>
-    public void Refresh(ClayoSettings settings)
+    public void Refresh(ClayoSettings settings, bool shotKeyTaken = false)
     {
         _settings = settings;
         HeaderSwitch.IsChecked = settings.StatusHeader;
@@ -66,6 +66,9 @@ public partial class SettingsPane : UserControl
         ReserveFiveHourTick.IsChecked = settings.ReserveFiveHour;
         ReserveSevenDayTick.IsChecked = settings.ReserveSevenDay;
         ShowStatusPage();
+        ShotKeySwitch.IsChecked = settings.ScreenshotHotkey;
+        ShotOfferSwitch.IsChecked = settings.ScreenshotOffer;
+        ShowShots(shotKeyTaken);
 
         var startup = LoginStartup.ForThisUser();
         LoginSwitch.IsChecked = startup.IsOn;
@@ -108,6 +111,26 @@ public partial class SettingsPane : UserControl
         SettingsChanged?.Invoke(_settings);
     }
 
+    private void Shots_Click(object sender, RoutedEventArgs e)
+    {
+        _settings = _settings with
+        {
+            ScreenshotHotkey = ShotKeySwitch.IsChecked == true,
+            ScreenshotOffer = ShotOfferSwitch.IsChecked == true,
+        };
+        SettingsChanged?.Invoke(_settings);
+    }
+
+    /// <summary>The switches' states, and whether Ctrl+Alt+S could be had. MainWindow calls it again after a change.</summary>
+    public void ShowShots(bool shotKeyTaken)
+    {
+        ShotKeyState.Text = _settings.ScreenshotHotkey ? "On" : "Off";
+        ShotOfferState.Text = _settings.ScreenshotOffer ? "On" : "Off";
+        ShotKeyText.Text = _settings.ScreenshotHotkey && shotKeyTaken
+            ? "Another app has Ctrl+Alt+S, so the shortcut is off. Close that app's shortcut, then switch this off and on."
+            : "Take a screenshot (Win+Shift+S), then press Ctrl+Alt+S: the island asks which session it is for.";
+    }
+
     // A click anywhere on a row whose Tag is its switch flips the switch, as a click on a
     // label does, and runs the switch's own Click. A click on the switch itself is the
     // switch's own and must not count twice.
@@ -140,15 +163,16 @@ public partial class SettingsPane : UserControl
     private void Nav_Checked(object sender, RoutedEventArgs e)
     {
         // Checked fires while InitializeComponent is still building the pages.
-        if (PageGeneral is null || PageStatus is null) return;
+        if (PageGeneral is null || PageStatus is null || PageIsland is null) return;
         PageGeneral.Visibility = NavGeneral.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageIsland.Visibility = NavIsland.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Opens setup, then puts the check back on the page still showing.</summary>
     private void Agents_Checked(object sender, RoutedEventArgs e)
     {
-        (PageStatus.IsVisible ? NavStatus : NavGeneral).IsChecked = true;
+        (PageStatus.IsVisible ? NavStatus : PageIsland.IsVisible ? NavIsland : NavGeneral).IsChecked = true;
         SetupRequested?.Invoke();
     }
 
