@@ -309,9 +309,13 @@ public partial class MainWindow : Window
         InitializeComponent();
         SettingsView.SetupRequested += () => ShowSetup();
         SettingsView.CloseRequested += HideSettings;
+        SettingsView.UpdateRequested += () => Update_Click(SettingsView, new RoutedEventArgs());
         SettingsView.SettingsChanged += s =>
         {
+            // On checks right away; off forgets what an earlier check found (CheckForUpdate).
+            bool updateCheckChanged = s.UpdateCheck != _settings.UpdateCheck;
             _settings = s;
+            if (updateCheckChanged) _ = CheckForUpdate();
             s.Save(ClayoSettings.DefaultPath);
             ShowStatusBar();
             WarnReserve();
@@ -560,7 +564,7 @@ public partial class MainWindow : Window
             _settings = s;
             s.Save(ClayoSettings.DefaultPath);
             SettingsApplied?.Invoke(s);
-            if (SettingsView.IsVisible) SettingsView.Refresh(s, ScreenshotKeyTaken);
+            if (SettingsView.IsVisible) SettingsView.Refresh(s, ScreenshotKeyTaken, _updateTo);
             RefreshSessions();
             Reveal();
         };
@@ -1406,7 +1410,7 @@ public partial class MainWindow : Window
     private void ShowSettings()
     {
         if (SettingsView.IsVisible) return;
-        SettingsView.Refresh(_settings, ScreenshotKeyTaken);
+        SettingsView.Refresh(_settings, ScreenshotKeyTaken, _updateTo);
         PaneHost.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
         SettingsView.Focus();
@@ -1452,8 +1456,19 @@ public partial class MainWindow : Window
 
     private async Task CheckForUpdate()
     {
-        if (_updateWaiting || await Updater.NewerAsync() is not { } version) return;
+        if (_updateWaiting) return;
+        // Off: GitHub is not asked, and a release an earlier check found is not offered.
+        if (!_settings.UpdateCheck)
+        {
+            _updateTo = null;
+            UpdateButton.Visibility = Visibility.Collapsed;
+            SettingsView.ShowUpdate(null);
+            return;
+        }
+        // Checked again after: the switch may have gone off while GitHub answered.
+        if (await Updater.NewerAsync() is not { } version || !_settings.UpdateCheck) return;
         _updateTo = version;
+        SettingsView.ShowUpdate(version);
         UpdateButton.Content = $"Update to {version.ToString(3)}";
         UpdateButton.ToolTip = $"Clayo {version.ToString(3)} is out (you have {Updater.Current.ToString(3)}). "
                                + "Clayo closes, updates and opens again, once no session is working.";
@@ -1470,6 +1485,7 @@ public partial class MainWindow : Window
         if (_updateWaiting)
         {
             _updateWaiting = false;
+            SettingsView.ShowUpdate(_updateTo);
             await CheckForUpdate();
             return;
         }
@@ -1481,6 +1497,7 @@ public partial class MainWindow : Window
         _updateWaiting = true;
         UpdateButton.Content = "Update waits for running sessions";
         UpdateButton.ToolTip = "Clayo updates as soon as no session is working. Press to call it off.";
+        SettingsView.ShowUpdate(_updateTo, waiting: true);
         UpdateWhenIdle();
     }
 
