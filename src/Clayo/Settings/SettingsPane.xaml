@@ -262,6 +262,43 @@
               </StackPanel>
             </Border>
 
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Updates" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                  <TextBlock Style="{StaticResource RowIcon}" Text="&#xE946;" />
+                  <!-- The sidebar's Update button, here too; gone until a check finds a newer release. -->
+                  <Button x:Name="UpdateButton" DockPanel.Dock="Right" Content="Update" Margin="20,0,0,0"
+                          Style="{StaticResource GhostButton}" BorderBrush="{StaticResource Clay}"
+                          Foreground="#E39A7E" FontWeight="SemiBold" VerticalAlignment="Center"
+                          Visibility="Collapsed" Click="Update_Click" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="VersionTitle" Style="{StaticResource RowTitle}" />
+                    <TextBlock x:Name="WhatsNew" Style="{StaticResource RowText}">
+                      <Hyperlink Foreground="#E39A7E" Click="WhatsNew_Click">What's new in this version</Hyperlink>
+                    </TextBlock>
+                    <TextBlock x:Name="NewerText" Style="{StaticResource RowText}" Visibility="Collapsed" />
+                  </StackPanel>
+                </DockPanel>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="0,0,7,7"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Tag="{Binding ElementName=UpdateCheckSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE895;" />
+                    <CheckBox x:Name="UpdateCheckSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Check for updates" Click="UpdateCheck_Click" />
+                    <TextBlock x:Name="UpdateCheckState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Check for updates" />
+                      <TextBlock Style="{StaticResource RowText}"
+                                 Text="Once at start and every 12 hours, from GitHub. Updating is always your click." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
             <TextBlock Style="{StaticResource GroupLabel}" Text="Coming later" />
             <!-- WPF borders draw no dashes, so the dashed rim is a rectangle behind the rows. -->
             <Grid>

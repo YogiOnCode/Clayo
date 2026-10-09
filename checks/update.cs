@@ -24,5 +24,9 @@ Check("no tag is not", Updater.Newer(null, current), null);
 Check("script from the tag", Updater.ScriptUrl(new Version(1, 0, 2, 0)),
     "https://raw.githubusercontent.com/YogiOnCode/Clayo/v1.0.2/scripts/install.ps1");
 
+// What's new: the release page of that tag, three parts.
+Check("release page of the tag", Updater.ReleaseUrl(new Version(1, 0, 5, 0)),
+    "https://github.com/YogiOnCode/Clayo/releases/tag/v1.0.5");
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;

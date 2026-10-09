@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -20,6 +21,9 @@ public partial class SettingsPane : UserControl
 
     /// <summary>Agents was picked. MainWindow opens the setup window.</summary>
     public event Action? SetupRequested;
+
+    /// <summary>Update was pressed. MainWindow runs its sidebar Update button's path.</summary>
+    public event Action? UpdateRequested;
 
     private ClayoSettings _settings = new();
 
@@ -50,7 +54,7 @@ public partial class SettingsPane : UserControl
     /// Brings the pages up to date each time Settings opens: the login entry can be changed
     /// from the gear and island menus, or removed outside Clayo, while it was closed.
     /// </summary>
-    public void Refresh(ClayoSettings settings, bool shotKeyTaken = false)
+    public void Refresh(ClayoSettings settings, bool shotKeyTaken = false, Version? newer = null)
     {
         _settings = settings;
         HeaderSwitch.IsChecked = settings.StatusHeader;
@@ -69,6 +73,9 @@ public partial class SettingsPane : UserControl
         ShotKeySwitch.IsChecked = settings.ScreenshotHotkey;
         ShotOfferSwitch.IsChecked = settings.ScreenshotOffer;
         ShowShots(shotKeyTaken);
+        UpdateCheckSwitch.IsChecked = settings.UpdateCheck;
+        UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
+        ShowUpdate(newer);
 
         var startup = LoginStartup.ForThisUser();
         LoginSwitch.IsChecked = startup.IsOn;
@@ -130,6 +137,33 @@ public partial class SettingsPane : UserControl
             ? "Another app has Ctrl+Alt+S, so the shortcut is off. Close that app's shortcut, then switch this off and on."
             : "Take a screenshot (Win+Shift+S), then press Ctrl+Alt+S: the island asks which session it is for.";
     }
+
+    private void UpdateCheck_Click(object sender, RoutedEventArgs e)
+    {
+        _settings = _settings with { UpdateCheck = UpdateCheckSwitch.IsChecked == true };
+        UpdateCheckState.Text = _settings.UpdateCheck ? "On" : "Off";
+        SettingsChanged?.Invoke(_settings);
+    }
+
+    /// <summary>
+    /// This Clayo's version, and the newer one the last check found (null: none). MainWindow calls
+    /// it after a check, and with waiting while Update waits for busy sessions: pressing again calls it off.
+    /// </summary>
+    public void ShowUpdate(Version? newer, bool waiting = false)
+    {
+        VersionTitle.Text = $"Clayo {Updater.Current.ToString(3)}";
+        WhatsNew.Visibility = newer is null ? Visibility.Visible : Visibility.Collapsed;
+        NewerText.Visibility = UpdateButton.Visibility = newer is null ? Visibility.Collapsed : Visibility.Visible;
+        NewerText.Text = newer is null ? ""
+            : waiting ? $"Clayo {newer.ToString(3)} installs as soon as no session is working."
+            : $"Clayo {newer.ToString(3)} is out.";
+        UpdateButton.Content = waiting ? "Call off" : "Update";
+    }
+
+    private void WhatsNew_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo(Updater.ReleaseUrl(Updater.Current)) { UseShellExecute = true })?.Dispose();
+
+    private void Update_Click(object sender, RoutedEventArgs e) => UpdateRequested?.Invoke();
 
     // A click anywhere on a row whose Tag is its switch flips the switch, as a click on a
     // label does, and runs the switch's own Click. A click on the switch itself is the

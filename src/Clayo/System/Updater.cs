@@ -18,6 +18,9 @@ public static class Updater
     /// </summary>
     public static string ScriptUrl(Version version) =>
         $"https://raw.githubusercontent.com/YogiOnCode/Clayo/v{version.ToString(3)}/scripts/install.ps1";
+    /// <summary>The release's page on GitHub: its notes are what's new in that version.</summary>
+    public static string ReleaseUrl(Version version) =>
+        $"https://github.com/YogiOnCode/Clayo/releases/tag/v{version.ToString(3)}";
     private const string LatestUrl = "https://api.github.com/repos/YogiOnCode/Clayo/releases/latest";
 
 #if DEBUG

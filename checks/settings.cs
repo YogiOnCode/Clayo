@@ -42,6 +42,15 @@ try
     shots.Save(path);
     Check("screenshot settings load back", ClayoSettings.Load(path), shots);
 
+    // Update checks (docs/VERSION.md D3): on by default, off kept.
+    Check("update checks are on by default", defaults.UpdateCheck, true);
+    File.WriteAllText(path, """{"statusHeader":false}""");
+    Check("no updateCheck key is on", ClayoSettings.Load(path).UpdateCheck, true);
+    File.WriteAllText(path, """{"updateCheck":false}""");
+    Check("updateCheck off is kept", ClayoSettings.Load(path), defaults with { UpdateCheck = false });
+    (defaults with { UpdateCheck = false }).Save(path);
+    Check("updateCheck off loads back", ClayoSettings.Load(path).UpdateCheck, false);
+
     // Reserve (step 6): off by default, one of the offered thresholds, else off.
     Check("reserve is off by default", defaults.ReserveAt, 0);
     var reserve = defaults with { ReserveAt = 80, ReserveSevenDay = false };
