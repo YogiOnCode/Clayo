@@ -201,7 +201,7 @@ public partial class IslandWindow : Window
             NowMs: now,
             // With Clayo itself in front the sidebar already shows every session, so the
             // island would only repeat it. Behind the browser it is needed again.
-            ClayoActive: _main.IsActive,
+            ClayoActive: ClayoInFront,
             Dragging: InOleDrag()));
 
         if (was == IslandState.Pick && state != IslandState.Pick) ReleasePickKeys();
@@ -261,12 +261,40 @@ public partial class IslandWindow : Window
             && name.ToString() == "CLIPBRDWNDCLASS";
     }
 
+    /// <summary>
+    /// The shell's word, except for a plain QUNS_BUSY: it also says that with every window
+    /// minimized or only the desktop showing, as if the desktop were a fullscreen app, and the
+    /// island then never came out on an empty desktop. So that one also needs the foreground
+    /// window to be showing and to cover its monitor. The others name what is going on.
+    /// </summary>
     private static bool IsBusy()
     {
         if (SHQueryUserNotificationState(out var state) != 0) return false;
-        return state is QUNS_BUSY or QUNS_RUNNING_D3D_FULL_SCREEN
-                     or QUNS_PRESENTATION_MODE or QUNS_QUIET_TIME;
+        if (state == QUNS_BUSY) return ForegroundFillsMonitor();
+        return state is QUNS_RUNNING_D3D_FULL_SCREEN or QUNS_PRESENTATION_MODE or QUNS_QUIET_TIME;
     }
+
+    private static bool ForegroundFillsMonitor()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd) || IsIconic(hwnd)) return false;
+        // The desktop is monitor-sized too.
+        var name = new StringBuilder(32);
+        if (GetClassName(hwnd, name, name.Capacity) > 0 && name.ToString() is "Progman" or "WorkerW")
+            return false;
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetWindowRect(hwnd, out var r)
+            || !GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), ref info)) return false;
+        var m = info.rcMonitor;
+        return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom;
+    }
+
+    /// <summary>
+    /// Clayo's window is what you are looking at. IsActive alone is not enough: minimized with
+    /// nothing else open, it stays the foreground window, and so stays active.
+    /// </summary>
+    private bool ClayoInFront =>
+        _main.IsActive && _main.IsVisible && _main.WindowState != WindowState.Minimized;
 
     // -------------------------------------------------------------- show/hide
 
@@ -562,7 +590,7 @@ public partial class IslandWindow : Window
         var seq = GetClipboardSequenceNumber();
         if (seq == _clipSeq) return;
         _clipSeq = seq;
-        if (!_offering || _trigger.State == IslandState.Pick || _main.IsActive || IsBusy()
+        if (!_offering || _trigger.State == IslandState.Pick || ClayoInFront || IsBusy()
             || !Screenshots.OnClipboard()) return;
         StartPick();
     }
@@ -817,6 +845,21 @@ public partial class IslandWindow : Window
 
     [DllImport("shell32.dll")]
     private static extern int SHQueryUserNotificationState(out int state);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int flags);
 
     [DllImport("user32.dll")]
     private static extern int GetWindowLong(IntPtr hwnd, int index);
