@@ -16,20 +16,55 @@
     overflow: hidden;
     background: #14171c;
   }
+  body { display: flex; position: relative; }
   #term {
     height: 100%;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: 10px 4px 6px 12px;
     box-sizing: border-box;
   }
+
+  /* The doc viewer: beside the terminal (split), or over it (full) so the terminal keeps its size. */
+  #md { display: none; flex-direction: column; background: #14171c; border-left: 1px solid #262c35; }
+  #md.split { display: flex; flex: 0 0 50%; min-width: 0; position: relative; }
+  /* Drag to resize the split. Over the border, wider than it looks. */
+  #mdgrip { display: none; position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 6; }
+  #md.split #mdgrip { display: block; }
+  #mdgrip:hover, #mdgrip.drag { background: linear-gradient(to right, transparent 3px, #d4a24c 3px, #d4a24c 5px, transparent 5px); }
+  body.dragging, body.dragging * { cursor: col-resize !important; user-select: none; }
+  body.dragging iframe { pointer-events: none; }
+  #md.full { display: flex; position: absolute; inset: 0; z-index: 5; border-left: 0; }
+  #md .bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 14px;
+             border-bottom: 1px solid #262c35; font: 12px "Segoe UI", sans-serif; color: #7a828f; }
+  #md .bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #md button { background: transparent; border: 1px solid #262c35; border-radius: 4px; color: #7a828f;
+               font: inherit; padding: 2px 8px; cursor: pointer; }
+  #md button:hover { background: #222731; color: #c8cdd6; }
+  #md button.on { color: #d4a24c; }
+  #md iframe { flex: 1; width: 100%; border: 0; background: #14171c; }
 </style>
 </head>
 <body>
 <div id="term"></div>
+<div id="md">
+  <div id="mdgrip" title="Drag to resize"></div>
+  <div class="bar">
+    <span id="mdname"></span>
+    <button id="mdsplit" title="Half and half">◧ Split</button>
+    <button id="mdfull" title="Fill the pane">⛶ Full</button>
+    <button id="mdclose" title="Back to the terminal">✕</button>
+  </div>
+  <!-- No allow-scripts: nothing in a doc can run. Same origin only so the page can keep the
+       scroll position and send links to the browser. -->
+  <iframe id="mdframe" sandbox="allow-same-origin"></iframe>
+</div>
 
 <script src="xterm/xterm.js"></script>
 <script src="xterm/addon-fit.js"></script>
 <script src="xterm/addon-webgl.js"></script>
+<!-- Vendored in Assets/markdown. -->
+<script src="markdown/marked.min.js"></script>
 
 <script>
 (function () {
@@ -126,9 +161,130 @@
         case "notice":                  // host-side message, e.g. process exit
           term.writeln("\r\n\x1b[38;5;244m" + msg.d + "\x1b[0m");
           break;
+        case "md":                      // show a doc, or show it again after it changed
+          showDoc(msg.name, msg.d);
+          break;
+        case "mdclose":
+          closeDoc(false);
+          break;
       }
     });
   }
+
+  // --- image tags -------------------------------------------------------
+  // The [Image #n] tags on screen, for the image chip: an image whose tag you deleted from the
+  // prompt drops out of it. Read after output settles, and sent only when they change.
+
+  let lastTags = null, tagTimer = null;
+
+  function sendTags() {
+    tagTimer = null;
+    const buf = term.buffer.active;
+    const seen = new Set();
+    for (let y = 0; y < term.rows; y++) {
+      const line = buf.getLine(buf.viewportY + y);
+      if (!line) continue;
+      const re = /\[Image #(\d+)\]/g;
+      const text = line.translateToString(true);
+      let m;
+      while ((m = re.exec(text))) seen.add(+m[1]);
+    }
+    const tags = Array.from(seen).sort(function (a, b) { return a - b; }).join(",");
+    if (tags !== lastTags) {
+      lastTags = tags;
+      send({ t: "tags", d: tags });
+    }
+  }
+
+  function queueTags() {
+    if (!tagTimer) tagTimer = setTimeout(sendTags, 250);
+  }
+
+  term.onWriteParsed(queueTags);
+  term.onScroll(queueTags);
+
+  // --- doc viewer -------------------------------------------------------
+
+  const md = document.getElementById("md");
+  const mdFrame = document.getElementById("mdframe");
+  const mdName = document.getElementById("mdname");
+  const mdSplit = document.getElementById("mdsplit");
+  const mdFull = document.getElementById("mdfull");
+
+  // Remote images may load; nothing else leaves the frame.
+  const DOC_HEAD =
+    '<!DOCTYPE html><meta charset="utf-8">' +
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src https: data:">' +
+    "<style>" +
+    "body{margin:0;padding:18px 24px 40px;background:#14171c;color:#c8cdd6;font:14px/1.6 'Segoe UI',sans-serif}" +
+    "h1,h2,h3,h4{color:#eceef1;line-height:1.3;margin:1.4em 0 .5em}h1,h2{border-bottom:1px solid #262c35;padding-bottom:.3em}" +
+    "a{color:#d4a24c}code{font:12.5px 'Cascadia Code',Consolas,monospace;background:#1b1f26;padding:.1em .35em;border-radius:3px}" +
+    "pre{background:#1b1f26;padding:10px 12px;border-radius:4px;overflow:auto}pre code{padding:0;background:none}" +
+    "blockquote{margin:0;padding-left:12px;border-left:3px solid #333a45;color:#7a828f}" +
+    "table{border-collapse:collapse}th,td{border:1px solid #262c35;padding:4px 10px}img{max-width:100%}hr{border:0;border-top:1px solid #262c35}" +
+    "</style>";
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; });
+  }
+
+  function setMode(mode) {
+    md.className = mode;
+    mdSplit.classList.toggle("on", mode === "split");
+    mdFull.classList.toggle("on", mode === "full");
+  }
+
+  function showDoc(name, text) {
+    // The same doc again keeps its place; a different one starts at the top.
+    const doc = mdFrame.contentDocument;
+    const y = name === mdName.textContent && doc && doc.scrollingElement ? doc.scrollingElement.scrollTop : 0;
+    mdName.textContent = name;
+    if (!md.className) setMode("split");
+    const body = window.marked ? marked.parse(text) : "<pre>" + escapeHtml(text) + "</pre>";
+    mdFrame.onload = function () {
+      const d = mdFrame.contentDocument;
+      if (!d) return;
+      if (d.scrollingElement) d.scrollingElement.scrollTop = y;
+      // Web links open in your browser, after asking, as the terminal's do.
+      d.addEventListener("click", function (e) {
+        const a = e.target.closest && e.target.closest("a[href]");
+        if (!a) return;
+        e.preventDefault();
+        if (/^https?:/i.test(a.href) && confirm("Open this link in your browser?\n\n" + a.href)) send({ t: "link", d: a.href });
+      });
+    };
+    mdFrame.srcdoc = DOC_HEAD + body;
+  }
+
+  function closeDoc(tellHost) {
+    setMode("");
+    mdName.textContent = "";
+    mdFrame.srcdoc = "";
+    if (tellHost) send({ t: "mdclosed" });
+    term.focus();
+  }
+
+  // Dragging the grip sets the doc's share of the width, kept for the next time it opens. The
+  // terminal follows through the ResizeObserver below, which already coalesces the resizes.
+  const grip = document.getElementById("mdgrip");
+  grip.addEventListener("pointerdown", function (e) {
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add("drag");
+    document.body.classList.add("dragging");
+  });
+  grip.addEventListener("pointermove", function (e) {
+    if (!grip.hasPointerCapture(e.pointerId)) return;
+    const share = (window.innerWidth - e.clientX) / window.innerWidth * 100;
+    md.style.flexBasis = Math.min(80, Math.max(20, share)) + "%";
+  });
+  grip.addEventListener("lostpointercapture", function () {
+    grip.classList.remove("drag");
+    document.body.classList.remove("dragging");
+  });
+
+  mdSplit.addEventListener("click", function () { setMode("split"); });
+  mdFull.addEventListener("click", function () { setMode("full"); });
+  document.getElementById("mdclose").addEventListener("click", function () { closeDoc(true); });
 
   // --- terminal -> host -------------------------------------------------
 

@@ -59,6 +59,29 @@ public partial class TerminalPane : UserControl
 
     public string WorkingDirectory => _plan.WorkingDirectory;
 
+    public DateTime OpenedAt { get; } = DateTime.UtcNow;
+
+    /// <summary>The transcript as MainWindow reads it, for the doc and image chips.</summary>
+    public TranscriptTail? Tail { get; set; }
+
+    /// <summary>Claude's paste cache for this session, once it exists (PastedImages).</summary>
+    public string? ImagesDir { get; set; }
+
+    /// <summary>
+    /// A Codex pane's images, which Codex keeps in no folder of the session's: the screenshots
+    /// Clayo pasted into it, and clipboard pastes that appeared while it was the active pane.
+    /// </summary>
+    public List<(string Path, DateTime At)> CodexImages { get; } = [];
+
+    /// <summary>Images in the prompt not yet sent, with their [Image #n] tags, as the image chip shows them.</summary>
+    public IReadOnlyList<(string Path, int Tag)> Images { get; set; } = [];
+
+    /// <summary>The [Image #n] tags on screen, as the page last reported them.</summary>
+    public IReadOnlySet<int> Tags { get; private set; } = new HashSet<int>();
+
+    /// <summary>The doc viewer is showing beside or over the terminal.</summary>
+    public bool DocOpen { get; private set; }
+
     /// <summary>
     /// Text to type into Claude's input once, without Enter, so you finish the prompt and
     /// send it yourself. Typed on the pane's first quiet after the claude command (see
@@ -231,6 +254,7 @@ public partial class TerminalPane : UserControl
                 // A reloaded page reports ready again; the shell it belongs to is already running.
                 if (_started)
                 {
+                    DocOpen = false;   // the new page starts without the viewer
                     _pty.Resize(_ptySize.Item1, _ptySize.Item2);   // repaints the screen
                     break;
                 }
@@ -262,6 +286,16 @@ public partial class TerminalPane : UserControl
                 PasteFilesFromClipboard();
                 break;
 
+            case "mdclosed":
+                DocOpen = false;
+                break;
+
+            case "tags":
+                Tags = (msg.TryGetProperty("d", out var tg) ? tg.GetString() ?? "" : "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => int.TryParse(s, out var n) ? n : 0).ToHashSet();
+                break;
+
             case "link":
                 // Web links only: a file: or other scheme from the output would run something.
                 if (msg.TryGetProperty("d", out var l) && Uri.TryCreate(l.GetString(), UriKind.Absolute, out var uri)
@@ -281,7 +315,17 @@ public partial class TerminalPane : UserControl
     private void PasteFilesFromClipboard()
     {
         if (Clipboard.ContainsText() || !Clipboard.ContainsFileDropList()) return;
-        InsertPaths(Clipboard.GetFileDropList().Cast<string>());
+        var paths = Clipboard.GetFileDropList().Cast<string>().ToList();
+        // An image goes in as a terminal paste, which both agents turn into an [Image #n]
+        // attachment (docs/SCREENSHOT.md, P0); typed, Claude takes it as plain text. Codex
+        // uses it where it is, so its pane remembers it for the image chip.
+        var images = paths.Where(PastedImages.IsImage).ToList();
+        foreach (var image in images)
+        {
+            _pty.Write(Encoding.UTF8.GetBytes(Pasted(image) + " "));
+            if (Agent == AgentKind.Codex) CodexImages.Add((image, DateTime.UtcNow));
+        }
+        InsertPaths(paths.Except(images));
     }
 
     /// <summary>
@@ -478,6 +522,43 @@ public partial class TerminalPane : UserControl
         if (core is null) return;
         try { core.PostWebMessageAsString(JsonSerializer.Serialize(payload)); }
         catch (InvalidOperationException) { /* navigating */ }
+    }
+
+    // Bigger than any doc a session writes; past it the viewer would only stall the page.
+    private const long DocLimit = 2 * 1024 * 1024;
+
+    private (string Path, DateTime At) _docShown;
+
+    /// <summary>
+    /// Shows the markdown file in the viewer, or shows it again if it changed since; while it
+    /// is already showing unchanged, does nothing. The page renders it in a sandboxed frame,
+    /// so nothing in the file can run.
+    /// </summary>
+    public void ShowDoc(string path)
+    {
+        var at = File.GetLastWriteTimeUtc(path);
+        if (DocOpen && _docShown == (path, at)) return;
+        _docShown = (path, at);
+
+        string text;
+        try
+        {
+            text = new FileInfo(path).Length > DocLimit
+                ? $"*{Path.GetFileName(path)} is too big to show here.*"
+                : File.ReadAllText(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            text = $"*Couldn't read {Path.GetFileName(path)}: {e.Message}*";
+        }
+        DocOpen = true;
+        Post(new { t = "md", name = Path.GetFileName(path), d = text });
+    }
+
+    public void HideDoc()
+    {
+        DocOpen = false;
+        Post(new { t = "mdclose" });
     }
 
     public void FocusTerminal()

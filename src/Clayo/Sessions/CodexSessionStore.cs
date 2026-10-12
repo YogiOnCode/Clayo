@@ -127,6 +127,7 @@ public sealed class CodexSessionStore(string home) : ISessionSource
         {
             SessionId = id,
             Agent = AgentKind.Codex,
+            File = file,
             ParentId = parent,
             ProjectDir = cwd ?? Path.GetDirectoryName(file) ?? "(unknown)",
             Preview = preview.Length > 0 ? SessionStore.Shorten(preview, 120) : "(no prompt yet)",
@@ -279,7 +280,7 @@ public sealed class CodexSessionStore(string home) : ISessionSource
     }
 
     /// <summary>A response_item message from the user, as typed; null for anything else.</summary>
-    private static string? UserText(string line)
+    internal static string? UserText(string line)
     {
         // Substring test first: most lines are tool calls and reasoning.
         if (!line.Contains("\"role\":\"user\"", StringComparison.Ordinal)) return null;

@@ -261,6 +261,11 @@ public partial class MainWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer _gitPoll = new() { Interval = TimeSpan.FromSeconds(3) };
     // The reset countdowns run down, and limits go stale, between Claude's reports.
     private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(30) };
+    // Pasting an image raises nothing Clayo can hear, so the active pane's paste cache is looked at
+    // once a second (PastedImages). The other closes the image preview once the mouse is off it.
+    private readonly System.Windows.Threading.DispatcherTimer _imagePoll = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly System.Windows.Threading.DispatcherTimer _imagesHide = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    private DateTime _flashUntil;
     // Clayo starts at login and runs for days, so a check at start alone would miss releases.
     private readonly System.Windows.Threading.DispatcherTimer _updateCheck = new() { Interval = TimeSpan.FromHours(12) };
 
@@ -356,6 +361,14 @@ public partial class MainWindow : Window
                 WarnReserve();
             };
             _clock.Start();
+            _imagePoll.Tick += (_, _) => PollImages();
+            _imagePoll.Start();
+            _imagesHide.Tick += (_, _) =>
+            {
+                if (DateTime.UtcNow < _flashUntil || ImagesChip.IsMouseOver || ImagesPopup.Child.IsMouseOver) return;
+                _imagesHide.Stop();
+                ImagesPopup.IsOpen = false;
+            };
             ShowStatusBar();
             _updateCheck.Tick += async (_, _) => await CheckForUpdate();
             _updateCheck.Start();
@@ -638,6 +651,18 @@ public partial class MainWindow : Window
                 };
             }
         }
+
+        // Each open pane's transcript, from where the last refresh stopped: the docs it wrote and
+        // the prompts you sent. An open viewer follows the newest doc. It is shown again on any
+        // change, not only a write: an Edit reaches the transcript before the file changes.
+        foreach (var row in _rows.Values)
+            if (row.Pane is { } p && row.Info?.File is { } file)
+            {
+                p.Tail ??= new TranscriptTail(p.WorkingDirectory, p.OpenedAt, p.Agent == AgentKind.Codex);
+                p.Tail.Read(file);
+                if (p.DocOpen && p.Tail.Doc is { } doc) p.ShowDoc(doc);
+            }
+        ShowDocChip();
 
         // Drop rows whose transcript vanished, unless they are open in this window.
         foreach (var gone in _rows.Where(kv => !seen.Contains(kv.Key) && !kv.Value.IsOpen)
@@ -1123,6 +1148,8 @@ public partial class MainWindow : Window
         {
             PaneTitle.Text = "";
             ShowStatusBar();
+            ShowImages();
+            ShowDocChip();
             ForkButton.IsEnabled = false;
             AttachButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
@@ -1281,7 +1308,161 @@ public partial class MainWindow : Window
         // Read now rather than on the next poll, so the branch shows as the pane does.
         _git.Refresh(pane.WorkingDirectory);
         ShowStatusBar();
+        ShowImages();
+        ShowDocChip();
         pane.FocusTerminal();
+    }
+
+    // ------------------------------------------------------- images and docs
+
+    // Codex clipboard files already given to a pane, so switching panes does not hand them on.
+    private readonly HashSet<string> _claimed = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The images in the active pane's prompt: pasted since you last sent one, and since the
+    /// pane opened. A new one flashes the preview for a moment.
+    /// </summary>
+    private void PollImages()
+    {
+        if (!IsVisible || _active is not { } pane) return;
+        var since = pane.Tail is { } tail && tail.PromptAt > pane.OpenedAt ? tail.PromptAt : pane.OpenedAt;
+
+        List<string> files;
+        if (pane.Agent == AgentKind.Codex)
+        {
+            // A paste only reaches the pane you are in, so a new clipboard file is this one's.
+            foreach (var file in PastedImages.Since(Path.GetTempPath(), since, PastedImages.CodexPattern))
+                if (_claimed.Add(file)) pane.CodexImages.Add((file, File.GetLastWriteTimeUtc(file)));
+            pane.CodexImages.RemoveAll(p => p.At <= since || !File.Exists(p.Path));
+            files = [.. pane.CodexImages.Select(p => p.Path)];
+        }
+        else
+        {
+            if (pane.SessionId is not { } id) return;
+            pane.ImagesDir ??= PastedImages.FindDir(PastedImages.Root, id);
+            if (pane.ImagesDir is null) return;
+            files = PastedImages.Since(pane.ImagesDir, since);
+        }
+
+        // Claude names each file by its tag; Codex numbers the images in a prompt from 1. Only
+        // tags still on screen count, so an image you deleted from the prompt drops out.
+        var images = files
+            .Select((path, i) => (Path: path, Tag: int.TryParse(Path.GetFileNameWithoutExtension(path), out var n) ? n : i + 1))
+            .Where(image => pane.Tags.Contains(image.Tag))
+            .ToList();
+        if (images.SequenceEqual(pane.Images)) return;
+        bool added = images.Except(pane.Images).Any();
+        pane.Images = images;
+        ShowImages();
+        if (added && PaneHost.IsVisible)
+        {
+            _flashUntil = DateTime.UtcNow.AddSeconds(1.5);
+            ImagesPopup.IsOpen = true;
+            _imagesHide.Start();
+        }
+    }
+
+    private void ShowImages()
+    {
+        var images = _active?.Images ?? [];
+        ImagesCount.Text = images.Count.ToString();
+        ImagesChip.Visibility = images.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ImagesList.ItemsSource = images.Select(image => Thumb(image.Path, image.Tag)).ToList();
+        if (images.Count == 0) ImagesPopup.IsOpen = false;
+    }
+
+    /// <summary>A thumbnail labelled with its [Image #n] tag. A click opens it full size.</summary>
+    private Button Thumb(string path, int tag)
+    {
+        var button = new Button
+        {
+            Style = (Style)FindResource("QuietButton"),
+            Padding = new Thickness(4),
+            Margin = new Thickness(3),
+            Content = new StackPanel
+            {
+                Children =
+                {
+                    new Image { Source = LoadImage(path, 180), Height = 90, MaxWidth = 200, Stretch = Stretch.Uniform },
+                    new TextBlock { Text = $"#{tag}", HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) }
+                }
+            }
+        };
+        button.Click += (_, _) => OpenImage(path);
+        return button;
+    }
+
+    /// <summary>Decoded and released at once, so Claude Code's file is never held open.</summary>
+    private static System.Windows.Media.Imaging.BitmapImage? LoadImage(string path, int height)
+    {
+        try
+        {
+            var image = new System.Windows.Media.Imaging.BitmapImage();
+            image.BeginInit();
+            image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            image.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
+            if (height > 0) image.DecodePixelHeight = height;
+            image.UriSource = new Uri(path);
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception e) when (e is IOException or NotSupportedException or FormatException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;   // a format Windows cannot decode: the tile shows its tag alone
+        }
+    }
+
+    private void OpenImage(string path)
+    {
+        ImagesPopup.IsOpen = false;
+        ImageBigImage.Source = LoadImage(path, 0);
+        ImageBigRoot.Width = PaneHost.ActualWidth;
+        ImageBigRoot.Height = PaneHost.ActualHeight;
+        ImageBig.IsOpen = true;
+        ImageBigRoot.Focus();
+    }
+
+    private void ImagesChip_MouseEnter(object sender, MouseEventArgs e)
+    {
+        ImagesPopup.IsOpen = true;
+        _imagesHide.Start();
+    }
+
+    private void ImagesChip_Click(object sender, RoutedEventArgs e)
+    {
+        if (_active?.Images is { Count: > 0 } images) OpenImage(images[^1].Path);
+    }
+
+    private void ImageBig_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) ImageBig.IsOpen = false;
+    }
+
+    private void ImageBig_MouseDown(object sender, MouseButtonEventArgs e) => ImageBig.IsOpen = false;
+
+    private void ImageBig_Close(object sender, RoutedEventArgs e) => ImageBig.IsOpen = false;
+
+    private void ImageBig_Closed(object? sender, EventArgs e)
+    {
+        ImageBigImage.Source = null;
+        _active?.FocusTerminal();
+    }
+
+    /// <summary>The newest .md the active session wrote in its folder, if it wrote one.</summary>
+    private void ShowDocChip()
+    {
+        var doc = _active?.Tail?.Doc;
+        DocChip.Visibility = doc is null ? Visibility.Collapsed : Visibility.Visible;
+        if (doc is null) return;
+        DocChip.ToolTip = $"{Path.GetFileName(doc)}\n{doc}\nClick to read it here, again to close it.";
+    }
+
+    private void DocChip_Click(object sender, RoutedEventArgs e)
+    {
+        if (_active is not { Tail.Doc: { } doc } pane) return;
+        if (pane.DocOpen) pane.HideDoc();
+        else pane.ShowDoc(doc);
     }
 
     // ------------------------------------------------------------ screenshots
@@ -1312,10 +1493,14 @@ public partial class MainWindow : Window
             Reveal();
             ShowSession(pane);
             pane.Paste(path);
+            // Claude copies it into the session's paste cache; Codex uses it where it is.
+            if (pane.Agent == AgentKind.Codex) pane.CodexImages.Add((path, DateTime.UtcNow));
             return;
         }
+        var before = _active;
         var folder = pane?.WorkingDirectory ?? _used.FirstOrDefault()?.WorkingDirectory ?? _folder;
         AdoptFolder(Directory.Exists(folder) ? folder : _folder, TerminalPane.Pasted(path));
+        if (_active is { Agent: AgentKind.Codex } started && !ReferenceEquals(started, before)) started.CodexImages.Add((path, DateTime.UtcNow));
     }
 
     private void PaintStatus(PaneStatus status) =>
@@ -1410,6 +1595,8 @@ public partial class MainWindow : Window
     private void ShowSettings()
     {
         if (SettingsView.IsVisible) return;
+        ImagesPopup.IsOpen = false;
+        ImageBig.IsOpen = false;
         SettingsView.Refresh(_settings, ScreenshotKeyTaken, _updateTo);
         PaneHost.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
@@ -1526,6 +1713,8 @@ public partial class MainWindow : Window
         _status.Dispose();
         _gitPoll.Stop();
         _clock.Stop();
+        _imagePoll.Stop();
+        _imagesHide.Stop();
         foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.Close();
         base.OnClosing(e);
     }
