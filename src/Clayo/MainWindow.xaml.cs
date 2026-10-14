@@ -1354,7 +1354,8 @@ public partial class MainWindow : Window
         bool added = images.Except(pane.Images).Any();
         pane.Images = images;
         ShowImages();
-        if (added && PaneHost.IsVisible)
+        // Only while Clayo is in front: a popup sits above every window, other apps' too.
+        if (added && IsActive && PaneHost.IsVisible)
         {
             _flashUntil = DateTime.UtcNow.AddSeconds(1.5);
             ImagesPopup.IsOpen = true;

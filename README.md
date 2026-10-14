@@ -177,4 +177,5 @@ at start and every 12 hours. Where it does keep files is listed in
 [How It Works](https://github.com/YogiOnCode/Clayo/wiki/How-It-Works#where-clayo-keeps-its-files).
 
 MIT licensed, see [LICENSE](LICENSE). Bundles [xterm.js](https://github.com/xtermjs/xterm.js)
-and its fit and WebGL addons (MIT, see `src/Clayo/Assets/xterm/LICENSE.xterm`).
+and its fit and WebGL addons (MIT, see `src/Clayo/Assets/xterm/LICENSE.xterm`), and
+[marked](https://github.com/markedjs/marked) (MIT, see `src/Clayo/Assets/markdown/LICENSE.marked.md`).

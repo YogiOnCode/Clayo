@@ -73,12 +73,14 @@ public sealed class TranscriptTail
     {
         // Most lines are neither; only these few are parsed.
         bool doc = line.Contains(".md", StringComparison.OrdinalIgnoreCase);
-        // A prompt you sent: Claude's user line that is not a tool result, or Codex's user message
-        // (UserText below drops the context Codex sends as user messages of its own).
+        // A prompt you sent: Claude's user line that is not a tool result or Claude's own meta
+        // line, or Codex's user message (UserText below drops the context Codex sends as user
+        // messages of its own).
         bool prompt = _codex
             ? line.Contains("\"role\":\"user\"", StringComparison.Ordinal)
             : line.Contains("\"type\":\"user\"", StringComparison.Ordinal)
-              && !line.Contains("\"tool_result\"", StringComparison.Ordinal);
+              && !line.Contains("\"tool_result\"", StringComparison.Ordinal)
+              && !line.Contains("\"isMeta\":true", StringComparison.Ordinal);
         if (!doc && !prompt) return false;
 
         using var json = SessionStore.TryParse(line);
@@ -116,8 +118,9 @@ public sealed class TranscriptTail
     }
 
     // An apply_patch names each file on its own line. Read off the raw line, so it does not
-    // matter which field of Codex's JSON carries the patch.
-    private static readonly Regex PatchFile = new(@"\*\*\* (?:Add|Update) File: (.+?)\\n", RegexOptions.Compiled);
+    // matter which field of Codex's JSON carries the patch. The path is taken a JSON escape at a
+    // time, so the \\ in a Windows path such as C:\\notes is not mistaken for the line break.
+    private static readonly Regex PatchFile = new(@"\*\*\* (?:Add|Update) File: ((?:[^\\""]|\\.)+?)\\n", RegexOptions.Compiled);
 
     private static IEnumerable<string> CodexPaths(string line)
     {

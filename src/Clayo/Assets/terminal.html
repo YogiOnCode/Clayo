@@ -172,8 +172,9 @@
   }
 
   // --- image tags -------------------------------------------------------
-  // The [Image #n] tags on screen, for the image chip: an image whose tag you deleted from the
-  // prompt drops out of it. Read after output settles, and sent only when they change.
+  // The [Image #n] tags on the bottom screen, where the prompt is, for the image chip: an image
+  // whose tag you deleted from the prompt drops out of it. Not the screen you scrolled back to,
+  // or scrolling would empty the chip. Read after output settles, and sent only when they change.
 
   let lastTags = null, tagTimer = null;
 
@@ -182,7 +183,7 @@
     const buf = term.buffer.active;
     const seen = new Set();
     for (let y = 0; y < term.rows; y++) {
-      const line = buf.getLine(buf.viewportY + y);
+      const line = buf.getLine(buf.baseY + y);
       if (!line) continue;
       const re = /\[Image #(\d+)\]/g;
       const text = line.translateToString(true);
@@ -201,7 +202,6 @@
   }
 
   term.onWriteParsed(queueTags);
-  term.onScroll(queueTags);
 
   // --- doc viewer -------------------------------------------------------
 

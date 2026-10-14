@@ -72,6 +72,9 @@ try
     File.AppendAllText(file, Prompt(sent) + "\n" + ToolResult(sent.AddSeconds(5)) + "\n");
     tail.Read(file);
     Check("a prompt you sent is its time, a tool result is not", tail.PromptAt, DateTime.Parse(Ts(sent), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime());
+    File.AppendAllText(file, Prompt(sent.AddSeconds(6)).Replace("{\"type\":\"user\",", "{\"type\":\"user\",\"isMeta\":true,") + "\n");
+    tail.Read(file);
+    Check("  nor one of Claude's meta lines", tail.PromptAt, DateTime.Parse(Ts(sent), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime());
 
     // Codex
     var cfile = Path.Combine(dir, "c.jsonl");
@@ -80,6 +83,9 @@ try
     Check("codex: a patch adding a doc, by relative path", ctail.Read(cfile) ? ctail.Doc : null, Path.Combine(folder, "notes", "README.md"));
     File.AppendAllText(cfile, Patch("../escape.md", opened.AddSeconds(2)) + "\n");
     Check("codex: a path leaving the folder: ignored", ctail.Read(cfile), false);
+    // Escaped backslashes in the JSON: "\notes" must not read as the patch's line break.
+    File.AppendAllText(cfile, Patch(Path.Combine(folder, "notes", "README.md"), opened.AddSeconds(2)) + "\n");
+    Check("codex: a patch by full Windows path", ctail.Read(cfile) ? ctail.Doc : null, Path.Combine(folder, "notes", "README.md"));
 
     string CodexUser(string text, DateTime at) =>
         $"{{\"timestamp\":\"{Ts(at)}\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":{Esc(text)}}}]}}}}";
