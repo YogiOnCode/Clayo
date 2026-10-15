@@ -50,6 +50,10 @@ switching windows.
   island asks which session it's for. The image lands in that session's prompt, ready for
   your question. Works with Claude Code and Codex. Settings › Island can also offer it after
   every screenshot.
+- **See what's in the prompt, and the docs a session writes.** Images pasted into the prompt
+  show as a small icon in the pane header: hover for thumbnails, click for full size. When a
+  session writes a `.md` in its folder, a doc icon opens it rendered, beside the terminal or
+  over it, and follows its edits. Works with Claude Code and Codex.
 - **Status at a glance.** Each pane's header shows model, branch and diff, context and
   effort. The sidebar footer shows your 5-hour and 7-day limits, drawn as Numbers, Bars,
   Rings or Chips, and the island warns you once when you get near one.

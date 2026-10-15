@@ -96,7 +96,7 @@ public sealed class TranscriptTail
             && (!_codex || CodexSessionStore.UserText(line) is not null)) PromptAt = at;
         if (!doc) return false;
 
-        var found = (_codex ? CodexPaths(line) : ClaudePaths(el))
+        var found = (_codex ? CodexPaths(line, el) : ClaudePaths(el))
             .Select(Inside).LastOrDefault(p => p is not null);
         if (found is null) return false;
         Doc = found;
@@ -122,8 +122,17 @@ public sealed class TranscriptTail
     // time, so the \\ in a Windows path such as C:\\notes is not mistaken for the line break.
     private static readonly Regex PatchFile = new(@"\*\*\* (?:Add|Update) File: ((?:[^\\""]|\\.)+?)\\n", RegexOptions.Compiled);
 
-    private static IEnumerable<string> CodexPaths(string line)
+    private static IEnumerable<string> CodexPaths(string line, JsonElement el)
     {
+        // In code mode (0.162) the patch runs inside exec's JS, escaped twice over, so the
+        // regex misses it; the FileChange item that follows names each file plainly.
+        if (el.TryGetProperty("payload", out var payload) && payload.ValueKind == JsonValueKind.Object
+            && payload.TryGetProperty("item", out var item) && item.ValueKind == JsonValueKind.Object
+            && SessionStore.GetString(item, "type") == "FileChange"
+            && item.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
+            foreach (var change in changes.EnumerateObject())
+                yield return change.Name;
+
         foreach (Match m in PatchFile.Matches(line))
         {
             string? path = null;

@@ -86,6 +86,12 @@ try
     // Escaped backslashes in the JSON: "\notes" must not read as the patch's line break.
     File.AppendAllText(cfile, Patch(Path.Combine(folder, "notes", "README.md"), opened.AddSeconds(2)) + "\n");
     Check("codex: a patch by full Windows path", ctail.Read(cfile) ? ctail.Doc : null, Path.Combine(folder, "notes", "README.md"));
+    // Code mode (0.162): the patch sits in a JS string in exec's input, its line breaks escaped
+    // twice; the FileChange that follows names the file plainly.
+    Doc("docs", "scratch", "codex-test.md");
+    File.AppendAllText(cfile, $"{{\"timestamp\":\"{Ts(opened.AddSeconds(3))}\",\"type\":\"response_item\",\"payload\":{{\"type\":\"custom_tool_call\",\"name\":\"exec\",\"input\":{Esc($"const r = await tools.apply_patch({Esc("*** Begin Patch\n*** Add File: docs/scratch/codex-test.md\n+# hi\n*** End Patch\n")});")}}}}}\n");
+    File.AppendAllText(cfile, $"{{\"timestamp\":\"{Ts(opened.AddSeconds(3))}\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"FileChange\",\"changes\":{{{Esc(Path.Combine(folder, "docs", "scratch", "codex-test.md"))}:{{\"type\":\"add\",\"content\":\"# hi\\n\"}}}}}}}}}}\n");
+    Check("codex: a patch run from exec (code mode)", ctail.Read(cfile) ? ctail.Doc : null, Path.Combine(folder, "docs", "scratch", "codex-test.md"));
 
     string CodexUser(string text, DateTime at) =>
         $"{{\"timestamp\":\"{Ts(at)}\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":{Esc(text)}}}]}}}}";
