@@ -372,6 +372,7 @@
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
           <Ellipse x:Name="StatusDot" Grid.Column="0"
@@ -390,7 +391,65 @@
             <local:StatusStripView x:Name="HeadStrip" AutomationProperties.Name="Session status" />
           </DockPanel>
 
-          <Button x:Name="AttachButton" Grid.Column="2"
+          <!-- Images waiting in the prompt, and the last doc the session wrote. Both hide when
+               there is nothing to show. A column of their own, so a narrow window trims the
+               title and strip rather than squeezing these out. -->
+          <!-- Icons in the strip's own quiet style, not buttons: the details are in the tooltips. -->
+          <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
+            <Button x:Name="DocChip"
+                    Style="{StaticResource QuietButton}"
+                    BorderThickness="0" Padding="7,5" Margin="0,0,2,0"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="Doc the session wrote"
+                    Click="DocChip_Click">
+              <TextBlock Text="&#xF000;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+            </Button>
+            <Button x:Name="ImagesChip"
+                    Style="{StaticResource QuietButton}"
+                    BorderThickness="0" Padding="7,5"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="Images in the prompt"
+                    MouseEnter="ImagesChip_MouseEnter"
+                    Click="ImagesChip_Click">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xEB9F;" FontFamily="Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock x:Name="ImagesCount" Margin="5,0,0,0" FontSize="12" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+
+          <!-- Popups are windows of their own, so unlike WPF elements they can sit over the
+               terminal's WebView2. -->
+          <Popup x:Name="ImagesPopup"
+                 PlacementTarget="{Binding ElementName=ImagesChip}" Placement="Bottom"
+                 VerticalOffset="6"
+                 AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="True">
+            <Border Background="{StaticResource SurfaceBg}" BorderBrush="{StaticResource Hairline}"
+                    BorderThickness="1" CornerRadius="6" Padding="6">
+              <ItemsControl x:Name="ImagesList">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel MaxWidth="460" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+            </Border>
+          </Popup>
+
+          <Popup x:Name="ImageBig"
+                 PlacementTarget="{Binding ElementName=PaneHost}" Placement="Center"
+                 AllowsTransparency="True" StaysOpen="False"
+                 Closed="ImageBig_Closed">
+            <Grid x:Name="ImageBigRoot" Background="#E614171C" Focusable="True"
+                  KeyDown="ImageBig_KeyDown" MouseLeftButtonDown="ImageBig_MouseDown">
+              <Image x:Name="ImageBigImage" Margin="40" Stretch="Uniform" StretchDirection="DownOnly" />
+              <Button Content="✕" Style="{StaticResource QuietButton}"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12" Padding="9,4"
+                      ToolTip="Close (Esc)" Click="ImageBig_Close" />
+            </Grid>
+          </Popup>
+
+          <Button x:Name="AttachButton" Grid.Column="3"
                   Content="Attach files…"
                   Style="{StaticResource QuietButton}"
                   VerticalAlignment="Center"
@@ -399,7 +458,7 @@
                   ToolTip="Puts the paths of the files you pick at the prompt, for Claude to read. Ctrl+V does the same for files copied in Explorer."
                   Click="Attach_Click" />
 
-          <Button x:Name="ForkButton" Grid.Column="3"
+          <Button x:Name="ForkButton" Grid.Column="4"
                   Content="Branch from here"
                   Style="{StaticResource QuietButton}"
                   VerticalAlignment="Center"
@@ -407,7 +466,7 @@
                   ToolTip="Copies this conversation into a new session. The original is untouched."
                   Click="Fork_Click" />
 
-          <Button x:Name="CloseButton" Grid.Column="4"
+          <Button x:Name="CloseButton" Grid.Column="5"
                   Content="✕"
                   Style="{StaticResource QuietButton}"
                   VerticalAlignment="Center"

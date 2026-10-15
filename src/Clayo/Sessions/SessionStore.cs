@@ -14,6 +14,9 @@ public sealed class SessionInfo
     /// forks keep no such link; Clayo records theirs itself (SessionParents).</summary>
     public string? ParentId { get; init; }
 
+    /// <summary>The transcript itself. An open pane reads its new lines (TranscriptTail).</summary>
+    public string? File { get; init; }
+
     /// <summary>Working directory read from the transcript, not un-mangled from the folder name.</summary>
     public required string ProjectDir { get; init; }
 
@@ -155,6 +158,7 @@ public sealed class SessionStore : ISessionSource
         return new SessionInfo
         {
             SessionId = sessionId,
+            File = fi.FullName,
             ProjectDir = cwd,
             Preview = preview.Length > 0 ? preview : "(no prompt yet)",
             AiTitle = aiTitle,
