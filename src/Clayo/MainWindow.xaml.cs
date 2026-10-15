@@ -1464,6 +1464,8 @@ public partial class MainWindow : Window
         if (_active is not { Tail.Doc: { } doc } pane) return;
         if (pane.DocOpen) pane.HideDoc();
         else pane.ShowDoc(doc);
+        // The click left focus on the chip, and a touchpad only scrolls the pane while it has focus.
+        pane.FocusTerminal();
     }
 
     // ------------------------------------------------------------ screenshots
