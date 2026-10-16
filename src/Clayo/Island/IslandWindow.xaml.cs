@@ -290,11 +290,15 @@ public partial class IslandWindow : Window
     }
 
     /// <summary>
-    /// Clayo's window is what you are looking at. IsActive alone is not enough: minimized with
-    /// nothing else open, it stays the foreground window, and so stays active.
+    /// Clayo's window is what you are looking at. Asked of Windows rather than WPF's IsActive,
+    /// which let notes through while you typed in a pane. A window Clayo owns in front, such as
+    /// Setup, counts. Minimized with nothing else open, Clayo stays the foreground window, so
+    /// that is ruled out apart.
     /// </summary>
     private bool ClayoInFront =>
-        _main.IsActive && _main.IsVisible && _main.WindowState != WindowState.Minimized;
+        _main.IsVisible && _main.WindowState != WindowState.Minimized
+        && GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) is var front && front != IntPtr.Zero
+        && front == new WindowInteropHelper(_main).Handle;
 
     // -------------------------------------------------------------- show/hide
 
@@ -848,6 +852,11 @@ public partial class IslandWindow : Window
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    private const uint GA_ROOTOWNER = 3;
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hwnd);

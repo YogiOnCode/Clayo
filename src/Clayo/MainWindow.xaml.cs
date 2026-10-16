@@ -309,7 +309,8 @@ public partial class MainWindow : Window
 
     public MainWindow(string folder, bool startSession)
     {
-        _claude = ClaudeAgent.ForThisUser(() => _settings.ClaudePath);
+        _claude = ClaudeAgent.ForThisUser(() => _settings.ClaudePath, () => AskRules.ClaudeAsk(_settings));
+        AskRules.SyncCodex(_settings, AskRules.CodexHome);
         _codex = CodexAgent.ForThisUser(() => _settings.CodexPath);
         InitializeComponent();
         SettingsView.SetupRequested += () => ShowSetup();
@@ -322,6 +323,7 @@ public partial class MainWindow : Window
             _settings = s;
             if (updateCheckChanged) _ = CheckForUpdate();
             s.Save(ClayoSettings.DefaultPath);
+            AskRules.SyncCodex(s, AskRules.CodexHome);
             ShowStatusBar();
             WarnReserve();
             SettingsApplied?.Invoke(s);
@@ -576,6 +578,7 @@ public partial class MainWindow : Window
         {
             _settings = s;
             s.Save(ClayoSettings.DefaultPath);
+            AskRules.SyncCodex(s, AskRules.CodexHome);
             SettingsApplied?.Invoke(s);
             if (SettingsView.IsVisible) SettingsView.Refresh(s, ScreenshotKeyTaken, _updateTo);
             RefreshSessions();
@@ -1626,7 +1629,7 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Escape && SettingsView.IsVisible)
         {
-            HideSettings();
+            if (!SettingsView.CancelConfirm()) HideSettings();
             e.Handled = true;
         }
         base.OnPreviewKeyDown(e);

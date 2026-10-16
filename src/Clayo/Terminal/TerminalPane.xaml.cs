@@ -38,6 +38,7 @@ public partial class TerminalPane : UserControl
 
     private DateTime _lastOutput = DateTime.UtcNow;
     private DateTime _resizedAt = DateTime.MinValue;
+    private DateTime _keyAt = DateTime.MinValue;
     private (short, short) _ptySize;
     private readonly Queue<DateTime> _recent = new();
     private readonly System.Windows.Threading.DispatcherTimer _idleTimer;
@@ -141,16 +142,9 @@ public partial class TerminalPane : UserControl
             lock (_recent)
                 burst = _recent.Count(t => (now - t).TotalMilliseconds < 900);
 
-            // Sustained output means work resumed, which clears a question or an error.
-            if (burst >= 3) Status = PaneStatus.Working;
-            // ponytail: a question or an error outlives the silence behind it. Without this,
-            // going quiet would immediately repaint both of them as "done".
-            else if (Status is PaneStatus.NeedsInput or PaneStatus.Error) return;
-            else if (quietFor > 1500)
-            {
-                Status = PaneStatus.Done;
-                TypePrefill();
-            }
+            if (FromTimer(Status, burst, quietFor, _answered) is not { } next) return;
+            Status = next;
+            if (next == PaneStatus.Done) TypePrefill();
         };
 
         // Normal priority, as the default (Background) waits behind every layout and render
@@ -267,7 +261,19 @@ public partial class TerminalPane : UserControl
 
             case "i":
                 if (msg.TryGetProperty("d", out var d) && d.GetString() is { } b64)
-                    _pty.Write(Convert.FromBase64String(b64));
+                {
+                    var keys = Convert.FromBase64String(b64);
+                    _keyAt = DateTime.UtcNow;
+                    if (Answers(keys))
+                    {
+                        _answered = true;
+                        // Codex writes nothing while an approved command runs, so its transcript
+                        // would leave the question up until the command's output; the turn goes
+                        // on either way, and its transcript corrects this from here.
+                        if (_turnKnown && Status == PaneStatus.NeedsInput) Status = PaneStatus.Working;
+                    }
+                    _pty.Write(keys);
+                }
                 break;
 
             case "r":
@@ -353,6 +359,15 @@ public partial class TerminalPane : UserControl
 
     private bool _started;
 
+    /// <summary>
+    /// Whether output at this time counts toward a burst. A resize makes Claude Code repaint the
+    /// whole screen at once, and each key you type is echoed back. Counted, either reads as
+    /// sustained output and flips a finished pane to Working and back, which raises a Done for
+    /// a turn that never happened. Both still count as output for going quiet.
+    /// </summary>
+    public static bool CountsAsWork(DateTime at, DateTime resizedAt, DateTime keyAt) =>
+        (at - resizedAt).TotalMilliseconds > 500 && (at - keyAt).TotalMilliseconds > 250;
+
     private void StartPty(short cols, short rows)
     {
         _started = true;
@@ -360,10 +375,7 @@ public partial class TerminalPane : UserControl
         {
             var now = DateTime.UtcNow;
             _lastOutput = now;
-            // A resize makes Claude Code repaint the whole screen at once. Counted, that reads
-            // as sustained output and flips a finished pane to Working and back, which raises
-            // a Done for a turn that never happened. It still counts as output for going quiet.
-            if ((now - _resizedAt).TotalMilliseconds > 500)
+            if (CountsAsWork(now, _resizedAt, _keyAt))
                 lock (_recent)
                 {
                     _recent.Enqueue(now);
@@ -373,6 +385,7 @@ public partial class TerminalPane : UserControl
             if (seen is { } s) Dispatcher.BeginInvoke(() =>
             {
                 if (s == PaneStatus.NeedsInput) _askedAt = DateTime.Now;
+                _answered = false;
                 Status = s;
             });
 
@@ -464,7 +477,7 @@ public partial class TerminalPane : UserControl
     /// </summary>
     public static PaneStatus? Scan(byte[] chunk, ref byte[] carry, bool codex = false)
     {
-        byte[] buf = carry.Length == 0 ? chunk : [.. carry, .. chunk];
+        byte[] buf = Spaced(carry.Length == 0 ? chunk : [.. carry, .. chunk]);
         int keep = Math.Max(ErrorMark.Length, Math.Max(AskMark.Length, CodexAskMark.Length)) - 1;
         carry = buf.Length <= keep ? buf : buf[^keep..];
 
@@ -474,6 +487,48 @@ public partial class TerminalPane : UserControl
         if (codex && span.IndexOf(CodexAskMark) >= 0) return PaneStatus.NeedsInput;
         return null;
     }
+
+    // A key typed since the last question or error appeared, so it may be answered.
+    private bool _answered;
+
+    /// <summary>
+    /// Whether keys typed in the pane can answer a question. Arrow keys only move the choice,
+    /// and focus and mouse reports come with no key at all: all of those start ESC [.
+    /// </summary>
+    public static bool Answers(byte[] keys) => !(keys.Length > 2 && keys[0] == 0x1b && keys[1] == (byte)'[');
+
+    /// <summary>
+    /// The idle timer's call, for a pane whose status comes from the output stream: burst is
+    /// the chunks in the last 900 ms, quietFor the ms since the last one. Null leaves it as it is.
+    /// </summary>
+    public static PaneStatus? FromTimer(PaneStatus current, int burst, double quietFor, bool answered)
+    {
+        // A question or an error stays until you type in the pane (#27). Its own drawing comes
+        // in several reads, which reads as a burst, and the silence after it as done.
+        if ((current is PaneStatus.NeedsInput or PaneStatus.Error) && !answered) return null;
+        // Sustained output means work resumed.
+        if (burst >= 3) return PaneStatus.Working;
+        return quietFor > 1500 ? PaneStatus.Done : null;
+    }
+
+    /// <summary>
+    /// ConPTY sends each space between words as a cursor move, ESC [1C: the prompt arrives as
+    /// "Do\e[1Cyou\e[1Cwant\e[1Cto" (#27). Turned back into spaces so the markers match. A move
+    /// split across two reads is joined by the carry first.
+    /// </summary>
+    private static byte[] Spaced(byte[] buf)
+    {
+        if (buf.AsSpan().IndexOf(CursorRight) < 0) return buf;
+        var spaced = new List<byte>(buf.Length);
+        for (int i = 0; i < buf.Length; i++)
+        {
+            if (buf.AsSpan(i).StartsWith(CursorRight)) { spaced.Add((byte)' '); i += CursorRight.Length - 1; }
+            else spaced.Add(buf[i]);
+        }
+        return [.. spaced];
+    }
+
+    private static readonly byte[] CursorRight = "\e[1C"u8.ToArray();
 
     // A Codex pane's transcript has reported a turn, so its status is exact from here on (ShowTurn).
     private bool _turnKnown;
@@ -489,18 +544,18 @@ public partial class TerminalPane : UserControl
     public void ShowTurn(TurnState turn, DateTime at)
     {
         _turnKnown = true;
-        if (FromTurn(Status, turn, at, _askedAt) is { } next) Status = next;
+        if (FromTurn(Status, turn, at, _askedAt, _answered) is { } next) Status = next;
     }
 
     /// <summary>
-    /// Null leaves the status as it is. A question on screen is not in the transcript, and the
-    /// tool call it asks about is written just before it appears, so only a line newer than
-    /// the question means it was answered. A stopped turn reads as done: nothing is running.
+    /// Null leaves the status as it is. A question on screen is not in the transcript, and a turn
+    /// waiting on it still writes lines, so it stands until you type in the pane and a line
+    /// newer than the question follows. A stopped turn reads as done: nothing is running.
     /// </summary>
-    public static PaneStatus? FromTurn(PaneStatus current, TurnState turn, DateTime at, DateTime askedAt)
+    public static PaneStatus? FromTurn(PaneStatus current, TurnState turn, DateTime at, DateTime askedAt, bool answered)
     {
         if (current == PaneStatus.Exited) return null;
-        if (current == PaneStatus.NeedsInput && at <= askedAt) return null;
+        if (current == PaneStatus.NeedsInput && (!answered || at <= askedAt)) return null;
         return turn == TurnState.Working ? PaneStatus.Working : PaneStatus.Done;
     }
 

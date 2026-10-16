@@ -171,6 +171,19 @@
       </Setter>
     </Style>
 
+    <!-- CC or CX: which agent a row is about. Dim when that agent doesn't get the rule. -->
+    <Style x:Key="AgentChip" TargetType="Border">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="#323A46" />
+      <Setter Property="Background" Value="{StaticResource ChipBg}" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextElement.FontSize" Value="10" />
+      <Setter Property="TextElement.FontWeight" Value="SemiBold" />
+      <Setter Property="TextElement.Foreground" Value="{StaticResource TextPrimary}" />
+    </Style>
+
     <Style x:Key="LaterTag" TargetType="Border">
       <Setter Property="DockPanel.Dock" Value="Right" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -215,6 +228,8 @@
                        Content="General" IsChecked="True" Checked="Nav_Checked" />
           <RadioButton x:Name="NavStatus" Style="{StaticResource NavItem}" Tag="&#xE9D2;"
                        Content="Status bar" Checked="Nav_Checked" />
+          <RadioButton x:Name="NavSecurity" Style="{StaticResource NavItem}" Tag="&#xEA18;"
+                       Content="Security" Checked="Nav_Checked" />
           <Rectangle Height="1" Fill="{StaticResource Hairline}" Margin="8,8" />
           <!-- Not a page: it opens the setup window, and the page you were on stays picked. -->
           <RadioButton x:Name="NavAgents" Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents"
@@ -440,6 +455,78 @@
             </Border>
           </StackPanel>
 
+          <!-- Security: one card per kind of action (docs/SECURITY.md, "The page"). The cards and
+               your own rules are filled in code. -->
+          <StackPanel x:Name="PageSecurity" Visibility="Collapsed">
+            <!-- No long line here to widen the page, so this does: full width, capped by MaxWidth above. -->
+            <Border Height="0" Width="700" />
+            <TextBlock Style="{StaticResource PageTitle}" Text="Security" />
+            <TextBlock Style="{StaticResource PageIntro}" Text="What sessions Clayo starts have to ask you before they do it." />
+
+            <!-- The agents, for every card. Hidden with only Claude in use: the intro says enough. -->
+            <Border x:Name="AgentsBox" BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <DockPanel x:Name="ClaudeRow" Style="{StaticResource Row}" MinHeight="0" Margin="16,11">
+                  <Border Style="{StaticResource AgentChip}" Margin="0,0,22,0">
+                    <TextBlock Text="CC" Padding="0,2" />
+                  </Border>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource RowTitle}" Text="Claude Code" />
+                    <TextBlock Style="{StaticResource RowText}" Text="Only sessions Clayo starts." />
+                  </StackPanel>
+                </DockPanel>
+                <Border x:Name="CodexRow" Style="{StaticResource SwitchRow}"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Tag="{Binding ElementName=CodexSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}" MinHeight="0" Margin="16,11">
+                    <Border Style="{StaticResource AgentChip}" Margin="0,0,22,0">
+                      <TextBlock Text="CX" Padding="0,2" />
+                    </Border>
+                    <CheckBox x:Name="CodexSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Also apply to Codex" Click="Codex_Click" />
+                    <TextBlock x:Name="CodexState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Also apply to Codex" />
+                      <TextBlock x:Name="CodexText" Style="{StaticResource RowText}" Foreground="{StaticResource BandYellow}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <TextBlock x:Name="AskLabel" Style="{StaticResource GroupLabel}" Text="Ask before" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <!-- A card per AskRules.Groups entry. -->
+              <StackPanel x:Name="AskCards" />
+            </Border>
+            <TextBlock x:Name="AskFoot" Style="{StaticResource RowText}" Margin="2,10,2,0" />
+
+            <Border Margin="0,22,0,0" BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border x:Name="OwnHead" Style="{StaticResource SwitchRow}" CornerRadius="7"
+                        MouseLeftButtonUp="OwnHead_Click">
+                  <DockPanel Margin="16,6,10,6">
+                    <Button x:Name="OwnChevron" DockPanel.Dock="Right" Click="OwnChevron_Click" />
+                    <TextBlock x:Name="OwnCounts" DockPanel.Dock="Right" FontSize="11.5" Foreground="{StaticResource MutedAA}"
+                               VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBlock Style="{StaticResource GroupLabel}" Margin="0" Text="Your own rules" VerticalAlignment="Center" />
+                    <Border Style="{StaticResource LaterTag}" DockPanel.Dock="Left" Margin="8,0,0,0" Padding="5,0"
+                            HorizontalAlignment="Left">
+                      <TextBlock Text="read-only" FontSize="10" LineHeight="16" Foreground="{StaticResource LaterText}" />
+                    </Border>
+                  </DockPanel>
+                </Border>
+                <Border x:Name="OwnBody" BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Visibility="Collapsed">
+                  <StackPanel x:Name="OwnList" />
+                </Border>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
           <!-- Island: the screenshot picker (docs/SCREENSHOT.md). -->
           <StackPanel x:Name="PageIsland" Visibility="Collapsed">
             <TextBlock Style="{StaticResource PageTitle}" Text="Island" />
@@ -483,6 +570,26 @@
           </StackPanel>
         </Grid>
       </ScrollViewer>
+    </Grid>
+
+    <!-- Turning Codex on reaches outside Clayo, so it asks once (D9). Esc is Cancel (CancelConfirm). -->
+    <Grid x:Name="CodexConfirm" Grid.RowSpan="2" Background="#DB0A0C0F" Visibility="Collapsed">
+      <Border Width="420" Background="{StaticResource SurfaceBg}" BorderBrush="#323A46" BorderThickness="1"
+              CornerRadius="10" Padding="24,22,24,18" HorizontalAlignment="Center" VerticalAlignment="Center"
+              AutomationProperties.Name="Also ask in Codex?">
+        <StackPanel>
+          <TextBlock FontFamily="{StaticResource Display}" FontSize="15" FontWeight="SemiBold" Foreground="#E6E9EE"
+                     Text="Also ask in Codex?" />
+          <TextBlock Margin="0,10,0,0" FontSize="12.5" Foreground="{StaticResource MutedAA}" TextWrapping="Wrap"
+                     Text="Codex can't keep this inside Clayo. It will also ask in Codex sessions you start outside Clayo. Turn it off here any time." />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="ConfirmCancel" Content="Cancel" Style="{StaticResource GhostButton}" Click="ConfirmCancel_Click" />
+            <Button Content="Turn on for Codex" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                    BorderBrush="{StaticResource Clay}" Foreground="#E39A7E" FontWeight="SemiBold"
+                    Click="ConfirmOk_Click" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
     </Grid>
   </Grid>
 </UserControl>

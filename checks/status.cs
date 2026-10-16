@@ -14,7 +14,8 @@ const string busy = """
 {"session_id":"3f136615-e5ba-45b2-9766-6cc4d88ef5d9","cwd":"C:\\work","effort":{"level":"xhigh"},"model":{"id":"claude-opus-5-5[1m]","display_name":"Opus 5.5 (1M context)"},"context_window":{"context_window_size":1000000,"current_usage":{"input_tokens":12,"output_tokens":900,"cache_creation_input_tokens":40000,"cache_read_input_tokens":300000}},"rate_limits":{"five_hour":{"used_percentage":42.7,"resets_at":1790000000},"seven_day":{"used_percentage":9,"resets_at":"2026-10-08T10:00:00Z"}}}
 """;
 
-var at = new DateTime(2026, 10, 3, 1, 0, 0, DateTimeKind.Utc);
+// Today, not a fixed day: the store prunes files older than a week (StatusStore.KeepFor).
+var at = DateTime.UtcNow.Date;
 string Unused() => throw new InvalidOperationException("fallback read although the payload had an effort");
 
 int fail = 0;

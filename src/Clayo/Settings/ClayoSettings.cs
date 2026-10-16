@@ -35,8 +35,20 @@ public sealed record ClayoSettings(
     string? CodexPath = null,
     bool ScreenshotHotkey = true,
     bool ScreenshotOffer = false,
-    bool UpdateCheck = true)
+    bool UpdateCheck = true,
+    string AskGroupsOn = "",
+    string AskOff = "",
+    bool AlsoForCodex = false)
 {
+    /// <summary>
+    /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
+    /// turned on and AskOff the rules you unticked, comma separated, so a group added later
+    /// arrives off and a rule added later arrives ticked (D4). A string keeps the record comparable.
+    /// </summary>
+    public bool IsGroupOff(string id) => !AskGroupsOn.Split(',').Contains(id);
+
+    public bool IsAskOff(string id) => AskOff.Split(',').Contains(id);
+
     /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
     public static readonly int[] ReserveSteps = [0, 70, 80, 90];
 
@@ -80,6 +92,14 @@ public sealed record ClayoSettings(
                 ? text
                 : null;
 
+        // A list of ids, kept as a sorted comma string; anything that isn't a plain id is skipped.
+        string L(string name, string fallback) =>
+            root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
+                ? string.Join(",", v.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String && x.GetString() is { Length: > 0 } id && !id.Contains(','))
+                    .Select(x => x.GetString()!).Distinct().Order())
+                : fallback;
+
         // By name only: Enum.TryParse would also take "2".
         T E<T>(string name, T fallback) where T : struct, Enum =>
             S(name) is { } text && Enum.GetNames<T>().FirstOrDefault(n => n.Equals(text, StringComparison.OrdinalIgnoreCase)) is { } found
@@ -108,7 +128,10 @@ public sealed record ClayoSettings(
             S("codexPath"),
             B("screenshotHotkey", d.ScreenshotHotkey),
             B("screenshotOffer", d.ScreenshotOffer),
-            B("updateCheck", d.UpdateCheck));
+            B("updateCheck", d.UpdateCheck),
+            L("askGroupsOn", d.AskGroupsOn),
+            L("askOff", d.AskOff),
+            B("alsoForCodex", d.AlsoForCodex));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -144,6 +167,13 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("screenshotHotkey", ScreenshotHotkey);
                 w.WriteBoolean("screenshotOffer", ScreenshotOffer);
                 w.WriteBoolean("updateCheck", UpdateCheck);
+                w.WriteStartArray("askGroupsOn");
+                foreach (var id in AskGroupsOn.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
+                w.WriteEndArray();
+                w.WriteStartArray("askOff");
+                foreach (var id in AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
+                w.WriteEndArray();
+                w.WriteBoolean("alsoForCodex", AlsoForCodex);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);
