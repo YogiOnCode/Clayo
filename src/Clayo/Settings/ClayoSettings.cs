@@ -36,16 +36,16 @@ public sealed record ClayoSettings(
     bool ScreenshotHotkey = true,
     bool ScreenshotOffer = false,
     bool UpdateCheck = true,
-    string AskGroupsOff = "",
+    string AskGroupsOn = "",
     string AskOff = "",
     bool AlsoForCodex = false)
 {
     /// <summary>
-    /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOff lists the groups you
-    /// turned off and AskOff the rules you unticked, comma separated, so a group or rule added
-    /// later arrives on (D4). A string keeps the record comparable.
+    /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
+    /// turned on and AskOff the rules you unticked, comma separated, so a group added later
+    /// arrives off and a rule added later arrives ticked (D4). A string keeps the record comparable.
     /// </summary>
-    public bool IsGroupOff(string id) => AskGroupsOff.Split(',').Contains(id);
+    public bool IsGroupOff(string id) => !AskGroupsOn.Split(',').Contains(id);
 
     public bool IsAskOff(string id) => AskOff.Split(',').Contains(id);
 
@@ -129,7 +129,7 @@ public sealed record ClayoSettings(
             B("screenshotHotkey", d.ScreenshotHotkey),
             B("screenshotOffer", d.ScreenshotOffer),
             B("updateCheck", d.UpdateCheck),
-            L("askGroupsOff", d.AskGroupsOff),
+            L("askGroupsOn", d.AskGroupsOn),
             L("askOff", d.AskOff),
             B("alsoForCodex", d.AlsoForCodex));
     }
@@ -167,8 +167,8 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("screenshotHotkey", ScreenshotHotkey);
                 w.WriteBoolean("screenshotOffer", ScreenshotOffer);
                 w.WriteBoolean("updateCheck", UpdateCheck);
-                w.WriteStartArray("askGroupsOff");
-                foreach (var id in AskGroupsOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
+                w.WriteStartArray("askGroupsOn");
+                foreach (var id in AskGroupsOn.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
                 w.WriteEndArray();
                 w.WriteStartArray("askOff");
                 foreach (var id in AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);

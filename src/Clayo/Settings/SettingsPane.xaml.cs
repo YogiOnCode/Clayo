@@ -384,7 +384,7 @@ public partial class SettingsPane : UserControl
     private void GroupSwitch_Click(object sender, RoutedEventArgs e)
     {
         var sw = (CheckBox)sender;
-        _settings = _settings with { AskGroupsOff = Toggled(_settings.AskGroupsOff, (string)sw.Tag, sw.IsChecked != true) };
+        _settings = _settings with { AskGroupsOn = Toggled(_settings.AskGroupsOn, (string)sw.Tag, sw.IsChecked == true) };
         ApplySecurity();
     }
 
@@ -402,7 +402,7 @@ public partial class SettingsPane : UserControl
         ApplySecurity();
     }
 
-    /// <summary>A comma list of ids, as AskOff and AskGroupsOff keep them, with id in it or not.</summary>
+    /// <summary>A comma list of ids, as AskOff and AskGroupsOn keep them, with id in it or not.</summary>
     private static string Toggled(string list, string id, bool listed)
     {
         var ids = list.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(x => x != id);
