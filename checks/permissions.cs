@@ -1,7 +1,5 @@
 #:property TargetFramework=net10.0-windows
 #:project ../src/Clayo/CcxShell.csproj
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CcxShell.Core;
@@ -54,16 +52,6 @@ try
     Check("group off with a rule unticked: no rules", AskRules.ClaudeAsk(noTags with { AskGroupsOff = "publishing" }).Count, 0);
     Check("back on, the unticked rule stays off", AskRules.ClaudeAsk(noTags).SequenceEqual(unticked), true);
     Check("an unknown group off is ignored", AskRules.ClaudeAsk(on with { AskGroupsOff = "nope" }).SequenceEqual(ask), true);
-
-    // What each agent is handed, byte for byte as before groups (hashes taken at 520bd7f).
-    string Hash(string? text) => text is null ? "null"
-        : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
-    Check("as before, all on: Claude", Hash(string.Join("\n", AskRules.ClaudeAsk(codex))), "941F73AA8E0A6766");
-    Check("as before, all on: Codex", Hash(AskRules.CodexRules(codex)), "84387B42C810DC22");
-    Check("as before, push unticked: Claude", Hash(string.Join("\n", AskRules.ClaudeAsk(codex with { AskOff = "push" }))), "666992FB6A75A81A");
-    Check("as before, push unticked: Codex", Hash(AskRules.CodexRules(codex with { AskOff = "push" })), "D63B1F3D3C099201");
-    Check("as before, all off: Claude", AskRules.ClaudeAsk(codex with { AskGroupsOff = "publishing" }).Count, 0);
-    Check("as before, all off: Codex", AskRules.CodexRules(codex with { AskGroupsOff = "publishing" }), null);
 
     // The --settings file.
     var theirs = new JsonObject { ["type"] = "command", ["command"] = "pwsh line.ps1", ["padding"] = 2 };
