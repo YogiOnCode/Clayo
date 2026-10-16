@@ -36,14 +36,17 @@ public sealed record ClayoSettings(
     bool ScreenshotHotkey = true,
     bool ScreenshotOffer = false,
     bool UpdateCheck = true,
-    bool AskBeforePublishing = true,
+    string AskGroupsOff = "",
     string AskOff = "",
     bool AlsoForCodex = false)
 {
     /// <summary>
-    /// Ask before publishing (docs/PERMISSIONS.md): AskOff lists the rules you unticked, comma
-    /// separated, so a rule added later arrives ticked (D4). A string keeps the record comparable.
+    /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOff lists the groups you
+    /// turned off and AskOff the rules you unticked, comma separated, so a group or rule added
+    /// later arrives on (D4). A string keeps the record comparable.
     /// </summary>
+    public bool IsGroupOff(string id) => AskGroupsOff.Split(',').Contains(id);
+
     public bool IsAskOff(string id) => AskOff.Split(',').Contains(id);
 
     /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
@@ -89,6 +92,14 @@ public sealed record ClayoSettings(
                 ? text
                 : null;
 
+        // A list of ids, kept as a sorted comma string; anything that isn't a plain id is skipped.
+        string L(string name, string fallback) =>
+            root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
+                ? string.Join(",", v.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String && x.GetString() is { Length: > 0 } id && !id.Contains(','))
+                    .Select(x => x.GetString()!).Distinct().Order())
+                : fallback;
+
         // By name only: Enum.TryParse would also take "2".
         T E<T>(string name, T fallback) where T : struct, Enum =>
             S(name) is { } text && Enum.GetNames<T>().FirstOrDefault(n => n.Equals(text, StringComparison.OrdinalIgnoreCase)) is { } found
@@ -118,12 +129,8 @@ public sealed record ClayoSettings(
             B("screenshotHotkey", d.ScreenshotHotkey),
             B("screenshotOffer", d.ScreenshotOffer),
             B("updateCheck", d.UpdateCheck),
-            B("askBeforePublishing", d.AskBeforePublishing),
-            root.TryGetProperty("askOff", out var off) && off.ValueKind == JsonValueKind.Array
-                ? string.Join(",", off.EnumerateArray()
-                    .Where(x => x.ValueKind == JsonValueKind.String && x.GetString() is { Length: > 0 } id && !id.Contains(','))
-                    .Select(x => x.GetString()!).Distinct().Order())
-                : d.AskOff,
+            L("askGroupsOff", d.AskGroupsOff),
+            L("askOff", d.AskOff),
             B("alsoForCodex", d.AlsoForCodex));
     }
 
@@ -160,7 +167,9 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("screenshotHotkey", ScreenshotHotkey);
                 w.WriteBoolean("screenshotOffer", ScreenshotOffer);
                 w.WriteBoolean("updateCheck", UpdateCheck);
-                w.WriteBoolean("askBeforePublishing", AskBeforePublishing);
+                w.WriteStartArray("askGroupsOff");
+                foreach (var id in AskGroupsOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
+                w.WriteEndArray();
                 w.WriteStartArray("askOff");
                 foreach (var id in AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
                 w.WriteEndArray();

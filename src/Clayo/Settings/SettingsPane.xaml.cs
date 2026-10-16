@@ -209,6 +209,16 @@ public partial class SettingsPane : UserControl
     // Only Codex in use: the main switch is the Codex one, off until you confirm (D4, D9).
     private bool CodexOnly => _settings.UseCodex && !_settings.UseClaude;
 
+    // Until the page has a card per group (docs/SECURITY.md, S2), the main switch is Publishing's.
+    private bool PublishingOn => !_settings.IsGroupOff("publishing");
+
+    private ClayoSettings WithPublishing(bool on)
+    {
+        var off = _settings.AskGroupsOff.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(x => x != "publishing");
+        if (!on) off = off.Append("publishing");
+        return _settings with { AskGroupsOff = string.Join(",", off.Order()) };
+    }
+
     private void BuildAskList()
     {
         foreach (var rule in AskRules.All)
@@ -247,7 +257,7 @@ public partial class SettingsPane : UserControl
     private void ShowSecurity()
     {
         var s = _settings;
-        bool on = CodexOnly ? s.AskBeforePublishing && s.AlsoForCodex : s.AskBeforePublishing;
+        bool on = CodexOnly ? PublishingOn && s.AlsoForCodex : PublishingOn;
         int ticked = AskRules.All.Count(r => !s.IsAskOff(r.Id));
         AskSwitch.IsChecked = on;
         AskState.Text = !on ? "Off" : ticked < AskRules.All.Length ? $"On · {ticked} of {AskRules.All.Length}" : "On";
@@ -300,7 +310,7 @@ public partial class SettingsPane : UserControl
             if (want) { AskSwitch.IsChecked = false; ShowConfirm(); return; }
             _settings = _settings with { AlsoForCodex = false };
         }
-        else _settings = _settings with { AskBeforePublishing = want };
+        else _settings = WithPublishing(want);
         ApplySecurity();
     }
 
@@ -336,7 +346,7 @@ public partial class SettingsPane : UserControl
     private void ConfirmOk_Click(object sender, RoutedEventArgs e)
     {
         CodexConfirm.Visibility = Visibility.Collapsed;
-        _settings = _settings with { AskBeforePublishing = true, AlsoForCodex = true };
+        _settings = WithPublishing(true) with { AlsoForCodex = true };
         ApplySecurity();
         (CodexOnly ? AskSwitch : CodexSwitch).Focus();
     }

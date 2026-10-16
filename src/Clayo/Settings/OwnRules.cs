@@ -79,13 +79,13 @@ public static partial class OwnRulesReader
     // Claude: ask wins over allow, so an allow of a ticked rule's pattern still asks (D8).
     private static string ClaudeNote(string rule, ClayoSettings s) =>
         AskRules.All.FirstOrDefault(r => r.Claude.Any(p => rule == $"Bash({p})" || rule == $"PowerShell({p})")) is { } hit
-            ? Note(hit, s.AskBeforePublishing && !s.IsAskOff(hit.Id))
+            ? Note(hit, AskRules.Ticked(s).Contains(hit))
             : "";
 
     // Codex: the strictest matching decision wins, so prompt beats allow, but only with Codex on.
     private static string CodexNote(string[] words, ClayoSettings s) =>
         AskRules.All.FirstOrDefault(r => r.Codex.Any(p => p.SequenceEqual(words))) is { } hit
-            ? Note(hit, s.AskBeforePublishing && s.AlsoForCodex && !s.IsAskOff(hit.Id))
+            ? Note(hit, s.AlsoForCodex && AskRules.Ticked(s).Contains(hit))
             : "";
 
     private static string Note(AskRule rule, bool asks) => asks ? $"{rule.Label} still asks first" : $"{rule.Label} runs without asking";

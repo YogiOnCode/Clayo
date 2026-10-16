@@ -9,37 +9,49 @@ namespace CcxShell.Core;
 public sealed record AskRule(string Id, string Label, string Line, string[] Claude, string[][] Codex);
 
 /// <summary>
+/// One kind of action, a card on Settings › Security (docs/SECURITY.md): its rules under a
+/// switch of its own. Icon is the card's Segoe Fluent glyph.
+/// </summary>
+public sealed record AskGroup(string Id, string Title, string Line, string Icon, AskRule[] Rules);
+
+/// <summary>
 /// Ask before publishing: the rules Clayo hands its sessions so they stop and ask before they
 /// push, tag, release, merge or change the repo on GitHub. Clayo's own files only (D1).
 /// </summary>
 public static class AskRules
 {
-    public static readonly AskRule[] All =
+    public static readonly AskGroup[] Groups =
     [
-        new("push", "Push code", "git push",
-            ["git push*", "git -C * push*"], [["git", "push"]]),
-        new("tags", "Tags", "git tag: making or moving a version tag",
-            ["git tag*", "git -C * tag*"], [["git", "tag"]]),
-        new("releases", "Releases", "gh release: drafting or publishing one",
-            ["gh release*"], [["gh", "release"]]),
-        new("merge", "Merge pull requests", "gh pr merge",
-            ["gh pr merge*"], [["gh", "pr", "merge"]]),
-        new("repo", "Repo settings", "Renaming, deleting, rulesets",
-            ["gh repo edit*", "gh repo delete*", "gh repo rename*", "gh ruleset*"],
-            [["gh", "repo", "edit"], ["gh", "repo", "delete"], ["gh", "repo", "rename"], ["gh", "ruleset"]]),
-        new("secrets", "Secrets", "gh secret",
-            ["gh secret*"], [["gh", "secret"]]),
-        new("workflows", "Workflows", "gh workflow: running or turning one on or off",
-            ["gh workflow*"], [["gh", "workflow"]]),
-        // Codex matches prefixes only, so it can't tell a gh api read from a write (D6).
-        new("api", "Other GitHub changes", "gh api calls that write",
-            ["gh api *-X*", "gh api *--method*", "gh api *-f *", "gh api *-F *", "gh api *--field*",
-             "gh api *--raw-field*", "gh api *--input*"],
-            [["gh", "api"]]),
+        new("publishing", "Publishing", "Pushing, tags, releases, anything that changes GitHub.", "",
+        [
+            new("push", "Push code", "git push",
+                ["git push*", "git -C * push*"], [["git", "push"]]),
+            new("tags", "Tags", "git tag: making or moving a version tag",
+                ["git tag*", "git -C * tag*"], [["git", "tag"]]),
+            new("releases", "Releases", "gh release: drafting or publishing one",
+                ["gh release*"], [["gh", "release"]]),
+            new("merge", "Merge pull requests", "gh pr merge",
+                ["gh pr merge*"], [["gh", "pr", "merge"]]),
+            new("repo", "Repo settings", "Renaming, deleting, rulesets",
+                ["gh repo edit*", "gh repo delete*", "gh repo rename*", "gh ruleset*"],
+                [["gh", "repo", "edit"], ["gh", "repo", "delete"], ["gh", "repo", "rename"], ["gh", "ruleset"]]),
+            new("secrets", "Secrets", "gh secret",
+                ["gh secret*"], [["gh", "secret"]]),
+            new("workflows", "Workflows", "gh workflow: running or turning one on or off",
+                ["gh workflow*"], [["gh", "workflow"]]),
+            // Codex matches prefixes only, so it can't tell a gh api read from a write (D6).
+            new("api", "Other GitHub changes", "gh api calls that write",
+                ["gh api *-X*", "gh api *--method*", "gh api *-f *", "gh api *-F *", "gh api *--field*",
+                 "gh api *--raw-field*", "gh api *--input*"],
+                [["gh", "api"]]),
+        ]),
     ];
 
+    public static readonly AskRule[] All = Groups.SelectMany(g => g.Rules).ToArray();
+
+    /// <summary>The rules of every group that's on, minus the ones you unticked.</summary>
     public static IEnumerable<AskRule> Ticked(ClayoSettings s) =>
-        s.AskBeforePublishing ? All.Where(r => !s.IsAskOff(r.Id)) : [];
+        Groups.Where(g => !s.IsGroupOff(g.Id)).SelectMany(g => g.Rules).Where(r => !s.IsAskOff(r.Id));
 
     /// <summary>Claude's permissions.ask: each pattern for Bash, and for PowerShell in panes that run it.</summary>
     public static List<string> ClaudeAsk(ClayoSettings s) =>
