@@ -153,7 +153,9 @@ public partial class TerminalPane : UserControl
             }
         };
 
-        _flushTimer = new System.Windows.Threading.DispatcherTimer
+        // Normal priority, as the default (Background) waits behind every layout and render
+        // pass, and the echo of each key you type waits with it (issue #21).
+        _flushTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Normal)
         {
             Interval = TimeSpan.FromMilliseconds(8)
         };

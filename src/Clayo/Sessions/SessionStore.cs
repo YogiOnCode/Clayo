@@ -58,6 +58,7 @@ public sealed class SessionStore : ISessionSource
     private readonly Dictionary<string, (long size, DateTime mtime, SessionInfo info)> _cache = new(StringComparer.OrdinalIgnoreCase);
     private FileSystemWatcher? _watcher;
     private System.Threading.Timer? _debounce;
+    private readonly ChangedFiles _changed = new();
 
     /// <summary>Fired on a background thread after the transcript tree settles.</summary>
     public event Action? Changed;
@@ -75,9 +76,15 @@ public sealed class SessionStore : ISessionSource
     {
         if (!Directory.Exists(_root)) return Array.Empty<SessionInfo>();
 
-        var results = new List<SessionInfo>();
+        var (all, files) = _changed.Take(watching: _watcher is not null);
+        if (all)
+        {
+            files = Directory.EnumerateFiles(_root, "*.jsonl", SearchOption.AllDirectories).ToList();
+            foreach (var gone in _cache.Keys.Except(files, StringComparer.OrdinalIgnoreCase).ToList())
+                _cache.Remove(gone);
+        }
 
-        foreach (var file in Directory.EnumerateFiles(_root, "*.jsonl", SearchOption.AllDirectories))
+        foreach (var file in files)
         {
             // subagents/agent-*.jsonl are tool transcripts, not sessions you can resume.
             // Roughly 40 of the 217 files under the tree are these.
@@ -88,23 +95,28 @@ public sealed class SessionStore : ISessionSource
             try { fi = new FileInfo(file); }
             catch { continue; }
 
-            if (fi.Length == 0) continue;
-
-            // Cheap invalidation: size + mtime. Transcripts are append-only in practice.
-            if (_cache.TryGetValue(file, out var hit) && hit.size == fi.Length && hit.mtime == fi.LastWriteTimeUtc)
+            if (!fi.Exists || fi.Length == 0)
             {
-                results.Add(hit.info);
+                _cache.Remove(file);
                 continue;
             }
 
+            // Cheap invalidation: size + mtime. Transcripts are append-only in practice.
+            if (_cache.TryGetValue(file, out var hit) && hit.size == fi.Length && hit.mtime == fi.LastWriteTimeUtc)
+                continue;
+
+            // Unreadable mid-write: keep the row as it was and read it again next scan.
             var parsed = Parse(fi);
-            if (parsed is null) continue;
+            if (parsed is null)
+            {
+                _changed.Add(file);
+                continue;
+            }
 
             _cache[file] = (fi.Length, fi.LastWriteTimeUtc, parsed);
-            results.Add(parsed);
         }
 
-        return results.OrderByDescending(s => s.LastActivity).ToList();
+        return _cache.Values.Select(v => v.info).OrderByDescending(s => s.LastActivity).ToList();
     }
 
     private static SessionInfo? Parse(FileInfo fi)
@@ -298,14 +310,23 @@ public sealed class SessionStore : ISessionSource
         };
 
         // Claude writes a line at a time; without debouncing this fires constantly.
-        void Bump(object? _, FileSystemEventArgs __) =>
+        void Bump(object? _, FileSystemEventArgs e)
+        {
+            _changed.Add(e.FullPath);
+            if (e is RenamedEventArgs r) _changed.Add(r.OldFullPath);
             _debounce?.Change(600, Timeout.Infinite);
+        }
 
         _debounce = new System.Threading.Timer(_ => Changed?.Invoke(), null, Timeout.Infinite, Timeout.Infinite);
         _watcher.Changed += Bump;
         _watcher.Created += Bump;
         _watcher.Deleted += Bump;
         _watcher.Renamed += Bump;
+        _watcher.Error += (_, _) =>
+        {
+            _changed.AddAll();
+            _debounce?.Change(600, Timeout.Infinite);
+        };
     }
 
     public void StopWatching()

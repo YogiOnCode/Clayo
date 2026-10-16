@@ -1,0 +1,11 @@
+# Pull requests for updates to the pinned Actions and the NuGet packages, reviewed like any other.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: nuget
+    directory: /src/Clayo
+    schedule:
+      interval: weekly

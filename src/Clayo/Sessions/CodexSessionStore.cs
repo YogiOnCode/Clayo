@@ -19,6 +19,7 @@ public sealed class CodexSessionStore(string home) : ISessionSource
     private readonly Dictionary<string, (long size, SessionInfo info)> _cache = new(StringComparer.OrdinalIgnoreCase);
     private FileSystemWatcher? _watcher;
     private System.Threading.Timer? _debounce;
+    private readonly ChangedFiles _changed = new();
 
     public event Action? Changed;
 
@@ -35,28 +36,46 @@ public sealed class CodexSessionStore(string home) : ISessionSource
     {
         if (!RootExists) return [];
 
-        var titles = Titles();
-        var results = new List<SessionInfo>();
-        foreach (var file in Directory.EnumerateFiles(SessionsDir, "rollout-*.jsonl", SearchOption.AllDirectories))
+        var (all, files) = _changed.Take(watching: _watcher is not null);
+        if (all)
         {
+            files = Directory.EnumerateFiles(SessionsDir, "rollout-*.jsonl", SearchOption.AllDirectories).ToList();
+            foreach (var gone in _cache.Keys.Except(files, StringComparer.OrdinalIgnoreCase).ToList())
+                _cache.Remove(gone);
+        }
+
+        foreach (var file in files)
+        {
+            // The watcher covers all of home: session_index.jsonl, archived sessions and the like.
+            if (!file.StartsWith(SessionsDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || !Path.GetFileName(file).StartsWith("rollout-", StringComparison.OrdinalIgnoreCase)) continue;
+
             long size;
-            try { size = new FileInfo(file).Length; }
+            try { size = File.Exists(file) ? new FileInfo(file).Length : 0; }
             catch (IOException) { continue; }
-            if (size == 0) continue;
+            if (size == 0)
+            {
+                _cache.Remove(file);
+                continue;
+            }
 
             if (!_cache.TryGetValue(file, out var hit) || hit.size != size)
             {
-                if (Parse(file) is not { } parsed) continue;
-                hit = (size, parsed);
-                _cache[file] = hit;
+                // Unreadable mid-write: keep the row as it was and read it again next scan.
+                if (Parse(file) is not { } parsed)
+                {
+                    _changed.Add(file);
+                    continue;
+                }
+                _cache[file] = (size, parsed);
             }
-
-            // Codex names sessions itself and keeps the names apart from the transcript; a
-            // rename there changes no transcript, so the title is looked up every scan.
-            hit.info.AiTitle = titles.GetValueOrDefault(hit.info.SessionId);
-            results.Add(hit.info);
         }
-        return results.OrderByDescending(s => s.LastActivity).ToList();
+
+        // Codex names sessions itself and keeps the names apart from the transcript; a
+        // rename there changes no transcript, so the title is looked up every scan.
+        var titles = Titles();
+        foreach (var (_, info) in _cache.Values) info.AiTitle = titles.GetValueOrDefault(info.SessionId);
+        return _cache.Values.Select(v => v.info).OrderByDescending(s => s.LastActivity).ToList();
     }
 
     /// <summary>session_index.jsonl: one line per naming, so the last line for an id wins.</summary>
@@ -317,12 +336,22 @@ public sealed class CodexSessionStore(string home) : ISessionSource
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
             EnableRaisingEvents = true
         };
-        void Bump(object? _, FileSystemEventArgs __) => _debounce?.Change(600, Timeout.Infinite);
+        void Bump(object? _, FileSystemEventArgs e)
+        {
+            _changed.Add(e.FullPath);
+            if (e is RenamedEventArgs r) _changed.Add(r.OldFullPath);
+            _debounce?.Change(600, Timeout.Infinite);
+        }
         _debounce = new System.Threading.Timer(_ => Changed?.Invoke(), null, Timeout.Infinite, Timeout.Infinite);
         _watcher.Changed += Bump;
         _watcher.Created += Bump;
         _watcher.Deleted += Bump;
         _watcher.Renamed += Bump;
+        _watcher.Error += (_, _) =>
+        {
+            _changed.AddAll();
+            _debounce?.Change(600, Timeout.Infinite);
+        };
     }
 
     public void StopWatching()
