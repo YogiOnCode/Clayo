@@ -35,8 +35,17 @@ public sealed record ClayoSettings(
     string? CodexPath = null,
     bool ScreenshotHotkey = true,
     bool ScreenshotOffer = false,
-    bool UpdateCheck = true)
+    bool UpdateCheck = true,
+    bool AskBeforePublishing = true,
+    string AskOff = "",
+    bool AlsoForCodex = false)
 {
+    /// <summary>
+    /// Ask before publishing (docs/PERMISSIONS.md): AskOff lists the rules you unticked, comma
+    /// separated, so a rule added later arrives ticked (D4). A string keeps the record comparable.
+    /// </summary>
+    public bool IsAskOff(string id) => AskOff.Split(',').Contains(id);
+
     /// <summary>The reserve thresholds Settings offers, in percent. 0 is off.</summary>
     public static readonly int[] ReserveSteps = [0, 70, 80, 90];
 
@@ -108,7 +117,14 @@ public sealed record ClayoSettings(
             S("codexPath"),
             B("screenshotHotkey", d.ScreenshotHotkey),
             B("screenshotOffer", d.ScreenshotOffer),
-            B("updateCheck", d.UpdateCheck));
+            B("updateCheck", d.UpdateCheck),
+            B("askBeforePublishing", d.AskBeforePublishing),
+            root.TryGetProperty("askOff", out var off) && off.ValueKind == JsonValueKind.Array
+                ? string.Join(",", off.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String && x.GetString() is { Length: > 0 } id && !id.Contains(','))
+                    .Select(x => x.GetString()!).Distinct().Order())
+                : d.AskOff,
+            B("alsoForCodex", d.AlsoForCodex));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -144,6 +160,11 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("screenshotHotkey", ScreenshotHotkey);
                 w.WriteBoolean("screenshotOffer", ScreenshotOffer);
                 w.WriteBoolean("updateCheck", UpdateCheck);
+                w.WriteBoolean("askBeforePublishing", AskBeforePublishing);
+                w.WriteStartArray("askOff");
+                foreach (var id in AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
+                w.WriteEndArray();
+                w.WriteBoolean("alsoForCodex", AlsoForCodex);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

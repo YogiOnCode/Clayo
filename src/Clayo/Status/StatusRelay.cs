@@ -45,24 +45,13 @@ public static class StatusRelay
     /// <summary>
     /// Writes the --settings file for a pane about to start and returns its path, or null if
     /// it could not be written. Read fresh each time, so a pane follows the user's current
-    /// statusLine. The rest of their statusLine (padding and the like) is copied as it is.
+    /// statusLine and Clayo's current ask rules (AskRules.ClaudeAsk).
     /// </summary>
-    public static string? WriteSettings(string exePath)
+    public static string? WriteSettings(string exePath, IReadOnlyList<string> ask)
     {
         try
         {
-            var statusLine = UserStatusLine()?.DeepClone() as JsonObject ?? new JsonObject();
-            var theirs = statusLine["command"] is JsonValue v && v.TryGetValue(out string? c) && c.Length > 0 ? c : null;
-
-            // Claude Code runs status lines through Git Bash, where a backslash is an escape.
-            // The braces give their whole command our output, even a `cd x && ./line.sh`; the
-            // newlines keep a trailing # comment of theirs from eating the closing brace.
-            // Single quotes, so a $ or ` in the path stays text.
-            var relay = $"'{exePath.Replace('\\', '/').Replace("'", "'\\''")}' {Arg}";
-            statusLine["type"] = "command";
-            statusLine["command"] = theirs is null ? relay : $"{relay} {PassArg} | {{\n{theirs}\n}}";
-
-            var json = new JsonObject { ["statusLine"] = statusLine }.ToJsonString();
+            var json = SettingsJson(exePath, UserStatusLine(), ask);
             Directory.CreateDirectory(ClayoDir);
             if (!File.Exists(SettingsPath) || File.ReadAllText(SettingsPath) != json)
                 File.WriteAllText(SettingsPath, json);
@@ -70,6 +59,30 @@ public static class StatusRelay
         }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>
+    /// The --settings file's contents. The rest of the user's statusLine (padding and the like)
+    /// is copied as it is. Ask rules go in permissions.ask, which only adds to the user's own:
+    /// Claude Code merges the arrays, and ask wins over allow (D3). None, no permissions key.
+    /// </summary>
+    public static string SettingsJson(string exePath, JsonObject? userStatusLine, IReadOnlyList<string> ask)
+    {
+        var statusLine = userStatusLine?.DeepClone() as JsonObject ?? new JsonObject();
+        var theirs = statusLine["command"] is JsonValue v && v.TryGetValue(out string? c) && c.Length > 0 ? c : null;
+
+        // Claude Code runs status lines through Git Bash, where a backslash is an escape.
+        // The braces give their whole command our output, even a `cd x && ./line.sh`; the
+        // newlines keep a trailing # comment of theirs from eating the closing brace.
+        // Single quotes, so a $ or ` in the path stays text.
+        var relay = $"'{exePath.Replace('\\', '/').Replace("'", "'\\''")}' {Arg}";
+        statusLine["type"] = "command";
+        statusLine["command"] = theirs is null ? relay : $"{relay} {PassArg} | {{\n{theirs}\n}}";
+
+        var settings = new JsonObject { ["statusLine"] = statusLine };
+        if (ask.Count > 0)
+            settings["permissions"] = new JsonObject { ["ask"] = new JsonArray([.. ask.Select(a => JsonValue.Create(a))]) };
+        return settings.ToJsonString();
     }
 
     /// <summary>

@@ -12,10 +12,10 @@ public sealed class ClaudeAgent(Func<string> exe, ISessionSource sessions, Func<
     /// The full path, so a PATH that differs between Explorer and the shell can't break a
     /// pane. Only located here, not run: setup is what checks that it works.
     /// </summary>
-    public static ClaudeAgent ForThisUser(Func<string?> savedPath) => new(
+    public static ClaudeAgent ForThisUser(Func<string?> savedPath, Func<IReadOnlyList<string>> ask) => new(
         () => AgentDetector.ForThisMachine().Locate(AgentKind.Claude, savedPath()) ?? "claude",
         new SessionStore(),
-        () => Environment.ProcessPath is { } self ? StatusRelay.WriteSettings(self) : null);
+        () => Environment.ProcessPath is { } self ? StatusRelay.WriteSettings(self, ask()) : null);
 
     public AgentKind Kind => AgentKind.Claude;
 
@@ -38,8 +38,8 @@ public sealed class ClaudeAgent(Func<string> exe, ISessionSource sessions, Func<
     {
         var command = $"& {AgentHelper.Quote(exe())} {args}";
 
-        // Clayo's status line relay, for this pane only. The user's own settings.json is
-        // never written.
+        // Clayo's status line relay and ask rules, for this pane only. The user's own
+        // settings.json is never written.
         if (relaySettings() is { } settings) command += $" --settings {AgentHelper.Quote(settings)}";
         return command;
     }
