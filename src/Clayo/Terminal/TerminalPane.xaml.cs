@@ -264,7 +264,14 @@ public partial class TerminalPane : UserControl
                 {
                     var keys = Convert.FromBase64String(b64);
                     _keyAt = DateTime.UtcNow;
-                    if (Answers(keys)) _answered = true;
+                    if (Answers(keys))
+                    {
+                        _answered = true;
+                        // Codex writes nothing while an approved command runs, so its transcript
+                        // would leave the question up until the command's output; the turn goes
+                        // on either way, and its transcript corrects this from here.
+                        if (_turnKnown && Status == PaneStatus.NeedsInput) Status = PaneStatus.Working;
+                    }
                     _pty.Write(keys);
                 }
                 break;
