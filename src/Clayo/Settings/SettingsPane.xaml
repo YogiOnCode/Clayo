@@ -455,31 +455,27 @@
             </Border>
           </StackPanel>
 
-          <!-- Security: Ask before publishing (docs/PERMISSIONS.md, P3). The rule rows and
+          <!-- Security: one card per kind of action (docs/SECURITY.md, "The page"). The cards and
                your own rules are filled in code. -->
           <StackPanel x:Name="PageSecurity" Visibility="Collapsed">
+            <!-- No long line here to widen the page, so this does: full width, capped by MaxWidth above. -->
+            <Border Height="0" Width="700" />
             <TextBlock Style="{StaticResource PageTitle}" Text="Security" />
             <TextBlock Style="{StaticResource PageIntro}" Text="What sessions Clayo starts have to ask you before they do it." />
 
-            <TextBlock Style="{StaticResource GroupLabel}" Margin="0,0,0,8" Text="Ask before publishing" />
-            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+            <!-- The agents, for every card. Hidden with only Claude in use: the intro says enough. -->
+            <Border x:Name="AgentsBox" BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
                     Background="{StaticResource SurfaceBg}">
               <StackPanel>
-                <Border Style="{StaticResource SwitchRow}" CornerRadius="7,7,0,0"
-                        Tag="{Binding ElementName=AskSwitch}" MouseLeftButtonUp="SwitchRow_Click">
-                  <DockPanel Style="{StaticResource Row}">
-                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xEA18;" />
-                    <CheckBox x:Name="AskSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
-                              AutomationProperties.Name="Ask before publishing" Click="Ask_Click" />
-                    <TextBlock x:Name="AskState" Style="{StaticResource SwitchState}" Width="Auto" />
-                    <StackPanel VerticalAlignment="Center">
-                      <TextBlock Style="{StaticResource RowTitle}" Text="Ask before publishing" />
-                      <TextBlock x:Name="AskText" Style="{StaticResource RowText}" />
-                      <TextBlock x:Name="AskOutside" Style="{StaticResource RowText}" Foreground="{StaticResource BandYellow}"
-                                 Text="Applies to Codex outside Clayo too." Visibility="Collapsed" />
-                    </StackPanel>
-                  </DockPanel>
-                </Border>
+                <DockPanel x:Name="ClaudeRow" Style="{StaticResource Row}" MinHeight="0" Margin="16,11">
+                  <Border Style="{StaticResource AgentChip}" Margin="0,0,22,0">
+                    <TextBlock Text="CC" Padding="0,2" />
+                  </Border>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource RowTitle}" Text="Claude Code" />
+                    <TextBlock Style="{StaticResource RowText}" Text="Only sessions Clayo starts." />
+                  </StackPanel>
+                </DockPanel>
                 <Border x:Name="CodexRow" Style="{StaticResource SwitchRow}"
                         BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
                         Tag="{Binding ElementName=CodexSwitch}" MouseLeftButtonUp="SwitchRow_Click">
@@ -488,35 +484,46 @@
                       <TextBlock Text="CX" Padding="0,2" />
                     </Border>
                     <CheckBox x:Name="CodexSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
-                              AutomationProperties.Name="Also for Codex" Click="Codex_Click" />
+                              AutomationProperties.Name="Also apply to Codex" Click="Codex_Click" />
                     <TextBlock x:Name="CodexState" Style="{StaticResource SwitchState}" />
                     <StackPanel VerticalAlignment="Center">
-                      <TextBlock Style="{StaticResource RowTitle}" Text="Also for Codex" />
-                      <TextBlock Style="{StaticResource RowText}" Foreground="{StaticResource BandYellow}"
-                                 Text="Applies to Codex outside Clayo too." />
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Also apply to Codex" />
+                      <TextBlock x:Name="CodexText" Style="{StaticResource RowText}" Foreground="{StaticResource BandYellow}" />
                     </StackPanel>
                   </DockPanel>
-                </Border>
-                <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0" Padding="8,6">
-                  <StackPanel x:Name="AskList" AutomationProperties.Name="What it covers" />
-                </Border>
-                <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0">
-                  <TextBlock x:Name="AskFoot" Style="{StaticResource RowText}" Margin="16,11" />
                 </Border>
               </StackPanel>
             </Border>
 
-            <StackPanel Orientation="Horizontal" Margin="0,22,0,4">
-              <TextBlock Style="{StaticResource GroupLabel}" Margin="0" Text="Your own rules" VerticalAlignment="Center" />
-              <Border Style="{StaticResource LaterTag}" Margin="8,0,0,0" Padding="5,0">
-                <TextBlock Text="read-only" FontSize="10" LineHeight="16" Foreground="{StaticResource LaterText}" />
-              </Border>
-            </StackPanel>
-            <TextBlock Style="{StaticResource RowText}" Margin="0,0,0,8"
-                       Text="Already in your agents' settings. They apply alongside Clayo's." />
+            <TextBlock x:Name="AskLabel" Style="{StaticResource GroupLabel}" Text="Ask before" />
             <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
                     Background="{StaticResource SurfaceBg}">
-              <StackPanel x:Name="OwnList" />
+              <!-- A card per AskRules.Groups entry. -->
+              <StackPanel x:Name="AskCards" />
+            </Border>
+            <TextBlock x:Name="AskFoot" Style="{StaticResource RowText}" Margin="2,10,2,0" />
+
+            <Border Margin="0,22,0,0" BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border x:Name="OwnHead" Style="{StaticResource SwitchRow}" CornerRadius="7"
+                        MouseLeftButtonUp="OwnHead_Click">
+                  <DockPanel Margin="16,6,10,6">
+                    <Button x:Name="OwnChevron" DockPanel.Dock="Right" Click="OwnChevron_Click" />
+                    <TextBlock x:Name="OwnCounts" DockPanel.Dock="Right" FontSize="11.5" Foreground="{StaticResource MutedAA}"
+                               VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBlock Style="{StaticResource GroupLabel}" Margin="0" Text="Your own rules" VerticalAlignment="Center" />
+                    <Border Style="{StaticResource LaterTag}" DockPanel.Dock="Left" Margin="8,0,0,0" Padding="5,0"
+                            HorizontalAlignment="Left">
+                      <TextBlock Text="read-only" FontSize="10" LineHeight="16" Foreground="{StaticResource LaterText}" />
+                    </Border>
+                  </DockPanel>
+                </Border>
+                <Border x:Name="OwnBody" BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Visibility="Collapsed">
+                  <StackPanel x:Name="OwnList" />
+                </Border>
+              </StackPanel>
             </Border>
           </StackPanel>
 
@@ -569,10 +576,10 @@
     <Grid x:Name="CodexConfirm" Grid.RowSpan="2" Background="#DB0A0C0F" Visibility="Collapsed">
       <Border Width="420" Background="{StaticResource SurfaceBg}" BorderBrush="#323A46" BorderThickness="1"
               CornerRadius="10" Padding="24,22,24,18" HorizontalAlignment="Center" VerticalAlignment="Center"
-              AutomationProperties.Name="Also ask before publishing in Codex?">
+              AutomationProperties.Name="Also ask in Codex?">
         <StackPanel>
           <TextBlock FontFamily="{StaticResource Display}" FontSize="15" FontWeight="SemiBold" Foreground="#E6E9EE"
-                     Text="Also ask before publishing in Codex?" />
+                     Text="Also ask in Codex?" />
           <TextBlock Margin="0,10,0,0" FontSize="12.5" Foreground="{StaticResource MutedAA}" TextWrapping="Wrap"
                      Text="Codex can't keep this inside Clayo. It will also ask in Codex sessions you start outside Clayo. Turn it off here any time." />
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">

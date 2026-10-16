@@ -38,7 +38,8 @@ public partial class SettingsPane : UserControl
             AddChoice(ThemeChoices, theme, theme.ToString());
         foreach (var step in ClayoSettings.ReserveSteps)
             AddChoice(ReserveSteps, step, step == 0 ? "Off" : $"{step}%");
-        BuildAskList();
+        BuildAskCards();
+        Chevron(OwnChevron);
     }
 
     private void AddChoice(Panel group, object value, string label)
@@ -82,6 +83,10 @@ public partial class SettingsPane : UserControl
         UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
         ShowUpdate(newer);
         CodexConfirm.Visibility = Visibility.Collapsed;
+        // A lone card starts open; with more, all start closed. Your own rules starts closed.
+        _openCards.Clear();
+        if (AskRules.Groups.Length == 1) _openCards.Add(AskRules.Groups[0].Id);
+        _ownOpen = false;
         ShowSecurity();
 
         var startup = LoginStartup.ForThisUser();
@@ -202,85 +207,154 @@ public partial class SettingsPane : UserControl
     }
 
     // ---------------------------------------------------------------- Security
-    // Ask before publishing (docs/PERMISSIONS.md, "The page"). Ticks save at once, like the others.
+    // A card per kind of action (docs/SECURITY.md, "The page"). Ticks and switches save at once, like the others.
 
-    private readonly List<(AskRule Rule, CheckBox Tick, TextBlock Line, Border Claude, Border Codex)> _askRows = [];
+    private readonly List<(AskGroup Group, Border Head, CheckBox Switch, TextBlock State, Button Chevron, Border Body)> _askCards = [];
+    private readonly List<(AskGroup Group, AskRule Rule, CheckBox Tick, TextBlock Line, Border Claude, Border Codex)> _askRows = [];
 
-    // Only Codex in use: the main switch is the Codex one, off until you confirm (D4, D9).
-    private bool CodexOnly => _settings.UseCodex && !_settings.UseClaude;
+    // Which cards are open, and Your own rules. Not saved: each time Settings opens, they start the same way.
+    private readonly HashSet<string> _openCards = [];
+    private bool _ownOpen;
 
-    // Until the page has a card per group (docs/SECURITY.md, S2), the main switch is Publishing's.
-    private bool PublishingOn => !_settings.IsGroupOff("publishing");
-
-    private ClayoSettings WithPublishing(bool on)
+    private void BuildAskCards()
     {
-        var off = _settings.AskGroupsOff.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(x => x != "publishing");
-        if (!on) off = off.Append("publishing");
-        return _settings with { AskGroupsOff = string.Join(",", off.Order()) };
+        foreach (var group in AskRules.Groups)
+        {
+            var sw = new CheckBox { Style = (Style)FindResource("Switch"), Tag = group.Id };
+            AutomationProperties.SetName(sw, group.Title);
+            sw.Click += GroupSwitch_Click;
+            var state = new TextBlock { Style = (Style)FindResource("SwitchState"), Width = double.NaN };
+            var chevron = Chevron(new Button { Margin = new(10, 0, 0, 0) });
+            chevron.Click += (_, _) => ToggleCard(group.Id);
+            var controls = new StackPanel { Orientation = Orientation.Horizontal };
+            DockPanel.SetDock(controls, Dock.Right);
+            controls.Children.Add(state);
+            controls.Children.Add(sw);
+            controls.Children.Add(chevron);
+
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Style = (Style)FindResource("RowTitle"), Text = group.Title });
+            text.Children.Add(new TextBlock { Style = (Style)FindResource("RowText"), Text = group.Line });
+            var row = new DockPanel { Style = (Style)FindResource("Row"), Margin = new(16, 13, 10, 13) };
+            row.Children.Add(new TextBlock { Style = (Style)FindResource("RowIcon"), Text = group.Icon });
+            row.Children.Add(controls);
+            row.Children.Add(text);
+            // A click on the header opens or closes the card; one on its switch or chevron is theirs.
+            var head = new Border
+            {
+                Style = (Style)FindResource("SwitchRow"), Child = row, BorderBrush = (Brush)FindResource("Hairline"),
+                BorderThickness = new(0, _askCards.Count == 0 ? 0 : 1, 0, 0)
+            };
+            head.MouseLeftButtonUp += (_, _) => { if (!sw.IsMouseOver && !chevron.IsMouseOver) ToggleCard(group.Id); };
+
+            var list = new StackPanel();
+            AutomationProperties.SetName(list, $"{group.Title}: what it covers");
+            foreach (var rule in group.Rules) list.Children.Add(AskRow(group, rule));
+            var body = new Border
+            {
+                Child = list, Padding = new(8, 6, 8, 6),
+                BorderBrush = (Brush)FindResource("Hairline"), BorderThickness = new(0, 1, 0, 0)
+            };
+
+            var card = new StackPanel();
+            card.Children.Add(head);
+            card.Children.Add(body);
+            AskCards.Children.Add(card);
+            _askCards.Add((group, head, sw, state, chevron, body));
+        }
     }
 
-    private void BuildAskList()
+    private UIElement AskRow(AskGroup group, AskRule rule)
     {
-        foreach (var rule in AskRules.All)
+        var tick = new CheckBox { Style = (Style)FindResource("Tick"), Content = rule.Label, Tag = rule.Id };
+        AutomationProperties.SetHelpText(tick, rule.Line);
+        tick.Click += AskTick_Click;
+        var line = new TextBlock
         {
-            var tick = new CheckBox { Style = (Style)FindResource("Tick"), Content = rule.Label, Tag = rule.Id };
-            AutomationProperties.SetHelpText(tick, rule.Line);
-            tick.Click += AskTick_Click;
-            var line = new TextBlock
-            {
-                FontFamily = (FontFamily)FindResource("MonoFont"), FontSize = 11, Foreground = (Brush)FindResource("TextMuted"),
-                TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new(2, 0, 12, 0)
-            };
-            Border cc = Chip("CC"), cx = Chip("CX");
-            cx.Margin = new(4, 0, 0, 0);
-            var chips = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 10, 0) };
-            chips.Children.Add(cc);
-            chips.Children.Add(cx);
+            FontFamily = (FontFamily)FindResource("MonoFont"), FontSize = 11, Foreground = (Brush)FindResource("TextMuted"),
+            TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new(2, 0, 12, 0)
+        };
+        Border cc = Chip("CC"), cx = Chip("CX");
+        cx.Margin = new(4, 0, 0, 0);
+        var chips = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 10, 0) };
+        chips.Children.Add(cc);
+        chips.Children.Add(cx);
 
-            var row = new Grid();
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-            row.ColumnDefinitions.Add(new ColumnDefinition());
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.Children.Add(tick);
-            Grid.SetColumn(line, 1);
-            row.Children.Add(line);
-            Grid.SetColumn(chips, 2);
-            row.Children.Add(chips);
-            AskList.Children.Add(row);
-            _askRows.Add((rule, tick, line, cc, cx));
-        }
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.Children.Add(tick);
+        Grid.SetColumn(line, 1);
+        row.Children.Add(line);
+        Grid.SetColumn(chips, 2);
+        row.Children.Add(chips);
+        _askRows.Add((group, rule, tick, line, cc, cx));
+        return row;
     }
 
     private Border Chip(string agent) =>
         new() { Style = (Style)FindResource("AgentChip"), Child = new TextBlock { Text = agent, Padding = new(0, 2, 0, 2) } };
 
+    // The button that opens and closes a card or Your own rules: a chevron, reached with Tab, pressed with Enter or Space.
+    private Button Chevron(Button b)
+    {
+        b.Style = (Style)FindResource("QuietButton");
+        b.BorderThickness = new(0);
+        b.Padding = new(0);
+        b.Width = b.Height = 28;
+        b.FontFamily = (FontFamily)FindResource("Icons");
+        b.FontSize = 10;
+        b.Foreground = (Brush)FindResource("MutedAA");
+        b.VerticalAlignment = VerticalAlignment.Center;
+        b.FocusVisualStyle = (Style)FindResource("FocusRing");
+        return b;
+    }
+
+    private static void ShowChevron(Button b, bool open, string what)
+    {
+        b.Content = open ? "" : "";
+        AutomationProperties.SetName(b, $"{(open ? "Hide" : "Show")} {what}");
+    }
+
     private void ShowSecurity()
     {
         var s = _settings;
-        bool on = CodexOnly ? PublishingOn && s.AlsoForCodex : PublishingOn;
-        int ticked = AskRules.All.Count(r => !s.IsAskOff(r.Id));
-        AskSwitch.IsChecked = on;
-        AskState.Text = !on ? "Off" : ticked < AskRules.All.Length ? $"On · {ticked} of {AskRules.All.Length}" : "On";
-        AskText.Text = CodexOnly
-            ? "Codex stops and asks you before it changes anything on GitHub."
-            : "Sessions stop and ask you before they change anything on GitHub. Applies to sessions you start from now on.";
-        AskOutside.Visibility = CodexOnly ? Visibility.Visible : Visibility.Collapsed;
-
-        CodexRow.Visibility = s.UseClaude && s.UseCodex ? Visibility.Visible : Visibility.Collapsed;
+        AgentsBox.Visibility = s.UseCodex ? Visibility.Visible : Visibility.Collapsed;
+        ClaudeRow.Visibility = s.UseClaude ? Visibility.Visible : Visibility.Collapsed;
+        CodexRow.BorderThickness = new(0, s.UseClaude ? 1 : 0, 0, 0);
+        CodexRow.CornerRadius = s.UseClaude ? new(0, 0, 7, 7) : new(7);
         CodexSwitch.IsChecked = s.AlsoForCodex;
-        CodexSwitch.IsEnabled = on;
-        CodexRow.Cursor = on ? Cursors.Hand : Cursors.Arrow;
         CodexState.Text = s.AlsoForCodex ? "On" : "Off";
+        CodexText.Text = s.AlsoForCodex
+            ? "Applies to Codex outside Clayo too."
+            : "Applies to Codex outside Clayo too. Turning it on asks you once.";
+        AskLabel.Margin = new(0, s.UseCodex ? 22 : 0, 0, 8);
 
-        // Off: the list stays readable but can't be clicked, so you see what you'd get back.
-        AskList.IsEnabled = on;
-        foreach (var (rule, tick, line, cc, cx) in _askRows)
+        for (int i = 0; i < _askCards.Count; i++)
         {
+            var (group, head, sw, state, chevron, body) = _askCards[i];
+            bool on = !s.IsGroupOff(group.Id), open = _openCards.Contains(group.Id), last = i == _askCards.Count - 1;
+            int ticked = group.Rules.Count(r => !s.IsAskOff(r.Id));
+            sw.IsChecked = on;
+            state.Text = !on ? "Off" : ticked < group.Rules.Length ? $"On · {ticked} of {group.Rules.Length}" : "On";
+            AutomationProperties.SetHelpText(sw, state.Text);
+            ShowChevron(chevron, open, $"{group.Title} rules");
+            body.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            // Off: the list stays readable but can't be clicked, so you see what you'd get back.
+            body.IsEnabled = on;
+            head.CornerRadius = new(i == 0 ? 7 : 0, i == 0 ? 7 : 0, last && !open ? 7 : 0, last && !open ? 7 : 0);
+        }
+
+        bool codexOnly = s.UseCodex && !s.UseClaude;
+        foreach (var (group, rule, tick, line, cc, cx) in _askRows)
+        {
+            bool on = !s.IsGroupOff(group.Id);
             bool yes = !s.IsAskOff(rule.Id);
             tick.IsChecked = yes;
-            bool codexGets = yes && (CodexOnly || s.AlsoForCodex);
+            bool codexGets = yes && s.AlsoForCodex;
             line.Text = rule.Id != "api" ? rule.Line
-                : CodexOnly ? "every gh api call"
+                : codexOnly ? "every gh api call"
                 : codexGets && s.UseCodex ? $"{rule.Line} · Codex: every gh api call"
                 : rule.Line;
             cc.Visibility = s.UseClaude ? Visibility.Visible : Visibility.Collapsed;
@@ -290,27 +364,27 @@ public partial class SettingsPane : UserControl
             line.Opacity = on ? 1 : 0.6;
             cc.ToolTip = yes ? "Claude: asks first" : "Claude: runs without asking";
             cx.ToolTip = !yes ? "Codex: runs without asking"
-                : !codexGets ? "Codex: Also for Codex is off"
+                : !codexGets ? "Codex: Also apply to Codex is off"
                 : rule.Id == "api" ? "Codex: asks before every gh api call"
                 : "Codex: asks first";
         }
 
-        AskFoot.Text = !on ? "Off. Only your own rules apply."
-            : CodexOnly ? "Your own rules still apply."
-            : s.UseCodex ? "Claude: only sessions Clayo starts. Your own rules still apply."
-            : "Only sessions Clayo starts. Your own rules still apply.";
+        AskFoot.Text = AskRules.Groups.All(g => s.IsGroupOff(g.Id)) ? "Off. Only your own rules apply."
+            : codexOnly && !s.AlsoForCodex ? "Codex asks once Also apply to Codex is on. Your own rules still apply."
+            : "Applies to sessions you start from now on. Your own rules still apply.";
         ShowOwnRules();
     }
 
-    private void Ask_Click(object sender, RoutedEventArgs e)
+    private void ToggleCard(string id)
     {
-        bool want = AskSwitch.IsChecked == true;
-        if (CodexOnly)
-        {
-            if (want) { AskSwitch.IsChecked = false; ShowConfirm(); return; }
-            _settings = _settings with { AlsoForCodex = false };
-        }
-        else _settings = WithPublishing(want);
+        if (!_openCards.Remove(id)) _openCards.Add(id);
+        ShowSecurity();
+    }
+
+    private void GroupSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        var sw = (CheckBox)sender;
+        _settings = _settings with { AskGroupsOff = Toggled(_settings.AskGroupsOff, (string)sw.Tag, sw.IsChecked != true) };
         ApplySecurity();
     }
 
@@ -324,11 +398,16 @@ public partial class SettingsPane : UserControl
     private void AskTick_Click(object sender, RoutedEventArgs e)
     {
         var tick = (CheckBox)sender;
-        var id = (string)tick.Tag;
-        var off = _settings.AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(x => x != id);
-        if (tick.IsChecked != true) off = off.Append(id);
-        _settings = _settings with { AskOff = string.Join(",", off.Order()) };
+        _settings = _settings with { AskOff = Toggled(_settings.AskOff, (string)tick.Tag, tick.IsChecked != true) };
         ApplySecurity();
+    }
+
+    /// <summary>A comma list of ids, as AskOff and AskGroupsOff keep them, with id in it or not.</summary>
+    private static string Toggled(string list, string id, bool listed)
+    {
+        var ids = list.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(x => x != id);
+        if (listed) ids = ids.Append(id);
+        return string.Join(",", ids.Order());
     }
 
     private void ApplySecurity()
@@ -346,9 +425,9 @@ public partial class SettingsPane : UserControl
     private void ConfirmOk_Click(object sender, RoutedEventArgs e)
     {
         CodexConfirm.Visibility = Visibility.Collapsed;
-        _settings = WithPublishing(true) with { AlsoForCodex = true };
+        _settings = _settings with { AlsoForCodex = true };
         ApplySecurity();
-        (CodexOnly ? AskSwitch : CodexSwitch).Focus();
+        CodexSwitch.Focus();
     }
 
     private void ConfirmCancel_Click(object sender, RoutedEventArgs e) => CancelConfirm();
@@ -358,8 +437,19 @@ public partial class SettingsPane : UserControl
     {
         if (CodexConfirm.Visibility != Visibility.Visible) return false;
         CodexConfirm.Visibility = Visibility.Collapsed;
-        (CodexOnly ? AskSwitch : CodexSwitch).Focus();
+        CodexSwitch.Focus();
         return true;
+    }
+
+    private void OwnHead_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (!OwnChevron.IsMouseOver) OwnChevron_Click(sender, e);
+    }
+
+    private void OwnChevron_Click(object sender, RoutedEventArgs e)
+    {
+        _ownOpen = !_ownOpen;
+        ShowOwnRules();
     }
 
     /// <summary>
@@ -374,6 +464,13 @@ public partial class SettingsPane : UserControl
             agents.Add(("CC", "Claude Code", OwnRulesReader.Claude(Path.Combine(StatusRelay.ClaudeConfigDir, "settings.json"), _settings)));
         if (_settings.UseCodex)
             agents.Add(("CX", "Codex", OwnRulesReader.Codex(AskRules.CodexHome, _settings)));
+
+        // Closed, the header says how many: "Claude 12 · Codex 3", or None.
+        OwnCounts.Text = agents.All(a => a.Rules.Rules.Count == 0) ? "None"
+            : string.Join(" · ", agents.Select(a => $"{a.Name.Split(' ')[0]} {a.Rules.Rules.Count}"));
+        OwnBody.Visibility = _ownOpen ? Visibility.Visible : Visibility.Collapsed;
+        OwnHead.CornerRadius = _ownOpen ? new(7, 7, 0, 0) : new(7);
+        ShowChevron(OwnChevron, _ownOpen, "your own rules");
 
         foreach (var (chip, name, own) in agents)
         {
