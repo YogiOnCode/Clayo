@@ -1,4 +1,4 @@
-#:property TargetFramework=net8.0-windows
+#:property TargetFramework=net10.0-windows
 #:project ../src/Clayo/CcxShell.csproj
 using CcxShell.Core;
 using Microsoft.Win32;
