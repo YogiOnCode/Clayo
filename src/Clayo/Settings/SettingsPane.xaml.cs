@@ -1,8 +1,12 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
 using CcxShell.Core;
 
 namespace CcxShell;
@@ -34,6 +38,7 @@ public partial class SettingsPane : UserControl
             AddChoice(ThemeChoices, theme, theme.ToString());
         foreach (var step in ClayoSettings.ReserveSteps)
             AddChoice(ReserveSteps, step, step == 0 ? "Off" : $"{step}%");
+        BuildAskList();
     }
 
     private void AddChoice(Panel group, object value, string label)
@@ -76,6 +81,8 @@ public partial class SettingsPane : UserControl
         UpdateCheckSwitch.IsChecked = settings.UpdateCheck;
         UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
         ShowUpdate(newer);
+        CodexConfirm.Visibility = Visibility.Collapsed;
+        ShowSecurity();
 
         var startup = LoginStartup.ForThisUser();
         LoginSwitch.IsChecked = startup.IsOn;
@@ -194,19 +201,264 @@ public partial class SettingsPane : UserControl
         ReserveFiveHourTick.IsEnabled = ReserveSevenDayTick.IsEnabled = _settings.ReserveAt > 0;
     }
 
+    // ---------------------------------------------------------------- Security
+    // Ask before publishing (docs/PERMISSIONS.md, "The page"). Ticks save at once, like the others.
+
+    private readonly List<(AskRule Rule, CheckBox Tick, TextBlock Line, Border Claude, Border Codex)> _askRows = [];
+
+    // Only Codex in use: the main switch is the Codex one, off until you confirm (D4, D9).
+    private bool CodexOnly => _settings.UseCodex && !_settings.UseClaude;
+
+    private void BuildAskList()
+    {
+        foreach (var rule in AskRules.All)
+        {
+            var tick = new CheckBox { Style = (Style)FindResource("Tick"), Content = rule.Label, Tag = rule.Id };
+            AutomationProperties.SetHelpText(tick, rule.Line);
+            tick.Click += AskTick_Click;
+            var line = new TextBlock
+            {
+                FontFamily = (FontFamily)FindResource("MonoFont"), FontSize = 11, Foreground = (Brush)FindResource("TextMuted"),
+                TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new(2, 0, 12, 0)
+            };
+            Border cc = Chip("CC"), cx = Chip("CX");
+            cx.Margin = new(4, 0, 0, 0);
+            var chips = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 10, 0) };
+            chips.Children.Add(cc);
+            chips.Children.Add(cx);
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(tick);
+            Grid.SetColumn(line, 1);
+            row.Children.Add(line);
+            Grid.SetColumn(chips, 2);
+            row.Children.Add(chips);
+            AskList.Children.Add(row);
+            _askRows.Add((rule, tick, line, cc, cx));
+        }
+    }
+
+    private Border Chip(string agent) =>
+        new() { Style = (Style)FindResource("AgentChip"), Child = new TextBlock { Text = agent, Padding = new(0, 2, 0, 2) } };
+
+    private void ShowSecurity()
+    {
+        var s = _settings;
+        bool on = CodexOnly ? s.AskBeforePublishing && s.AlsoForCodex : s.AskBeforePublishing;
+        int ticked = AskRules.All.Count(r => !s.IsAskOff(r.Id));
+        AskSwitch.IsChecked = on;
+        AskState.Text = !on ? "Off" : ticked < AskRules.All.Length ? $"On · {ticked} of {AskRules.All.Length}" : "On";
+        AskText.Text = CodexOnly
+            ? "Codex stops and asks you before it changes anything on GitHub."
+            : "Sessions stop and ask you before they change anything on GitHub. Applies to sessions you start from now on.";
+        AskOutside.Visibility = CodexOnly ? Visibility.Visible : Visibility.Collapsed;
+
+        CodexRow.Visibility = s.UseClaude && s.UseCodex ? Visibility.Visible : Visibility.Collapsed;
+        CodexSwitch.IsChecked = s.AlsoForCodex;
+        CodexSwitch.IsEnabled = on;
+        CodexRow.Cursor = on ? Cursors.Hand : Cursors.Arrow;
+        CodexState.Text = s.AlsoForCodex ? "On" : "Off";
+
+        // Off: the list stays readable but can't be clicked, so you see what you'd get back.
+        AskList.IsEnabled = on;
+        foreach (var (rule, tick, line, cc, cx) in _askRows)
+        {
+            bool yes = !s.IsAskOff(rule.Id);
+            tick.IsChecked = yes;
+            bool codexGets = yes && (CodexOnly || s.AlsoForCodex);
+            line.Text = rule.Id != "api" ? rule.Line
+                : CodexOnly ? "every gh api call"
+                : codexGets && s.UseCodex ? $"{rule.Line} · Codex: every gh api call"
+                : rule.Line;
+            cc.Visibility = s.UseClaude ? Visibility.Visible : Visibility.Collapsed;
+            cx.Visibility = s.UseCodex ? Visibility.Visible : Visibility.Collapsed;
+            cc.Opacity = on && yes ? 1 : 0.4;
+            cx.Opacity = on && codexGets ? 1 : 0.4;
+            line.Opacity = on ? 1 : 0.6;
+            cc.ToolTip = yes ? "Claude: asks first" : "Claude: runs without asking";
+            cx.ToolTip = !yes ? "Codex: runs without asking"
+                : !codexGets ? "Codex: Also for Codex is off"
+                : rule.Id == "api" ? "Codex: asks before every gh api call"
+                : "Codex: asks first";
+        }
+
+        AskFoot.Text = !on ? "Off. Only your own rules apply."
+            : CodexOnly ? "Your own rules still apply."
+            : s.UseCodex ? "Claude: only sessions Clayo starts. Your own rules still apply."
+            : "Only sessions Clayo starts. Your own rules still apply.";
+        ShowOwnRules();
+    }
+
+    private void Ask_Click(object sender, RoutedEventArgs e)
+    {
+        bool want = AskSwitch.IsChecked == true;
+        if (CodexOnly)
+        {
+            if (want) { AskSwitch.IsChecked = false; ShowConfirm(); return; }
+            _settings = _settings with { AlsoForCodex = false };
+        }
+        else _settings = _settings with { AskBeforePublishing = want };
+        ApplySecurity();
+    }
+
+    private void Codex_Click(object sender, RoutedEventArgs e)
+    {
+        if (CodexSwitch.IsChecked == true) { CodexSwitch.IsChecked = false; ShowConfirm(); return; }
+        _settings = _settings with { AlsoForCodex = false };
+        ApplySecurity();
+    }
+
+    private void AskTick_Click(object sender, RoutedEventArgs e)
+    {
+        var tick = (CheckBox)sender;
+        var id = (string)tick.Tag;
+        var off = _settings.AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(x => x != id);
+        if (tick.IsChecked != true) off = off.Append(id);
+        _settings = _settings with { AskOff = string.Join(",", off.Order()) };
+        ApplySecurity();
+    }
+
+    private void ApplySecurity()
+    {
+        ShowSecurity();
+        SettingsChanged?.Invoke(_settings);
+    }
+
+    private void ShowConfirm()
+    {
+        CodexConfirm.Visibility = Visibility.Visible;
+        ConfirmCancel.Focus();
+    }
+
+    private void ConfirmOk_Click(object sender, RoutedEventArgs e)
+    {
+        CodexConfirm.Visibility = Visibility.Collapsed;
+        _settings = _settings with { AskBeforePublishing = true, AlsoForCodex = true };
+        ApplySecurity();
+        (CodexOnly ? AskSwitch : CodexSwitch).Focus();
+    }
+
+    private void ConfirmCancel_Click(object sender, RoutedEventArgs e) => CancelConfirm();
+
+    /// <summary>Closes the Codex confirm if it is open, for Esc. False when there was none to close.</summary>
+    public bool CancelConfirm()
+    {
+        if (CodexConfirm.Visibility != Visibility.Visible) return false;
+        CodexConfirm.Visibility = Visibility.Collapsed;
+        (CodexOnly ? AskSwitch : CodexSwitch).Focus();
+        return true;
+    }
+
+    /// <summary>
+    /// Your own rules (D7, D8), read each time the page shows and after a tick, for the notes.
+    /// Never written: Open file is the one way to them.
+    /// </summary>
+    private void ShowOwnRules()
+    {
+        OwnList.Children.Clear();
+        var agents = new List<(string Chip, string Name, OwnRules Rules)>();
+        if (_settings.UseClaude)
+            agents.Add(("CC", "Claude Code", OwnRulesReader.Claude(Path.Combine(StatusRelay.ClaudeConfigDir, "settings.json"), _settings)));
+        if (_settings.UseCodex)
+            agents.Add(("CX", "Codex", OwnRulesReader.Codex(AskRules.CodexHome, _settings)));
+
+        foreach (var (chip, name, own) in agents)
+        {
+            var head = new DockPanel { Margin = new(16, 10, 16, 10) };
+            if (own.File is { } file)
+            {
+                var link = new Hyperlink(new Run("Open file")) { Foreground = new SolidColorBrush(Color.FromRgb(0xE3, 0x9A, 0x7E)) };
+                link.Click += (_, _) => OpenFile(file);
+                var open = new TextBlock(link) { FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center };
+                DockPanel.SetDock(open, Dock.Right);
+                head.Children.Add(open);
+            }
+            var label = Chip(chip);
+            label.Margin = new(0, 0, 10, 0);
+            head.Children.Add(label);
+            head.Children.Add(new TextBlock { Text = name, Style = (Style)FindResource("RowTitle"), VerticalAlignment = VerticalAlignment.Center });
+
+            var body = new StackPanel { Margin = new(0, 4, 0, 4) };
+            if (own.Problem is { } problem)
+                body.Children.Add(new TextBlock { Text = problem, Style = (Style)FindResource("RowText"), Margin = new(16, 2, 16, 6) });
+            foreach (var rule in own.Rules) body.Children.Add(OwnRow(rule));
+
+            var section = new StackPanel();
+            section.Children.Add(new Border
+            {
+                Child = head, BorderBrush = (Brush)FindResource("Hairline"),
+                BorderThickness = new(0, OwnList.Children.Count == 0 ? 0 : 1, 0, 1)
+            });
+            section.Children.Add(body);
+            OwnList.Children.Add(section);
+        }
+    }
+
+    private UIElement OwnRow(OwnRule rule)
+    {
+        // In the status colours: allow green, ask and prompt blue, deny and forbidden red.
+        var (fg, bg) = rule.Decision switch
+        {
+            "allow" => ("#9FD3B1", "#246BBF8A"),
+            "deny" or "forbidden" => ("#EC9C99", "#29D2605F"),
+            _ => ("#9CCBEF", "#295AA9E6"),
+        };
+        var row = new Grid { Margin = new(16, 3, 16, 3) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.Children.Add(new Border
+        {
+            CornerRadius = new(4), Background = (Brush)new BrushConverter().ConvertFromString(bg)!,
+            VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 12, 0),
+            Child = new TextBlock
+            {
+                Text = rule.Decision, FontSize = 10.5, FontWeight = FontWeights.SemiBold, LineHeight = 18,
+                TextAlignment = TextAlignment.Center, Foreground = (Brush)new BrushConverter().ConvertFromString(fg)!
+            }
+        });
+        var text = new TextBlock
+        {
+            Text = rule.Rule, FontFamily = (FontFamily)FindResource("MonoFont"), FontSize = 11.5,
+            Foreground = (Brush)FindResource("TextPrimary"), TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center, ToolTip = rule.Rule
+        };
+        Grid.SetColumn(text, 1);
+        row.Children.Add(text);
+        var note = new TextBlock
+        {
+            Text = rule.Note, FontSize = 11, Foreground = (Brush)FindResource("NeedsInput"),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new(12, 0, 0, 0)
+        };
+        Grid.SetColumn(note, 2);
+        row.Children.Add(note);
+        return row;
+    }
+
+    // An agent's own file, in whatever opens it. A .rules file often has no app, so then Explorer shows it.
+    private static void OpenFile(string path)
+    {
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose(); }
+        catch (System.ComponentModel.Win32Exception) { Process.Start("explorer.exe", $"/select,\"{path}\"")?.Dispose(); }
+    }
+
     private void Nav_Checked(object sender, RoutedEventArgs e)
     {
         // Checked fires while InitializeComponent is still building the pages.
-        if (PageGeneral is null || PageStatus is null || PageIsland is null) return;
+        if (PageGeneral is null || PageStatus is null || PageSecurity is null || PageIsland is null) return;
         PageGeneral.Visibility = NavGeneral.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageSecurity.Visibility = NavSecurity.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageIsland.Visibility = NavIsland.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Opens setup, then puts the check back on the page still showing.</summary>
     private void Agents_Checked(object sender, RoutedEventArgs e)
     {
-        (PageStatus.IsVisible ? NavStatus : PageIsland.IsVisible ? NavIsland : NavGeneral).IsChecked = true;
+        (PageStatus.IsVisible ? NavStatus : PageSecurity.IsVisible ? NavSecurity : PageIsland.IsVisible ? NavIsland : NavGeneral).IsChecked = true;
         SetupRequested?.Invoke();
     }
 

@@ -115,6 +115,39 @@ try
     var none = Path.Combine(dir, "no-codex");
     AskRules.SyncCodex(codex, none);
     Check("a Codex home that doesn't exist is not created", Directory.Exists(none), false);
+
+    // Your own rules (P3, D7, D8): read only, in throwaway files.
+    var claudeFile = Path.Combine(dir, "claude-settings.json");
+    Check("claude: a missing file is one line", OwnRulesReader.Claude(claudeFile, on).Problem, "No settings file yet.");
+    File.WriteAllText(claudeFile, """{"permissions":{"allow":["Bash(npm test*)","Bash(git push*)"],"ask":["Bash(git commit*)"],"deny":["Read(./.env)"]},"model":"x"}""");
+    var own = OwnRulesReader.Claude(claudeFile, on);
+    Check("claude: allow, ask and deny read", string.Join(" ", own.Rules.Select(r => r.Decision)), "allow allow ask deny");
+    Check("claude: the rule as written", own.Rules[3].Rule, "Read(./.env)");
+    Check("claude: no note on an unrelated rule", own.Rules[0].Note, "");
+    Check("claude: allow of a ticked rule still asks", own.Rules[1].Note, "Push code still asks first");
+    Check("claude: unticked, it runs without asking",
+        OwnRulesReader.Claude(claudeFile, noTags with { AskOff = "push" }).Rules[1].Note, "Push code runs without asking");
+    Check("claude: switch off, it runs without asking", OwnRulesReader.Claude(claudeFile, off).Rules[1].Note, "Push code runs without asking");
+    Check("claude: Open file is the file", own.File, claudeFile);
+    File.WriteAllText(claudeFile, """{"permissions":{"allow":["Bash(""");
+    Check("claude: a broken file is one line", OwnRulesReader.Claude(claudeFile, on).Problem, "Couldn't read this file.");
+    File.WriteAllText(claudeFile, """{"permissions":{"allow":"Bash(x)"}}""");
+    Check("claude: a list that isn't one is skipped", OwnRulesReader.Claude(claudeFile, on).Rules.Count, 0);
+
+    var cxHome = Path.Combine(dir, "codex-own");
+    Check("codex: no rules folder is one line", OwnRulesReader.Codex(cxHome, codex).Problem, "No rules files yet.");
+    Directory.CreateDirectory(Path.Combine(cxHome, "rules"));
+    File.WriteAllText(Path.Combine(cxHome, "rules", "default.rules"),
+        "# mine\nprefix_rule(pattern=[\"git\", \"reset\"], decision=\"prompt\")\nprefix_rule(\n  pattern = [\"git\",\"push\"],\n  decision = \"allow\",\n)\nprefix_rule(pattern=[\"npm\", \"test\"])\n");
+    AskRules.SyncCodex(codex, cxHome);
+    var cx = OwnRulesReader.Codex(cxHome, codex);
+    Check("codex: Clayo's own file is not listed", cx.Rules.Count, 3);
+    Check("codex: decisions read", string.Join(" ", cx.Rules.Select(r => r.Decision)), "prompt allow allow");
+    Check("codex: a rule over several lines", cx.Rules[1].Rule, """["git", "push"]""");
+    Check("codex: no decision is Codex's allow", cx.Rules[2].Rule, """["npm", "test"]""");
+    Check("codex: allow of a ticked rule still asks", cx.Rules[1].Note, "Push code still asks first");
+    Check("codex: with Codex off it runs without asking", OwnRulesReader.Codex(cxHome, on).Rules[1].Note, "Push code runs without asking");
+    Check("codex: Open file is the user's file", Path.GetFileName(cx.File), "default.rules");
 }
 finally
 {

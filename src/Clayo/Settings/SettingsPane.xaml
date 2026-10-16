@@ -171,6 +171,19 @@
       </Setter>
     </Style>
 
+    <!-- CC or CX: which agent a row is about. Dim when that agent doesn't get the rule. -->
+    <Style x:Key="AgentChip" TargetType="Border">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="#323A46" />
+      <Setter Property="Background" Value="{StaticResource ChipBg}" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextElement.FontSize" Value="10" />
+      <Setter Property="TextElement.FontWeight" Value="SemiBold" />
+      <Setter Property="TextElement.Foreground" Value="{StaticResource TextPrimary}" />
+    </Style>
+
     <Style x:Key="LaterTag" TargetType="Border">
       <Setter Property="DockPanel.Dock" Value="Right" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -215,6 +228,8 @@
                        Content="General" IsChecked="True" Checked="Nav_Checked" />
           <RadioButton x:Name="NavStatus" Style="{StaticResource NavItem}" Tag="&#xE9D2;"
                        Content="Status bar" Checked="Nav_Checked" />
+          <RadioButton x:Name="NavSecurity" Style="{StaticResource NavItem}" Tag="&#xEA18;"
+                       Content="Security" Checked="Nav_Checked" />
           <Rectangle Height="1" Fill="{StaticResource Hairline}" Margin="8,8" />
           <!-- Not a page: it opens the setup window, and the page you were on stays picked. -->
           <RadioButton x:Name="NavAgents" Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents"
@@ -440,6 +455,71 @@
             </Border>
           </StackPanel>
 
+          <!-- Security: Ask before publishing (docs/PERMISSIONS.md, P3). The rule rows and
+               your own rules are filled in code. -->
+          <StackPanel x:Name="PageSecurity" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Security" />
+            <TextBlock Style="{StaticResource PageIntro}" Text="What sessions Clayo starts have to ask you before they do it." />
+
+            <TextBlock Style="{StaticResource GroupLabel}" Margin="0,0,0,8" Text="Ask before publishing" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="7,7,0,0"
+                        Tag="{Binding ElementName=AskSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xEA18;" />
+                    <CheckBox x:Name="AskSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Ask before publishing" Click="Ask_Click" />
+                    <TextBlock x:Name="AskState" Style="{StaticResource SwitchState}" Width="Auto" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Ask before publishing" />
+                      <TextBlock x:Name="AskText" Style="{StaticResource RowText}" />
+                      <TextBlock x:Name="AskOutside" Style="{StaticResource RowText}" Foreground="{StaticResource BandYellow}"
+                                 Text="Applies to Codex outside Clayo too." Visibility="Collapsed" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border x:Name="CodexRow" Style="{StaticResource SwitchRow}"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Tag="{Binding ElementName=CodexSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}" MinHeight="0" Margin="16,11">
+                    <Border Style="{StaticResource AgentChip}" Margin="0,0,22,0">
+                      <TextBlock Text="CX" Padding="0,2" />
+                    </Border>
+                    <CheckBox x:Name="CodexSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Also for Codex" Click="Codex_Click" />
+                    <TextBlock x:Name="CodexState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Also for Codex" />
+                      <TextBlock Style="{StaticResource RowText}" Foreground="{StaticResource BandYellow}"
+                                 Text="Applies to Codex outside Clayo too." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0" Padding="8,6">
+                  <StackPanel x:Name="AskList" AutomationProperties.Name="What it covers" />
+                </Border>
+                <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0">
+                  <TextBlock x:Name="AskFoot" Style="{StaticResource RowText}" Margin="16,11" />
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Margin="0,22,0,4">
+              <TextBlock Style="{StaticResource GroupLabel}" Margin="0" Text="Your own rules" VerticalAlignment="Center" />
+              <Border Style="{StaticResource LaterTag}" Margin="8,0,0,0" Padding="5,0">
+                <TextBlock Text="read-only" FontSize="10" LineHeight="16" Foreground="{StaticResource LaterText}" />
+              </Border>
+            </StackPanel>
+            <TextBlock Style="{StaticResource RowText}" Margin="0,0,0,8"
+                       Text="Already in your agents' settings. They apply alongside Clayo's." />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel x:Name="OwnList" />
+            </Border>
+          </StackPanel>
+
           <!-- Island: the screenshot picker (docs/SCREENSHOT.md). -->
           <StackPanel x:Name="PageIsland" Visibility="Collapsed">
             <TextBlock Style="{StaticResource PageTitle}" Text="Island" />
@@ -483,6 +563,26 @@
           </StackPanel>
         </Grid>
       </ScrollViewer>
+    </Grid>
+
+    <!-- Turning Codex on reaches outside Clayo, so it asks once (D9). Esc is Cancel (CancelConfirm). -->
+    <Grid x:Name="CodexConfirm" Grid.RowSpan="2" Background="#DB0A0C0F" Visibility="Collapsed">
+      <Border Width="420" Background="{StaticResource SurfaceBg}" BorderBrush="#323A46" BorderThickness="1"
+              CornerRadius="10" Padding="24,22,24,18" HorizontalAlignment="Center" VerticalAlignment="Center"
+              AutomationProperties.Name="Also ask before publishing in Codex?">
+        <StackPanel>
+          <TextBlock FontFamily="{StaticResource Display}" FontSize="15" FontWeight="SemiBold" Foreground="#E6E9EE"
+                     Text="Also ask before publishing in Codex?" />
+          <TextBlock Margin="0,10,0,0" FontSize="12.5" Foreground="{StaticResource MutedAA}" TextWrapping="Wrap"
+                     Text="Codex can't keep this inside Clayo. It will also ask in Codex sessions you start outside Clayo. Turn it off here any time." />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="ConfirmCancel" Content="Cancel" Style="{StaticResource GhostButton}" Click="ConfirmCancel_Click" />
+            <Button Content="Turn on for Codex" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                    BorderBrush="{StaticResource Clay}" Foreground="#E39A7E" FontWeight="SemiBold"
+                    Click="ConfirmOk_Click" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
     </Grid>
   </Grid>
 </UserControl>

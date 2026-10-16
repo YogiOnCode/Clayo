@@ -1629,7 +1629,7 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Escape && SettingsView.IsVisible)
         {
-            HideSettings();
+            if (!SettingsView.CancelConfirm()) HideSettings();
             e.Handled = true;
         }
         base.OnPreviewKeyDown(e);
