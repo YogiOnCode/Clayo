@@ -8,7 +8,7 @@
 
 ![Latest release](https://img.shields.io/github/v/release/YogiOnCode/Clayo)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
-![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)
+![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 </div>
@@ -128,7 +128,7 @@ are kept.
 
 ### Build from source
 
-You need the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```powershell
 git clone https://github.com/YogiOnCode/Clayo.git
@@ -138,8 +138,8 @@ dotnet publish src/Clayo -c Release -r win-x64 --self-contained false -o $env:LO
 
 Then run `clayo.exe` from there; the setup window takes care of `PATH`. Keep the `Assets\`
 folder next to `clayo.exe`, the terminal pane loads from it. `.\scripts\publish.ps1` builds
-the release zip instead. The self-checks in `checks/` need the .NET 10 SDK (they're
-file-based apps); the app itself builds with .NET 8.
+the release zip instead. The self-checks in `checks/` are
+file-based apps and run with the same SDK.
 
 ## Use
 
