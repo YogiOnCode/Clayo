@@ -155,6 +155,10 @@ public partial class TerminalPane : UserControl
         };
         _flushTimer.Tick += (_, __) => FlushOutput();
 
+        // Another session picked, Settings open, or the window hidden to the tray: the page
+        // drops its WebGL renderer while it can't be seen (terminal.html, gpu).
+        IsVisibleChanged += (_, __) => Post(new { t = "gpu", on = IsVisible });
+
         Loaded += OnLoaded;
     }
 
@@ -247,6 +251,8 @@ public partial class TerminalPane : UserControl
         switch (type)
         {
             case "ready":
+                // A pane hidden before its page was up missed the change.
+                if (!IsVisible) Post(new { t = "gpu", on = false });
                 // A reloaded page reports ready again; the shell it belongs to is already running.
                 if (_started)
                 {

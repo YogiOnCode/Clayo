@@ -112,11 +112,23 @@
   // The default DOM renderer is slow enough that Claude Code's full-screen redraws
   // show half-painted frames. WebGL paints a frame in one go. If the GPU context is
   // lost, dropping the addon falls back to the DOM renderer instead of a blank pane.
-  try {
-    const webgl = new WebglAddon.WebglAddon();
-    webgl.onContextLoss(function () { webgl.dispose(); });
-    term.loadAddon(webgl);
-  } catch (_) { /* no WebGL: DOM renderer */ }
+  // A hidden pane draws nothing, so it gives its GPU context up until it is shown ("gpu"):
+  // each one holds its own glyph textures in the GPU process.
+  let webgl = null;
+  function gpu(on) {
+    if (on && !webgl) {
+      try {
+        const addon = new WebglAddon.WebglAddon();
+        addon.onContextLoss(function () { addon.dispose(); if (webgl === addon) webgl = null; });
+        term.loadAddon(addon);
+        webgl = addon;
+      } catch (_) { /* no WebGL: DOM renderer */ }
+    } else if (!on && webgl) {
+      webgl.dispose();
+      webgl = null;
+    }
+  }
+  gpu(true);
 
   // --- base64 <-> bytes -------------------------------------------------
   // Raw bytes cross the bridge, never decoded text. A PTY read can split a
@@ -157,6 +169,9 @@
           break;
         case "focus":
           term.focus();
+          break;
+        case "gpu":                     // the pane was shown or hidden
+          gpu(msg.on);
           break;
         case "notice":                  // host-side message, e.g. process exit
           term.writeln("\r\n\x1b[38;5;244m" + msg.d + "\x1b[0m");
