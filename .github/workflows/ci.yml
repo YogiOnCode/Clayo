@@ -1,0 +1,45 @@
+# Every pull request and every push to main: Clayo builds with no warnings and every check
+# passes. The `windows` job is a required check on main, so a red run blocks the merge.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Actions are pinned to a commit, as a tag can be moved to other code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('src/**/*.csproj', 'checks/*.cs') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Build Debug
+        run: dotnet build src/Clayo -c Debug -warnaserror
+
+      - name: Build Release
+        run: dotnet build src/Clayo -c Release -warnaserror
+
+      - name: Checks
+        shell: pwsh
+        run: ./scripts/checks.ps1
