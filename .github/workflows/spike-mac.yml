@@ -1,0 +1,67 @@
+# Mac test (docs/MAC.md, M2b), on the throwaway spike/mac branch only: TermSpike for Apple silicon
+# as an ad-hoc signed .app, trimmed and untrimmed. Never merged.
+name: Spike Mac
+
+on:
+  push:
+    branches: [spike/mac]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish and bundle
+        run: |
+          set -euo pipefail
+          for kind in trimmed untrimmed; do
+            trim=false; [ "$kind" = trimmed ] && trim=true
+            out="pub/$kind"
+            dotnet publish spike/TermSpike -c Release -r osx-arm64 --self-contained \
+              -p:PublishTrimmed=$trim -p:SatelliteResourceLanguages=en -o "$out"
+            rm -f "$out"/*.pdb
+
+            app="dist/$kind/TermSpike.app"
+            mkdir -p "$app/Contents/MacOS"
+            cp -R "$out"/. "$app/Contents/MacOS/"
+            cat > "$app/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>TermSpike</string>
+            <key>CFBundleIdentifier</key><string>app.clayo.termspike</string>
+            <key>CFBundleExecutable</key><string>TermSpike</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>0.1</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+            codesign --force --deep -s - "$app"
+            codesign --verify --deep "$app"
+            (cd "dist/$kind" && ditto -c -k --keepParent TermSpike.app "../TermSpike-osx-arm64-$kind.zip")
+            du -sh "$app" "dist/TermSpike-osx-arm64-$kind.zip"
+          done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: TermSpike-osx-arm64
+          path: dist/*.zip
+          retention-days: 14
