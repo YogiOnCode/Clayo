@@ -1,0 +1,25 @@
+<!-- Throwaway test (docs/MAC.md, M2a): is a native terminal pane good enough for Claude Code, and how
+     much lighter is it than the WebView2 one? Never merged; only the findings stay. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Terminal.Avalonia" Version="0.4.4" />
+    <PackageReference Include="Iciclecreek.Avalonia.Terminal" Version="4.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Trimming drops its compiled theme (Themes/Generic.axaml) and the control can't load. -->
+    <TrimmerRootAssembly Include="Iciclecreek.Avalonia.Terminal" />
+  </ItemGroup>
+
+</Project>
