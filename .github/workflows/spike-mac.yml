@@ -61,13 +61,16 @@ jobs:
           done
 
       # Each build must still be running 15 s after start: shells spawned, pills shown at 5 s.
+      # Its log (what the pill code saw) is printed either way.
       - name: Start each build
         run: |
           for kind in trimmed untrimmed; do
             "dist/$kind/TermSpike.app/Contents/MacOS/TermSpike" > "start-$kind.log" 2>&1 &
             pid=$!
             sleep 15
-            if kill -0 $pid; then echo "$kind: running"; kill $pid; else echo "$kind: exited"; cat "start-$kind.log"; exit 1; fi
+            alive=false; kill -0 $pid && alive=true
+            echo "::group::$kind log"; cat "start-$kind.log"; echo "::endgroup::"
+            if $alive; then echo "$kind: running"; kill $pid; else echo "$kind: exited"; exit 1; fi
           done
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

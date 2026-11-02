@@ -12,7 +12,7 @@ using Terminal.Pty;
 // N panes, each running `cmd` in its own folder under root (pane1, pane2, ...). One shows at a time,
 // like Clayo; the buttons on the left switch, with AutomationIds pane1.. for driving it from a script.
 // --lib picks the terminal control: tav = Terminal.Avalonia, ice = Iciclecreek.Avalonia.Terminal.
-// On a Mac (M2b) it's always ice, each pane is the login shell (then `cmd`, if given), and two test
+// On a Mac (M2b) it's always ice, each pane is the login shell (then `cmd`, if given), and test
 // pills show under the menu bar: see Pill.
 static class Program
 {
@@ -121,10 +121,18 @@ static class Spike
         if (mac)
         {
             var pills = new Button { Content = "Show pills", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 16, 0, 0) };
-            pills.Click += (_, _) => Pill.ShowBoth(window);
+            pills.Click += (_, _) => Pill.ShowAll(window, control: true);
             buttons.Children.Add(pills);
-            // Also by itself after 5 s, so it can appear while you type in another app.
-            window.Opened += (_, _) => Avalonia.Threading.DispatcherTimer.RunOnce(() => Pill.ShowBoth(window), TimeSpan.FromSeconds(5));
+            // Also by itself after 5 s, so it can appear while you type in another app. Not C: it activates.
+            window.Opened += (_, _) => Avalonia.Threading.DispatcherTimer.RunOnce(() => Pill.ShowAll(window, control: false), TimeSpan.FromSeconds(5));
+
+            // What the pill code saw, at the bottom of the window and in Log.FilePath, for the tester to send.
+            Log.View = new SelectableTextBlock { FontFamily = new FontFamily("Menlo"), FontSize = 11, Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap };
+            var logView = new ScrollViewer { Height = 180, Content = Log.View };
+            DockPanel.SetDock(logView, Dock.Bottom);
+            layout.Children.Insert(0, logView);
+            Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) => Log.Write($"unhandled: {e.Exception}");
+            Log.Write($"start: macOS {Environment.OSVersion.Version}, {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}, from {AppContext.BaseDirectory}, log {Log.FilePath}");
         }
         return window;
     }
@@ -139,7 +147,10 @@ static class Pill
     static Window? a;
     static Avalonia.Controls.Primitives.Popup? b;
 
-    public static void ShowBoth(Window owner)
+    static Window? c;
+
+    // Each pill on its own, so one failing still shows the others; everything seen goes to Log.
+    public static void ShowAll(Window owner, bool control)
     {
         var screen = owner.Screens.Primary ?? owner.Screens.All[0];
         var area = screen.WorkingArea; // below the menu bar, in pixels
@@ -147,32 +158,58 @@ static class Pill
         const double w = 260, h = 34;
         var x = area.X + (area.Width - w * scale) / 2;
         var y = area.Y + 6 * scale;
+        Log.Write($"show (control {control}): {owner.Screens.All.Count} screen(s), primary bounds {screen.Bounds}, working area {area}, scale {scale}, pill at ({x}, {y})");
 
-        a ??= new Window
+        Try("A", () =>
         {
-            Width = w, Height = h, CanResize = false, Topmost = true, ShowActivated = false,
-            ShowInTaskbar = false, WindowDecorations = WindowDecorations.None,
-            Background = Brushes.Transparent, TransparencyLevelHint = [WindowTransparencyLevel.Transparent],
-            Content = Body("A · window"),
-        };
-        a.Position = new PixelPoint((int)x, (int)y);
-        a.Show();
-        Float(a, panel: false);
+            a ??= new Window
+            {
+                Width = w, Height = h, CanResize = false, Topmost = true, ShowActivated = false,
+                ShowInTaskbar = false, WindowDecorations = WindowDecorations.None,
+                Background = Brushes.Transparent, TransparencyLevelHint = [WindowTransparencyLevel.Transparent],
+                Content = Body("A · window"),
+            };
+            a.Position = new PixelPoint((int)x, (int)y);
+            a.Show();
+            Log.Write($"A: shown, IsVisible {a.IsVisible}, Position {a.Position}, ClientSize {a.ClientSize}, transparency {a.ActualTransparencyLevel}");
+            Float("A", a, panel: false);
+        });
 
         // B sits under A. A popup is placed relative to its owner, so turn the screen point into one.
-        var origin = owner.PointToScreen(new Point(0, 0));
-        b ??= new Avalonia.Controls.Primitives.Popup
+        Try("B", () =>
         {
-            PlacementTarget = owner, Placement = PlacementMode.AnchorAndGravity,
-            PlacementAnchor = Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft,
-            PlacementGravity = Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.BottomRight,
-            PlacementConstraintAdjustment = Avalonia.Controls.Primitives.PopupPositioning.PopupPositionerConstraintAdjustment.None,
-            IsLightDismissEnabled = false, Topmost = true, Child = Body("B · panel"),
-        };
-        if (b.Parent is null) ((Panel)((DockPanel)owner.Content!).Children[0]).Children.Add(b);
-        b.PlacementRect = new Rect((x - origin.X) / scale, (y + (h + 8) * scale - origin.Y) / scale, 1, 1);
-        b.IsOpen = true;
-        if (TopLevel.GetTopLevel(b.Child) is { } top) Float(top, panel: true); // the popup's own top level, its panel
+            var origin = owner.PointToScreen(new Point(0, 0));
+            b ??= new Avalonia.Controls.Primitives.Popup
+            {
+                PlacementTarget = owner, Placement = PlacementMode.AnchorAndGravity,
+                PlacementAnchor = Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft,
+                PlacementGravity = Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.BottomRight,
+                PlacementConstraintAdjustment = Avalonia.Controls.Primitives.PopupPositioning.PopupPositionerConstraintAdjustment.None,
+                IsLightDismissEnabled = false, Topmost = true, Child = Body("B · panel"),
+            };
+            // The buttons panel: the log view is the layout's first child on a Mac.
+            if (b.Parent is null) ((Panel)((DockPanel)owner.Content!).Children[1]).Children.Add(b);
+            b.PlacementRect = new Rect((x - origin.X) / scale, (y + (h + 8) * scale - origin.Y) / scale, 1, 1);
+            b.IsOpen = true;
+            var top = TopLevel.GetTopLevel(b.Child);
+            Log.Write($"B: owner origin {origin}, PlacementRect {b.PlacementRect}, IsOpen {b.IsOpen}, top level {top?.GetType().Name ?? "none"}");
+            if (top is not null) Float("B", top, panel: true); // the popup's own top level, its panel
+        });
+
+        // C: a plain window in the middle of the screen, none of the above. Only from the button.
+        if (control) Try("C", () =>
+        {
+            c ??= new Window { Title = "C · plain", Width = 300, Height = 80, WindowStartupLocation = WindowStartupLocation.CenterScreen, Content = Body("C · plain") };
+            c.Show();
+            Log.Write($"C: shown, IsVisible {c.IsVisible}, Position {c.Position}");
+            Describe("C", c);
+        });
+    }
+
+    static void Try(string name, Action show)
+    {
+        try { show(); }
+        catch (Exception e) { Log.Write($"{name}: FAILED {e}"); }
     }
 
     // A pill: rounded, dark, and counts clicks, so the tester sees a click arrive.
@@ -187,18 +224,58 @@ static class Pill
 
     // Above other apps (status level), on every Space and beside full-screen apps, kept when the app
     // isn't active. A panel also gets the non-activating style, so clicking it leaves focus alone.
-    static void Float(TopLevel top, bool panel)
+    static void Float(string name, TopLevel top, bool panel)
     {
-        if (top.TryGetPlatformHandle() is not Avalonia.Platform.IMacOSTopLevelPlatformHandle handle) return;
-        var win = handle.NSWindow;
+        var win = Describe(name, top);
         if (win == IntPtr.Zero) return;
         ObjC.Send(win, "setLevel:", 25L); // NSStatusWindowLevel
         ObjC.Send(win, "setCollectionBehavior:", (1UL << 0) | (1UL << 4) | (1UL << 8)); // all Spaces, stationary, full-screen auxiliary
         ObjC.Send(win, "setHidesOnDeactivate:", false);
-        if (!panel) return;
-        ObjC.Send(win, "setStyleMask:", ObjC.SendU(win, "styleMask") | (1UL << 7)); // NSWindowStyleMaskNonactivatingPanel
-        if (ObjC.Responds(win, "setBecomesKeyOnlyIfNeeded:")) ObjC.Send(win, "setBecomesKeyOnlyIfNeeded:", true);
-        if (ObjC.Responds(win, "setFloatingPanel:")) ObjC.Send(win, "setFloatingPanel:", true);
+        if (panel)
+        {
+            ObjC.Send(win, "setStyleMask:", ObjC.SendU(win, "styleMask") | (1UL << 7)); // NSWindowStyleMaskNonactivatingPanel
+            if (ObjC.Responds(win, "setBecomesKeyOnlyIfNeeded:")) ObjC.Send(win, "setBecomesKeyOnlyIfNeeded:", true);
+            if (ObjC.Responds(win, "setFloatingPanel:")) ObjC.Send(win, "setFloatingPanel:", true);
+        }
+        Log.Write($"{name}: floated");
+        Describe(name, top);
+    }
+
+    // What the Mac itself says about the window: its class, whether it's on screen, where (points,
+    // origin bottom left), level and style. Returns the NSWindow, or zero when there's none.
+    static IntPtr Describe(string name, TopLevel top)
+    {
+        var handle = top.TryGetPlatformHandle();
+        if (handle is not Avalonia.Platform.IMacOSTopLevelPlatformHandle mac)
+        {
+            Log.Write($"{name}: no Mac handle ({handle?.GetType().Name ?? "null"})");
+            return IntPtr.Zero;
+        }
+        var win = mac.NSWindow;
+        if (win == IntPtr.Zero) { Log.Write($"{name}: NSWindow is zero"); return win; }
+        var f = ObjC.Frame(win);
+        Log.Write($"{name}: {ObjC.ClassName(win)} visible {ObjC.SendB(win, "isVisible")}, onActiveSpace {ObjC.SendB(win, "isOnActiveSpace")}, frame ({f.X}, {f.Y}, {f.W} x {f.H}), level {ObjC.SendU(win, "level")}, styleMask 0x{ObjC.SendU(win, "styleMask"):x}, alpha {ObjC.SendD(win, "alphaValue")}");
+        return win;
+    }
+}
+
+// Appends to ~/Library/Logs/TermSpike.log (Console.app shows it too), stdout, and the window's log view.
+static class Log
+{
+    public static readonly string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Logs", "TermSpike.log");
+    public static SelectableTextBlock? View;
+
+    public static void Write(string text)
+    {
+        var line = $"{DateTime.Now:HH:mm:ss.fff} {text}";
+        Console.WriteLine(line);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            File.AppendAllText(FilePath, line + "\n");
+        }
+        catch (Exception e) { Console.WriteLine($"log file: {e.Message}"); }
+        if (View is not null) View.Text += line + "\n";
     }
 }
 
@@ -216,5 +293,16 @@ static class ObjC
     public static void Send(IntPtr o, string sel, long v) => MsgL(o, sel_registerName(sel), v);
     public static void Send(IntPtr o, string sel, ulong v) => MsgUL(o, sel_registerName(sel), v);
     public static void Send(IntPtr o, string sel, bool v) => MsgB(o, sel_registerName(sel), v);
+    [System.Runtime.InteropServices.DllImport(Lib, EntryPoint = "objc_msgSend")] [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.I1)] static extern bool MsgB0(IntPtr o, IntPtr sel);
+    [System.Runtime.InteropServices.DllImport(Lib, EntryPoint = "objc_msgSend")] static extern double MsgD(IntPtr o, IntPtr sel);
+    [System.Runtime.InteropServices.DllImport(Lib, EntryPoint = "objc_msgSend")] static extern CGRect MsgRect(IntPtr o, IntPtr sel); // arm64: no _stret
+    [System.Runtime.InteropServices.DllImport(Lib)] static extern IntPtr object_getClassName(IntPtr o);
+
+    public record struct CGRect(double X, double Y, double W, double H);
+
     public static bool Responds(IntPtr o, string sel) => MsgSelB(o, sel_registerName("respondsToSelector:"), sel_registerName(sel));
+    public static bool SendB(IntPtr o, string sel) => MsgB0(o, sel_registerName(sel));
+    public static double SendD(IntPtr o, string sel) => MsgD(o, sel_registerName(sel));
+    public static CGRect Frame(IntPtr o) => MsgRect(o, sel_registerName("frame"));
+    public static string ClassName(IntPtr o) => System.Runtime.InteropServices.Marshal.PtrToStringUTF8(object_getClassName(o)) ?? "?";
 }
