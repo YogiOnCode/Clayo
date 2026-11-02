@@ -390,6 +390,7 @@ public partial class IslandWindow : Window
         {
             null when compact && !greeting => IslandGlow.Blue,
             null => IslandGlow.Warm,
+            NoteKind.NeedsYou => IslandGlow.Blue,
             NoteKind.Done => IslandGlow.Green,
             NoteKind.Tip => IslandGlow.Warm,
             _ => IslandGlow.Amber,
