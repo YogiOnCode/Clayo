@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="clayo-page" content="1">
+<title>Deck title</title>
+<link rel="stylesheet" href="clayo-page.css">
+</head><body>
+<!-- One <section class="slide"> per slide, 16:9. One idea per slide; a heading and at most
+     4 bullets, or one chart, or one number. Delete the layouts you don't need. -->
+<main class="deck">
+  <section class="slide title">
+    <h1>Deck title</h1>
+    <p class="lead">The one-line message of the whole deck.</p>
+  </section>
+
+  <section class="slide">
+    <h2>A heading that states the point</h2>
+    <ul>
+      <li>A short bullet, one line.</li>
+      <li>Another, with the <strong>key term</strong> in bold.</li>
+      <li>At most four.</li>
+    </ul>
+  </section>
+
+  <section class="slide big-number">
+    <b>42%</b>
+    <p class="lead">What the number is, in one line.</p>
+  </section>
+
+  <section class="slide split">
+    <div>
+      <h2>Text on the left</h2>
+      <p>Two or three sentences about what the chart shows.</p>
+    </div>
+    <script type="application/json" class="chart">
+      {"type":"bar","labels":["A","B","C"],"series":[{"name":"Series","data":[4,7,2]}]}
+    </script>
+  </section>
+
+  <section class="slide">
+    <h2>Numbers side by side</h2>
+    <div class="kpis">
+      <div class="kpi"><b>312</b><span>label</span></div>
+      <div class="kpi good"><b>98%</b><span>label</span></div>
+      <div class="kpi bad"><b>4</b><span>label</span></div>
+    </div>
+  </section>
+
+  <section class="slide quote">
+    <blockquote>A sentence worth a slide of its own.</blockquote>
+    <cite>Who said it</cite>
+  </section>
+</main>
+<script src="clayo-page.js"></script>
+</body></html>

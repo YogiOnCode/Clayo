@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="clayo-page" content="1">
+<title>Dashboard title</title>
+<link rel="stylesheet" href="clayo-page.css">
+</head><body>
+<main class="page">
+  <header>
+    <h1>Dashboard title</h1>
+    <p class="lead">What these numbers cover and the one thing they say.</p>
+  </header>
+
+  <!-- 3 to 6 headline numbers. Add good / warn / bad where the number is one of those. -->
+  <section class="kpis">
+    <div class="kpi"><b>1,284</b><span>label</span><small>+8% vs last week</small></div>
+    <div class="kpi good"><b>99.2%</b><span>label</span></div>
+    <div class="kpi warn"><b>340 ms</b><span>label</span></div>
+    <div class="kpi bad"><b>7</b><span>label</span></div>
+  </section>
+
+  <!-- Charts side by side; they stack on a phone. One message per chart. -->
+  <section class="grid">
+    <script type="application/json" class="chart">
+      {"type":"line","title":"Trend title","labels":["Mon","Tue","Wed","Thu","Fri"],"series":[{"name":"This week","data":[12,19,14,22,25]},{"name":"Last week","data":[10,14,13,17,19]}]}
+    </script>
+    <script type="application/json" class="chart">
+      {"type":"doughnut","title":"Breakdown title","labels":["A","B","C"],"series":[{"name":"Share","data":[55,30,15]}]}
+    </script>
+  </section>
+
+  <!-- The rows behind the numbers. -->
+  <section>
+    <h2>Table title</h2>
+    <table class="table" data-sortable>
+      <thead><tr><th>Name</th><th>Status</th><th>Value</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td>First</td><td><span class="badge good">ok</span></td><td>812</td><td>+4%</td></tr>
+        <tr><td>Second</td><td><span class="badge warn">slow</span></td><td>472</td><td>-2%</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+<script src="clayo-page.js"></script>
+</body></html>
