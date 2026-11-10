@@ -404,6 +404,17 @@
                     Click="DocChip_Click">
               <TextBlock Text="&#xF000;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
             </Button>
+            <Button x:Name="PageChip"
+                    Style="{StaticResource QuietButton}"
+                    BorderThickness="0" Padding="7,5" Margin="0,0,2,0"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="Pages the session made"
+                    Click="PageChip_Click">
+              <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+              <Button.ContextMenu>
+                <ContextMenu x:Name="PageMenu" Opened="PageMenu_Opened" />
+              </Button.ContextMenu>
+            </Button>
             <Button x:Name="ImagesChip"
                     Style="{StaticResource QuietButton}"
                     BorderThickness="0" Padding="7,5"

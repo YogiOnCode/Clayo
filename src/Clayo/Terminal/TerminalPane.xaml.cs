@@ -83,6 +83,9 @@ public partial class TerminalPane : UserControl
     /// <summary>The doc viewer is showing beside or over the terminal.</summary>
     public bool DocOpen { get; private set; }
 
+    /// <summary>The page the viewer is showing in the doc's place, if it is showing one.</summary>
+    public string? PageOpen { get; private set; }
+
     /// <summary>
     /// Text to type into Claude's input once, without Enter, so you finish the prompt and
     /// send it yourself. Typed on the pane's first quiet after the claude command (see
@@ -215,6 +218,14 @@ public partial class TerminalPane : UserControl
         {
             if (!args.Uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase)) args.Cancel = true;
         };
+        // The viewer's frames are filled in place (srcdoc) and go nowhere: a page that could
+        // send its frame to a web address could carry what it read out in that address.
+        core.FrameNavigationStarting += (_, args) =>
+        {
+            if (!args.Uri.StartsWith("about:", StringComparison.OrdinalIgnoreCase)) args.Cancel = true;
+        };
+        // Clayo is dark, so a page shows in its dark theme whatever Windows is set to.
+        core.Profile.PreferredColorScheme = CoreWebView2PreferredColorScheme.Dark;
         // No windows inside Clayo. Links in the output come over as "link" messages instead.
         core.NewWindowRequested += (_, args) => args.Handled = true;
         // A crashed renderer leaves a blank pane; the shell behind it is still running.
@@ -257,6 +268,7 @@ public partial class TerminalPane : UserControl
                 if (_started)
                 {
                     DocOpen = false;   // the new page starts without the viewer
+                    PageOpen = null;
                     _pty.Resize(_ptySize.Item1, _ptySize.Item2);   // repaints the screen
                     break;
                 }
@@ -302,6 +314,7 @@ public partial class TerminalPane : UserControl
 
             case "mdclosed":
                 DocOpen = false;
+                PageOpen = null;
                 break;
 
             case "tags":
@@ -615,14 +628,53 @@ public partial class TerminalPane : UserControl
             text = $"*Couldn't read {Path.GetFileName(path)}: {e.Message}*";
         }
         DocOpen = true;
+        PageOpen = null;
         Post(new { t = "md", name = Path.GetFileName(path), d = text });
     }
 
+    /// <summary>Closes the viewer, whether it shows a doc or a page.</summary>
     public void HideDoc()
     {
         DocOpen = false;
+        PageOpen = null;
         Post(new { t = "mdclose" });
     }
+
+    // Past this a page is carrying a library or a dataset it should not.
+    private const long PageLimit = 5 * 1024 * 1024;
+
+    private (string Path, DateTime At) _pageShown;
+
+    /// <summary>
+    /// Shows a page an agent wrote in the viewer, in the doc's place, or shows it again if it
+    /// changed since. Unlike a doc its scripts run, so it goes in a frame sealed off from Clayo
+    /// and the network (PageHtml.Seal, and the frame's sandbox in terminal.html).
+    /// </summary>
+    public void ShowPage(string path)
+    {
+        var at = File.GetLastWriteTimeUtc(path);
+        if (PageOpen == path && _pageShown == (path, at)) return;
+        _pageShown = (path, at);
+
+        string html;
+        try
+        {
+            html = new FileInfo(path).Length > PageLimit
+                ? PageNote($"{Path.GetFileName(path)} is too big to show here.")
+                : PageHtml.Seal(File.ReadAllText(path));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            html = PageNote($"Couldn't read {Path.GetFileName(path)}: {e.Message}");
+        }
+        PageOpen = path;
+        DocOpen = false;
+        Post(new { t = "page", name = Path.GetFileName(path), d = html });
+    }
+
+    private static string PageNote(string text) =>
+        "<!doctype html><body style=\"margin:0;padding:18px 24px;background:#14171c;color:#7a828f;font:14px 'Segoe UI',sans-serif\">"
+        + System.Net.WebUtility.HtmlEncode(text);
 
     public void FocusTerminal()
     {

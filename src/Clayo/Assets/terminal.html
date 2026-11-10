@@ -43,6 +43,8 @@
   #md button:hover { background: #222731; color: #c8cdd6; }
   #md button.on { color: #d4a24c; }
   #md iframe { flex: 1; width: 100%; border: 0; background: #14171c; }
+  /* One frame at a time: the doc's, or the page's. */
+  #md[data-kind="page"] #mdframe, #md:not([data-kind="page"]) #pageframe { display: none; }
 </style>
 </head>
 <body>
@@ -58,6 +60,10 @@
   <!-- No allow-scripts: nothing in a doc can run. Same origin only so the page can keep the
        scroll position and send links to the browser. -->
   <iframe id="mdframe" sandbox="allow-same-origin"></iframe>
+  <!-- A page an agent wrote: its scripts run, so no allow-same-origin. It gets an origin of its
+       own and cannot reach this page, the host or a file; its policy (PageHtml.Seal) keeps it
+       off the network. It talks to this page only in the messages handled below. -->
+  <iframe id="pageframe" sandbox="allow-scripts"></iframe>
 </div>
 
 <script src="xterm/xterm.js"></script>
@@ -179,6 +185,9 @@
         case "md":                      // show a doc, or show it again after it changed
           showDoc(msg.name, msg.d);
           break;
+        case "page":                    // show a page, or show it again after it changed
+          showPage(msg.name, msg.d);
+          break;
         case "mdclose":
           closeDoc(false);
           break;
@@ -254,6 +263,8 @@
     const doc = mdFrame.contentDocument;
     const y = name === mdName.textContent && doc && doc.scrollingElement ? doc.scrollingElement.scrollTop : 0;
     mdName.textContent = name;
+    md.dataset.kind = "doc";
+    pageFrame.srcdoc = "";
     if (!md.className) setMode("split");
     const body = window.marked ? marked.parse(text) : "<pre>" + escapeHtml(text) + "</pre>";
     mdFrame.onload = function () {
@@ -275,9 +286,41 @@
     setMode("");
     mdName.textContent = "";
     mdFrame.srcdoc = "";
+    pageFrame.srcdoc = "";
     if (tellHost) send({ t: "mdclosed" });
     term.focus();
   }
+
+  // --- page viewer ------------------------------------------------------
+  // Same panel as a doc, its own sealed frame. The page arrives ready to show (PageHtml.Seal).
+
+  const pageFrame = document.getElementById("pageframe");
+  // Where you were in the page, as it reports it: this page cannot look inside the frame.
+  let pagePlace = { name: "", y: 0, slide: 0 };
+
+  function showPage(name, html) {
+    // The same page again keeps its place; a different one starts at the top.
+    if (name !== pagePlace.name) pagePlace = { name: name, y: 0, slide: 0 };
+    mdName.textContent = name;
+    md.dataset.kind = "page";
+    mdFrame.srcdoc = "";
+    if (!md.className) setMode("split");
+    pageFrame.srcdoc = html;
+  }
+
+  window.addEventListener("message", function (e) {
+    const m = e.data;
+    if (e.source !== pageFrame.contentWindow || !m) return;
+    if (m.t === "link") {
+      // Web links open in your browser, after asking, as a doc's do.
+      if (/^https?:/i.test(m.href) && confirm("Open this link in your browser?\n\n" + m.href)) send({ t: "link", d: String(m.href) });
+    } else if (m.t === "ready") {
+      pageFrame.contentWindow.postMessage({ t: "place", y: pagePlace.y, slide: pagePlace.slide }, "*");
+    } else if (m.t === "place") {
+      pagePlace.y = +m.y || 0;
+      pagePlace.slide = +m.slide || 0;
+    }
+  });
 
   // Dragging the grip sets the doc's share of the width, kept for the next time it opens. The
   // terminal follows through the ResizeObserver below, which already coalesces the resizes.

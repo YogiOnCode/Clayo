@@ -76,6 +76,21 @@ try
     tail.Read(file);
     Check("  nor one of Claude's meta lines", tail.PromptAt, DateTime.Parse(Ts(sent), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime());
 
+    // Pages: an .html the session wrote in .clayo/pages, and nowhere else.
+    var pageA = Doc(".clayo", "pages", "a.html");
+    var pageB = Doc(".clayo", "pages", "b.html");
+    Doc("site", "index.html");
+    Check("no page yet", tail.Page, null);
+    File.AppendAllText(file, Write(pageA, opened.AddSeconds(10)) + "\n");
+    Check("a page written in .clayo/pages: seen", tail.Read(file) ? tail.Page : null, pageA);
+    Check("  and the doc stays the doc", tail.Doc, Path.Combine(folder, "HALF.md"));
+    File.AppendAllText(file, Write(Path.Combine(folder, "site", "index.html"), opened.AddSeconds(11)) + "\n");
+    Check("an .html outside .clayo/pages: not a page", tail.Read(file), false);
+    File.AppendAllText(file, Write(pageB, opened.AddSeconds(12)) + "\n" + Write(pageA, opened.AddSeconds(13)) + "\n");
+    tail.Read(file);
+    Check("a page written again is the newest, listed once", string.Join(",", tail.Pages.Select(Path.GetFileName)), "b.html,a.html");
+    Check("  and each write is counted", tail.PageWrites, 3);
+
     // Codex
     var cfile = Path.Combine(dir, "c.jsonl");
     File.WriteAllText(cfile, Patch("notes/README.md", opened.AddSeconds(1)) + "\n");
@@ -92,6 +107,11 @@ try
     File.AppendAllText(cfile, $"{{\"timestamp\":\"{Ts(opened.AddSeconds(3))}\",\"type\":\"response_item\",\"payload\":{{\"type\":\"custom_tool_call\",\"name\":\"exec\",\"input\":{Esc($"const r = await tools.apply_patch({Esc("*** Begin Patch\n*** Add File: docs/scratch/codex-test.md\n+# hi\n*** End Patch\n")});")}}}}}\n");
     File.AppendAllText(cfile, $"{{\"timestamp\":\"{Ts(opened.AddSeconds(3))}\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"type\":\"FileChange\",\"changes\":{{{Esc(Path.Combine(folder, "docs", "scratch", "codex-test.md"))}:{{\"type\":\"add\",\"content\":\"# hi\\n\"}}}}}}}}}}\n");
     Check("codex: a patch run from exec (code mode)", ctail.Read(cfile) ? ctail.Doc : null, Path.Combine(folder, "docs", "scratch", "codex-test.md"));
+
+    File.AppendAllText(cfile, Patch(".clayo/pages/a.html", opened.AddSeconds(3)) + "\n");
+    Check("codex: a patch adding a page", ctail.Read(cfile) ? ctail.Page : null, pageA);
+    File.AppendAllText(cfile, Patch("site/index.html", opened.AddSeconds(3)) + "\n");
+    Check("codex: an .html outside .clayo/pages: not a page", ctail.Read(cfile), false);
 
     string CodexUser(string text, DateTime at) =>
         $"{{\"timestamp\":\"{Ts(at)}\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":{Esc(text)}}}]}}}}";

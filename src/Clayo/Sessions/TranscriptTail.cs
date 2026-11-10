@@ -6,10 +6,10 @@ using System.Text.RegularExpressions;
 namespace CcxShell.Core;
 
 /// <summary>
-/// An open pane's transcript, read as it grows, a few new lines at a time. Two things come out
-/// of it: the last markdown file the session wrote inside its folder (the doc chip), and when
-/// you last sent a prompt (which clears the image chip). Prompts from before the pane opened
-/// are skipped. Never writes.
+/// An open pane's transcript, read as it grows, a few new lines at a time. Three things come
+/// out of it: the last markdown file the session wrote inside its folder (the doc chip), the
+/// pages it wrote in .clayo/pages (the Pages chip), and when you last sent a prompt (which
+/// clears the image chip). Prompts from before the pane opened are skipped. Never writes.
 /// </summary>
 public sealed class TranscriptTail
 {
@@ -18,6 +18,8 @@ public sealed class TranscriptTail
     private const long FirstWindow = 512 * 1024;
 
     private readonly string _folder;
+    private readonly string _pageFolder;
+    private readonly List<string> _pages = [];
     private readonly DateTime _since;
     private readonly bool _codex;
     private string? _file;
@@ -26,17 +28,27 @@ public sealed class TranscriptTail
     /// <summary>The newest .md the session wrote or edited inside its folder, if any.</summary>
     public string? Doc { get; private set; }
 
+    /// <summary>The newest page the session wrote or edited in .clayo/pages, if any.</summary>
+    public string? Page => _pages.Count > 0 ? _pages[^1] : null;
+
+    /// <summary>Every page the session wrote, the newest last.</summary>
+    public IReadOnlyList<string> Pages => _pages;
+
+    /// <summary>How many times a page was written, so a caller can tell a read that saw one.</summary>
+    public int PageWrites { get; private set; }
+
     /// <summary>When you last sent a prompt, UTC. MinValue until you do.</summary>
     public DateTime PromptAt { get; private set; } = DateTime.MinValue;
 
     public TranscriptTail(string folder, DateTime sinceUtc, bool codex)
     {
         _folder = Path.GetFullPath(folder).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+        _pageFolder = Path.Combine(_folder, ".clayo", "pages") + Path.DirectorySeparatorChar;
         _since = sinceUtc;
         _codex = codex;
     }
 
-    /// <summary>Reads what was added since the last call. True when a doc was written meanwhile.</summary>
+    /// <summary>Reads what was added since the last call. True when a doc or a page was written meanwhile.</summary>
     public bool Read(string file)
     {
         bool wrote = false;
@@ -72,7 +84,8 @@ public sealed class TranscriptTail
     private bool ReadLine(string line)
     {
         // Most lines are neither; only these few are parsed.
-        bool doc = line.Contains(".md", StringComparison.OrdinalIgnoreCase);
+        bool doc = line.Contains(".md", StringComparison.OrdinalIgnoreCase)
+            || line.Contains(".html", StringComparison.OrdinalIgnoreCase);
         // A prompt you sent: Claude's user line that is not a tool result or Claude's own meta
         // line, or Codex's user message (UserText below drops the context Codex sends as user
         // messages of its own).
@@ -96,11 +109,22 @@ public sealed class TranscriptTail
             && (!_codex || CodexSessionStore.UserText(line) is not null)) PromptAt = at;
         if (!doc) return false;
 
-        var found = (_codex ? CodexPaths(line, el) : ClaudePaths(el))
-            .Select(Inside).LastOrDefault(p => p is not null);
-        if (found is null) return false;
-        Doc = found;
-        return true;
+        bool wrote = false;
+        foreach (var path in _codex ? CodexPaths(line, el) : ClaudePaths(el))
+            if (Inside(path, ".md", _folder) is { } md)
+            {
+                Doc = md;
+                wrote = true;
+            }
+            else if (Inside(path, ".html", _pageFolder) is { } page)
+            {
+                // Written again: it moves to the end, as the newest.
+                _pages.RemoveAll(p => string.Equals(p, page, StringComparison.OrdinalIgnoreCase));
+                _pages.Add(page);
+                PageWrites++;
+                wrote = true;
+            }
+        return wrote;
     }
 
     /// <summary>The file_path of each Write or Edit in an assistant line.</summary>
@@ -142,14 +166,14 @@ public sealed class TranscriptTail
         }
     }
 
-    /// <summary>The full path when it is a .md inside the session's folder that still exists, else null.</summary>
-    private string? Inside(string path)
+    /// <summary>The full path when it has that extension, is inside that folder and still exists, else null.</summary>
+    private string? Inside(string path, string extension, string folder)
     {
-        if (!path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!path.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) return null;
         try
         {
             var full = Path.GetFullPath(Path.Combine(_folder, path));
-            return full.StartsWith(_folder, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
+            return full.StartsWith(folder, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
         }
         catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
     }
