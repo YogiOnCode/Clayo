@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="clayo-page" content="1">
+<title>Report title</title>
+<link rel="stylesheet" href="clayo-page.css">
+</head><body>
+<main class="page">
+  <!-- The answer first: the title says what this is, the lead says what was found. -->
+  <header>
+    <h1>Report title</h1>
+    <p class="lead">One or two sentences with the conclusion, including the key number.</p>
+    <div class="row"><span class="badge">Scope or date</span><span class="badge good">Status</span></div>
+  </header>
+
+  <!-- The 2 to 4 numbers that matter. Add good / warn / bad to colour one. -->
+  <section class="kpis">
+    <div class="kpi"><b>312</b><span>label</span></div>
+    <div class="kpi good"><b>98.7%</b><span>label</span><small>+1.2 since last run</small></div>
+    <div class="kpi bad"><b>4</b><span>label</span></div>
+  </section>
+
+  <!-- One section per finding. Keep prose short; put numbers in a table or chart. -->
+  <section>
+    <h2>First finding</h2>
+    <p>What you found and why it matters, in two or three sentences.</p>
+    <div class="callout warn"><strong>Watch out.</strong> The one thing the reader must not miss.</div>
+  </section>
+
+  <section>
+    <h2>Details</h2>
+    <table class="table" data-sortable>
+      <thead><tr><th>Item</th><th>Status</th><th>Count</th><th>Time</th></tr></thead>
+      <tbody>
+        <tr><td><code>auth/login</code></td><td><span class="badge bad">failed</span></td><td>4</td><td>1.8 s</td></tr>
+        <tr><td><code>api/users</code></td><td><span class="badge good">passed</span></td><td>120</td><td>0.6 s</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Chart or diagram</h2>
+    <script type="application/json" class="chart">
+      {"type":"bar","title":"Chart title","labels":["A","B","C"],"series":[{"name":"Series","data":[4,7,2]}]}
+    </script>
+  </section>
+
+  <section>
+    <h2>Next steps</h2>
+    <ol class="steps">
+      <li><strong>Do this first.</strong> Why, in a few words.</li>
+      <li><strong>Then this.</strong> Why, in a few words.</li>
+    </ol>
+  </section>
+</main>
+<script src="clayo-page.js"></script>
+</body></html>
