@@ -661,11 +661,23 @@ public partial class MainWindow : Window
         foreach (var row in _rows.Values)
             if (row.Pane is { } p && row.Info?.File is { } file)
             {
+                // The first read is the session's history: a page from then waits behind its chip.
+                bool history = p.Tail is null;
                 p.Tail ??= new TranscriptTail(p.WorkingDirectory, p.OpenedAt, p.Agent == AgentKind.Codex);
+                int pages = p.Tail.PageWrites;
                 p.Tail.Read(file);
                 if (p.DocOpen && p.Tail.Doc is { } doc) p.ShowDoc(doc);
+                // A page the session just wrote opens by itself: you asked for it. An open one
+                // follows its file, as a doc does.
+                if (p.Tail.PageWrites != pages && p.Tail.Page is { } page)
+                {
+                    PageFolder.HideFromGit(p.WorkingDirectory);
+                    if (!history) p.ShowPage(page);
+                }
+                else if (p.PageOpen is { } open && File.Exists(open)) p.ShowPage(open);
             }
         ShowDocChip();
+        ShowPageChip();
 
         // Drop rows whose transcript vanished, unless they are open in this window.
         foreach (var gone in _rows.Where(kv => !seen.Contains(kv.Key) && !kv.Value.IsOpen)
@@ -1153,6 +1165,7 @@ public partial class MainWindow : Window
             ShowStatusBar();
             ShowImages();
             ShowDocChip();
+            ShowPageChip();
             ForkButton.IsEnabled = false;
             AttachButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
@@ -1313,6 +1326,7 @@ public partial class MainWindow : Window
         ShowStatusBar();
         ShowImages();
         ShowDocChip();
+        ShowPageChip();
         pane.FocusTerminal();
     }
 
@@ -1469,6 +1483,36 @@ public partial class MainWindow : Window
         else pane.ShowDoc(doc);
         // The click left focus on the chip, and a touchpad only scrolls the pane while it has focus.
         pane.FocusTerminal();
+    }
+
+    /// <summary>The pages the active session wrote in .clayo/pages, if it wrote any.</summary>
+    private void ShowPageChip()
+    {
+        var page = _active?.Tail?.Page;
+        PageChip.Visibility = page is null ? Visibility.Collapsed : Visibility.Visible;
+        if (page is null) return;
+        PageChip.ToolTip = $"{Path.GetFileName(page)}\n{page}\nClick to see it here, again to close it. Right-click for the session's other pages.";
+    }
+
+    private void PageChip_Click(object sender, RoutedEventArgs e)
+    {
+        if (_active is not { Tail.Page: { } page } pane) return;
+        if (pane.PageOpen is not null) pane.HideDoc();
+        else pane.ShowPage(page);
+        pane.FocusTerminal();
+    }
+
+    /// <summary>The session's pages, the newest first, each opening in the viewer.</summary>
+    private void PageMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        PageMenu.Items.Clear();
+        if (_active is not { Tail: { } tail } pane) return;
+        foreach (var page in tail.Pages.Reverse().Where(File.Exists))
+        {
+            var item = new MenuItem { Header = Path.GetFileName(page), IsChecked = pane.PageOpen == page };
+            item.Click += (_, _) => { pane.ShowPage(page); pane.FocusTerminal(); };
+            PageMenu.Items.Add(item);
+        }
     }
 
     // ------------------------------------------------------------ screenshots

@@ -252,7 +252,10 @@
       count.textContent = (at + 1) + " / " + slides.length;
       // A sealed frame may not change its own address; the deck works without it.
       if (!quiet) try { history.replaceState(null, "", "#" + (at + 1)); } catch (e) { }
+      if (!quiet) tellPlace();
     }
+    deckAt = function () { return at; };
+    deckGo = function (n) { go(n, true); };
     function fromHash() { return (parseInt(location.hash.slice(1), 10) || 1) - 1; }
 
     nav.firstChild.addEventListener("click", function () { go(at - 1); });
@@ -272,6 +275,28 @@
     deck.classList.add("js");
     deck.setAttribute("data-slides", slides.length);
     go(fromHash(), true);
+  }
+
+  // ---- Place: inside Clayo, a page shown again after an edit opens where you were ----
+
+  var deckAt = null, deckGo = null, placeTimer;
+
+  function tellPlace() {
+    if (!embedded) return;
+    clearTimeout(placeTimer);
+    placeTimer = setTimeout(function () {
+      window.parent.postMessage({ t: "place", y: window.scrollY, slide: deckAt ? deckAt() : 0 }, "*");
+    }, 150);
+  }
+
+  function setupPlace() {
+    if (!embedded) return;
+    window.addEventListener("scroll", tellPlace, { passive: true });
+    window.addEventListener("message", function (e) {
+      if (e.source !== window.parent || !e.data || e.data.t !== "place") return;
+      if (deckGo) deckGo(+e.data.slide || 0);
+      window.scrollTo(0, +e.data.y || 0);
+    });
   }
 
   // ---- Links: inside Clayo the viewer opens them, after asking ----
@@ -296,6 +321,7 @@
 
   setupTables();
   setupDeck();
+  setupPlace();
   setupLinks();
 
   function retheme() { if (window.Chart) drawCharts(); if (window.mermaid) drawDiagrams(); }
