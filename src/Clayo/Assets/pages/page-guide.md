@@ -149,5 +149,25 @@ A page should take about a minute. What makes it slow is writing more than you n
 
 ## 7. Check
 
-When you've written the file, reply with one line saying what the page shows. Clayo opens it
-by itself.
+When you've written the file, run this once:
+
+```
+clayo-page .clayo/pages/<name>.html
+```
+
+It opens the page the way Clayo will, at a desktop and a phone width, and prints a few
+lines. `ok` lines need nothing. Fix every `FAIL` line in the file:
+
+- an error with a line number: a script in the page broke there;
+- `blocked:` the page tried to load something it may not (section 1);
+- `overflow at 390px: X is 620px wide`: X is wider than a phone. Remove its fixed width,
+  or use `.grid` / `.row`;
+- `slide 3: its content doesn't fit the slide`: cut text or split the slide.
+
+If it says it couldn't check the page, or the command isn't found, skip the check: don't
+retry it.
+
+It also prints two screenshots. Open the 390 one only if a FAIL is about layout. Don't run
+the check a second time unless you changed more than the lines it named.
+
+Then reply with one line saying what the page shows. Clayo opens it by itself.

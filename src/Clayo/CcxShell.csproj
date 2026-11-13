@@ -29,4 +29,31 @@
     </None>
   </ItemGroup>
 
+  <!-- clayo-page.exe: clayo.exe again, marked as a console program, so `clayo-page file.html`
+       (Program.cs) prints and is waited for in any shell. PowerShell does not wait for a
+       windowed program, nor show what it prints, and Codex runs its commands in PowerShell.
+       The two files differ in one header field: the same one the SDK sets to make clayo.exe
+       windowed. -->
+  <UsingTask TaskName="CopyAsConsole" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <From ParameterType="System.String" Required="true" />
+      <To ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var bytes = System.IO.File.ReadAllBytes(From);
+        int subsystem = System.BitConverter.ToInt32(bytes, 0x3C) + 4 + 20 + 68;   // in the PE optional header
+        bytes[subsystem] = 3;   // IMAGE_SUBSYSTEM_WINDOWS_CUI
+        bytes[subsystem + 1] = 0;
+        System.IO.File.WriteAllBytes(To, bytes);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="PageTool" AfterTargets="Build" Condition="Exists('$(TargetDir)$(AssemblyName).exe')">
+    <CopyAsConsole From="$(TargetDir)$(AssemblyName).exe" To="$(TargetDir)clayo-page.exe" />
+  </Target>
+  <Target Name="PageToolPublished" AfterTargets="Publish" Condition="Exists('$(PublishDir)$(AssemblyName).exe')">
+    <CopyAsConsole From="$(PublishDir)$(AssemblyName).exe" To="$(PublishDir)clayo-page.exe" />
+  </Target>
+
 </Project>
