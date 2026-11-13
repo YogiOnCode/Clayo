@@ -48,6 +48,12 @@ foreach (var other in new[]
 })
     Check($"left alone: {other}", PageHtml.Seal(other).EndsWith(">" + other), true);
 
+// A deck is a page whose main is a .deck: the viewer offers Present for it.
+Check("a deck", PageHtml.IsDeck("<body><main class=\"deck\"><section class=\"slide\">"), true);
+Check("  with other classes", PageHtml.IsDeck("<main id=m class='wide deck dark'>"), true);
+Check("a page is not", PageHtml.IsDeck("<main class=\"page\"><p class=\"deck\">deck</p>"), false);
+Check("  nor a word that only starts so", PageHtml.IsDeck("<main class=\"decked\">"), false);
+
 // Keeping .clayo out of git.
 var dir = Directory.CreateTempSubdirectory("clayo-pages").FullName;
 try

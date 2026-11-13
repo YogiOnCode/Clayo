@@ -86,17 +86,26 @@ public static class PageCheck
     /// <summary>The command: prints the report and returns the exit code.</summary>
     public static int Run(string[] args)
     {
-        string? file = null, outDir = null;
+        string? file = null, outDir = null, pdf = null;
         for (int i = 0; i < args.Length; i++)
             if (args[i] == "--out" && i + 1 < args.Length) outDir = args[++i];
+            else if (args[i] == "--pdf" && i + 1 < args.Length) pdf = args[++i];
             else file ??= args[i];
 
         if (file is null || !File.Exists(file))
         {
-            Console.WriteLine(file is null ? "usage: clayo-page <file.html> [--out <dir>]" : $"no such file: {file}");
+            Console.WriteLine(file is null ? "usage: clayo-page <file.html> [--out <dir>] [--pdf <file.pdf>]" : $"no such file: {file}");
             return PageReport.CouldNotRun;
         }
         file = Path.GetFullPath(file);
+
+        // --pdf: the page as a PDF instead of the check, for when you are asked to export one.
+        if (pdf is not null)
+        {
+            var (saved, why) = OnOwnThread(() => PageExport.Run(file, Path.GetFullPath(pdf), PageExportKind.Pdf), TimeSpan.FromSeconds(40));
+            Console.WriteLine(saved is null ? $"{Path.GetFileName(file)}: couldn't export it: {why}" : $"saved {pdf}");
+            return saved is null ? PageReport.CouldNotRun : PageReport.Clean;
+        }
         outDir = Path.GetFullPath(outDir ?? Path.Combine(Path.GetDirectoryName(file)!, ".check"));
 
         var (result, failure) = Check(file, outDir);
@@ -112,16 +121,20 @@ public static class PageCheck
     }
 
     /// <summary>Checks one page. A null result comes with why it could not be checked.</summary>
-    public static (PageCheckResult? Result, string? Failure) Check(string file, string outDir)
+    public static (PageCheckResult? Result, string? Failure) Check(string file, string outDir) =>
+        OnOwnThread(() => Render(file, outDir), GiveUp);
+
+    /// <summary>Runs off-screen work to its end on a thread of its own. A null result comes with why.</summary>
+    public static (T? Result, string? Failure) OnOwnThread<T>(Func<Task<T>> start, TimeSpan giveUp) where T : class
     {
-        (PageCheckResult?, string?) done = (null, $"gave up after {GiveUp.TotalSeconds:0} s");
+        (T?, string?) done = (null, $"gave up after {giveUp.TotalSeconds:0} s");
         // WebView2 needs a thread with a message loop; the caller's may be neither.
         var thread = new Thread(() =>
         {
             var dispatcher = Dispatcher.CurrentDispatcher;
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
-            var work = Render(file, outDir);
-            var timer = new DispatcherTimer { Interval = GiveUp };
+            var work = start();
+            var timer = new DispatcherTimer { Interval = giveUp };
             timer.Tick += (_, _) => dispatcher.InvokeShutdown();
             timer.Start();
             work.ContinueWith(t =>

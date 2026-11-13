@@ -64,6 +64,31 @@ try
     var deck = Run("page-deck.html");
     Check("a deck: its slides counted", deck.Slides, 2);
     Check("  and the slide that is too full named", string.Join("|", deck.Overflow), "slide 2: its content doesn't fit the slide");
+
+    // Export (P6): a deck one slide per 16:9 PDF page or one PNG per slide, a page on A4 or as one image.
+    string[] Export(string name, string to, PageExportKind kind)
+    {
+        var (files, failure) = PageCheck.OnOwnThread(
+            () => PageExport.Run(Path.Combine(fixtures, name), Path.Combine(dir, to), kind), TimeSpan.FromSeconds(40));
+        Check($"{name} to {to}: exported", failure, null);
+        return [.. files ?? []];
+    }
+    // A PDF's pages and their size in points, read from its text: enough for a count.
+    (int Pages, string Box) Pdf(string file)
+    {
+        var text = System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(file));
+        var box = System.Text.RegularExpressions.Regex.Match(text, @"/MediaBox\s*\[\s*0 0 (\d+)[.\d]* (\d+)");
+        return (System.Text.RegularExpressions.Regex.Matches(text, @"/Type\s*/Page\b(?!s)").Count, $"{box.Groups[1].Value}x{box.Groups[2].Value}");
+    }
+    Check("a deck as PDF: a 16:9 page per slide", Pdf(Export("page-deck.html", "deck.pdf", PageExportKind.Pdf)[0]), (2, "960x540"));
+    Check("a page as PDF: A4", Pdf(Export("page-clean.html", "clean.pdf", PageExportKind.Pdf)[0]).Box, "594x841");
+    var slidePngs = Export("page-deck.html", "deck.png", PageExportKind.Png);
+    Check("a deck as PNG: one per slide, in a folder",
+        string.Join(",", slidePngs.Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))), "deck/slide-01.png,deck/slide-02.png");
+    Check("  each one written", slidePngs.All(f => new FileInfo(f).Length > 1000), true);
+    Check("  and not the same picture twice", File.ReadAllBytes(slidePngs[0]).SequenceEqual(File.ReadAllBytes(slidePngs[1])), false);
+    var pagePng = Export("page-clean.html", "clean.png", PageExportKind.Png);
+    Check("a page as PNG: one file", pagePng.Length == 1 && new FileInfo(pagePng[0]).Length > 1000, true);
 }
 finally { Directory.Delete(dir, recursive: true); }
 
