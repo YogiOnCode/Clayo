@@ -71,6 +71,59 @@ try
     Directory.CreateDirectory(plain);
     PageFolder.HideFromGit(plain);
     Check("a folder that is not a repo: nothing written", Directory.EnumerateFileSystemEntries(plain).Any(), false);
+
+    // Setup: the guide, templates and shared files land in the project's .clayo (P4).
+    var assets = Path.Combine(dir, "assets");
+    Directory.CreateDirectory(Path.Combine(assets, "templates"));
+    File.WriteAllText(Path.Combine(assets, "page-guide.md"), "guide 1");
+    File.WriteAllText(Path.Combine(assets, "clayo-page.css"), "css");
+    File.WriteAllText(Path.Combine(assets, "templates", "report.html"), "report");
+    var clayo = Path.Combine(plain, ".clayo");
+    PageFolder.Setup(plain, assets);
+    Check("setup: the guide", File.ReadAllText(Path.Combine(clayo, "page-guide.md")), "guide 1");
+    Check("setup: a template", File.ReadAllText(Path.Combine(clayo, "templates", "report.html")), "report");
+    Check("setup: the stylesheet beside the pages", File.ReadAllText(Path.Combine(clayo, "pages", "clayo-page.css")), "css");
+    var mine = Path.Combine(clayo, "pages", "mine.html");
+    File.WriteAllText(mine, "<title> Test &amp; results </title>");
+    File.WriteAllText(Path.Combine(assets, "page-guide.md"), "guide 2");
+    File.SetLastWriteTimeUtc(Path.Combine(assets, "page-guide.md"), DateTime.UtcNow.AddMinutes(1));
+    File.WriteAllText(Path.Combine(clayo, "pages", "clayo-page.css"), "edited");
+    File.SetLastWriteTimeUtc(Path.Combine(clayo, "pages", "clayo-page.css"), DateTime.UtcNow.AddMinutes(1));
+    PageFolder.Setup(plain, assets);
+    Check("setup again: a newer guide replaces the old", File.ReadAllText(Path.Combine(clayo, "page-guide.md")), "guide 2");
+    Check("  a copy that is not older is left", File.ReadAllText(Path.Combine(clayo, "pages", "clayo-page.css")), "edited");
+    Check("  a page is never touched", File.ReadAllText(mine), "<title> Test &amp; results </title>");
+
+    // The index of every page.
+    var json = Path.Combine(dir, "pages.json");
+    var other = Path.Combine(clayo, "pages", "other.html");
+    File.WriteAllText(other, "<p>no title</p>");
+    var t0 = new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc);
+    File.SetLastWriteTimeUtc(mine, t0);
+    File.SetLastWriteTimeUtc(other, t0.AddHours(1));
+    var index = new PageIndex(json);
+    index.Record([mine, other, Path.Combine(clayo, "pages", "never-written.html")], plain, "s1", "Claude");
+    Check("index: the pages that exist are added", index.Count, 2);
+    var recent = index.Recent(10);
+    Check("  last changed first", string.Join(",", recent.Select(p => Path.GetFileName(p.Path))), "other.html,mine.html");
+    Check("  the title from <title>", recent[1].Title, "Test & results");
+    Check("  else the file name", recent[0].Title, "other");
+    Check("  its session and project", (recent[1].SessionId, recent[1].Project, recent[1].Agent), ("s1", plain, "Claude"));
+
+    File.WriteAllText(mine, "<title>Renamed</title>");
+    File.SetLastWriteTimeUtc(mine, t0.AddHours(2));
+    index.Record([mine], plain, "s1", "Claude");
+    recent = new PageIndex(json).Recent(10);   // read back from the file
+    Check("an update: still two", recent.Count, 2);
+    Check("  now first, with its new title", (Path.GetFileName(recent[0].Path), recent[0].Title), ("mine.html", "Renamed"));
+    Check("  created stays, changed moves", (recent[0].Created, recent[0].Changed), (t0, t0.AddHours(2)));
+    Check("  the list is cut to what is asked", index.Recent(1).Count, 1);
+
+    File.Delete(other);
+    Check("a deleted file drops out", string.Join(",", index.Recent(10).Select(p => Path.GetFileName(p.Path))), "mine.html");
+    Check("  from the file too", new PageIndex(json).Count, 1);
+    File.WriteAllText(json, "not json");
+    Check("a broken index reads as empty", new PageIndex(json).Count, 0);
 }
 finally { Directory.Delete(dir, recursive: true); }
 

@@ -110,5 +110,43 @@ Check("codex: answered, the next line is working",
 Check("codex: answered, a finished turn is done",
     TerminalPane.FromTurn(PaneStatus.NeedsInput, TurnState.Done, asked.AddSeconds(9), asked, answered: true), PaneStatus.Done);
 
+// /page: the line you send becomes the page prompt (docs/PAGES.md, P4). Only /page at the very
+// start of the line; everything else reaches the agent as typed.
+void Same(string name, object? got, object? want)
+{
+    var ok = Equals(got, want);
+    if (!ok) fail++;
+    Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}  got={got ?? "null"} want={want ?? "null"}");
+}
+const string Head = "Make a Clayo page: read `.clayo/page-guide.md` first (skip if you already have this session). ";
+const string Tail = " Write it to `.clayo/pages/`, check it once, and reply with one line saying what it shows.";
+Same("/page x is rewritten", PagePrompt.Rewrite("/page the test results"), Head + "Then: the test results." + Tail);
+Same("/page alone: what we just discussed", PagePrompt.Rewrite("/page"), Head + "Then: a page of what we just discussed." + Tail);
+Same("/page and a space: the same", PagePrompt.Rewrite("/page "), PagePrompt.Rewrite("/page"));
+Same("/pages is not", PagePrompt.Rewrite("/pages"), null);
+Same("a space before it: not", PagePrompt.Rewrite(" /page x"), null);
+Same("text before it: not", PagePrompt.Rewrite("x /page"), null);
+Same("a line carried on with \\: not", PagePrompt.Rewrite("/page x\\"), null);
+Same("with a page open, the prompt names it",
+    PagePrompt.Rewrite("/page make the title shorter", @"C:\proj\.clayo\pages\test-results.html"),
+    Head + "The page open now is `.clayo/pages/test-results.html`; if this is a change to it, edit that file, don't make a new one. Then: make the title shorter." + Tail);
+
+// The line at the prompt, from the keys alone.
+string? Typed(params string[] keys)
+{
+    var line = new TypedLine();
+    foreach (var k in keys) line.Type(Encoding.UTF8.GetBytes(k));
+    return line.Text;
+}
+Same("keys one by one", Typed("/", "p", "a", "g", "e", " ", "x"), "/page x");
+Same("backspace takes the last one", Typed("/pagr", "\x7f", "e"), "/page");
+Same("Enter starts a new line", Typed("hello", "\r", "/page"), "/page");
+Same("Ctrl+C clears it", Typed("hello", "\x03", "/page"), "/page");
+Same("a focus report changes nothing", Typed("/page", "\u001b[I", "\u001b[O", " x"), "/page x");
+Same("a paste of one line is typed text", Typed("/page ", "\u001b[200~the results\u001b[201~"), "/page the results");
+Same("an arrow key: the line is no longer known", Typed("/page x", "\u001b[D"), null);
+Same("  until it is sent", Typed("/page x", "\u001b[D", "\r", "/page"), "/page");
+Same("a paste of several lines: not known", Typed("\u001b[200~a\nb\u001b[201~"), null);
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;

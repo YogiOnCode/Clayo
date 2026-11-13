@@ -17,6 +17,9 @@ namespace CcxShell;
 /// <summary>One row in the folder picker: the leaf to read, the full path to launch in.</summary>
 public sealed record FolderChoice(string Name, string FullPath);
 
+/// <summary>One row of the Pages list: a page, whose it is, and how long ago it changed.</summary>
+public sealed record PageChoice(string Title, string Sub, string Age, PageEntry Entry);
+
 /// <summary>
 /// One row in the sidebar. Backed by a transcript, a live pane, or both — a session you
 /// started in this window has a pane immediately and grows a transcript a moment later.
@@ -78,17 +81,16 @@ public sealed class SessionRow : INotifyPropertyChanged
 
     public DateTime When => Info?.LastActivity ?? DateTime.Now;
 
-    public string Age
+    public string Age => AgeOf(When);
+
+    public static string AgeOf(DateTime when)
     {
-        get
-        {
-            var d = DateTime.Now - When;
-            if (d.TotalMinutes < 1) return "just now";
-            if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes} min ago";
-            if (d.TotalHours < 24) return $"{(int)d.TotalHours} h ago";
-            if (d.TotalDays < 7) return $"{(int)d.TotalDays} d ago";
-            return When.ToString("d MMM");
-        }
+        var d = DateTime.Now - when;
+        if (d.TotalMinutes < 1) return "just now";
+        if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes} min ago";
+        if (d.TotalHours < 24) return $"{(int)d.TotalHours} h ago";
+        if (d.TotalDays < 7) return $"{(int)d.TotalDays} d ago";
+        return when.ToString("d MMM");
     }
 
     // ----------------------------------------------------------------- buckets
@@ -672,6 +674,7 @@ public partial class MainWindow : Window
                 if (p.Tail.PageWrites != pages && p.Tail.Page is { } page)
                 {
                     PageFolder.HideFromGit(p.WorkingDirectory);
+                    _pageIndex.Record(history ? p.Tail.Pages : [page], p.WorkingDirectory, row.SessionId, p.Agent.ToString());
                     if (!history) p.ShowPage(page);
                 }
                 else if (p.PageOpen is { } open && File.Exists(open)) p.ShowPage(open);
@@ -1486,33 +1489,110 @@ public partial class MainWindow : Window
     }
 
     /// <summary>The pages the active session wrote in .clayo/pages, if it wrote any.</summary>
+    private readonly PageIndex _pageIndex = new();
+
+    /// <summary>The Page button for the active pane (clay while Page mode is on), and the sidebar's count.</summary>
     private void ShowPageChip()
     {
-        var page = _active?.Tail?.Page;
-        PageChip.Visibility = page is null ? Visibility.Collapsed : Visibility.Visible;
-        if (page is null) return;
-        PageChip.ToolTip = $"{Path.GetFileName(page)}\n{page}\nClick to see it here, again to close it. Right-click for the session's other pages.";
+        PageButton.Visibility = _active is null ? Visibility.Collapsed : Visibility.Visible;
+        int count = _active?.Tail?.Pages.Count(File.Exists) ?? 0;
+        PageCount.Text = count.ToString();
+        PageCount.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        bool mode = _active?.PageMode == true;
+        foreach (var part in new[] { PageChip, PageArrow })
+            if (mode) part.Foreground = (Brush)FindResource("Clay");
+            else part.ClearValue(ForegroundProperty);
+        PageChip.ToolTip = "Make a page: types /page at the prompt, for you to say what it should show. Enter alone: what you just discussed."
+            + (mode ? "\nPage mode is on: the session offers a page when a reply is clearer as one." : "");
+
+        int all = _pageIndex.Count;
+        PagesCount.Text = all > 0 ? all.ToString() : "";
     }
 
     private void PageChip_Click(object sender, RoutedEventArgs e)
     {
-        if (_active is not { Tail.Page: { } page } pane) return;
-        if (pane.PageOpen is not null) pane.HideDoc();
-        else pane.ShowPage(page);
-        pane.FocusTerminal();
+        _active?.TypePage();
+        _active?.FocusTerminal();
     }
 
-    /// <summary>The session's pages, the newest first, each opening in the viewer.</summary>
+    private void PageArrow_Click(object sender, RoutedEventArgs e)
+    {
+        PageMenu.PlacementTarget = PageArrow;
+        PageMenu.IsOpen = true;
+    }
+
     private void PageMenu_Opened(object sender, RoutedEventArgs e)
     {
         PageMenu.Items.Clear();
-        if (_active is not { Tail: { } tail } pane) return;
-        foreach (var page in tail.Pages.Reverse().Where(File.Exists))
+        if (_active is not { } pane) return;
+
+        var add = new MenuItem { Header = "Make a page now", InputGestureText = "/page" };
+        add.Click += PageChip_Click;
+        PageMenu.Items.Add(add);
+        var mode = new MenuItem
         {
-            var item = new MenuItem { Header = Path.GetFileName(page), IsChecked = pane.PageOpen == page };
+            Header = "Offer pages when useful", IsCheckable = true, IsChecked = pane.PageMode,
+            ToolTip = "The session keeps answering in chat. When a reply would be clearer as a page, it asks \"Want this as a page?\" and makes one only if you say yes."
+        };
+        mode.Click += (_, _) => { pane.SetPageMode(!pane.PageMode); ShowPageChip(); pane.FocusTerminal(); };
+        PageMenu.Items.Add(mode);
+
+        var pages = pane.Tail?.Pages.Reverse().Where(File.Exists).ToList() ?? [];
+        if (pages.Count == 0) return;
+        PageMenu.Items.Add(new Separator());
+        PageMenu.Items.Add(new MenuItem { Header = "This session", IsEnabled = false });
+        foreach (var page in pages)
+        {
+            var item = new MenuItem
+            {
+                Header = PageIndex.TitleOf(page), IsChecked = pane.PageOpen == page,
+                InputGestureText = SessionRow.AgeOf(File.GetLastWriteTime(page))
+            };
             item.Click += (_, _) => { pane.ShowPage(page); pane.FocusTerminal(); };
             PageMenu.Items.Add(item);
         }
+    }
+
+    private void Pages_Click(object sender, RoutedEventArgs e)
+    {
+        var pages = _pageIndex.Recent(10).Select(p => new PageChoice(
+            p.Title,
+            $"{FolderLeaf(p.Project)} · {(p.Agent == nameof(AgentKind.Codex) ? "CX" : "CC")} · "
+                + (p.SessionId is { } id && _rows.TryGetValue(id, out var row) ? row.Name : "session closed"),
+            SessionRow.AgeOf(p.Changed.ToLocalTime()),
+            p)).ToList();
+        PagesHint.Text = pages.Count > 0 ? "Recent pages, every session" : "No pages yet. Type /page in a session to make one.";
+        PagesList.ItemsSource = pages;
+        PagesList.SelectedIndex = -1;
+        PagesPopup.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Opens a page from the list in the viewer of its session's pane, resuming the session if
+    /// it is closed. A page whose session is gone shows in the active pane, or with no pane
+    /// open in the browser: it is a file that opens by itself.
+    /// </summary>
+    private void PagesList_Selected(object sender, SelectionChangedEventArgs e)
+    {
+        if (PagesList.SelectedItem is not PageChoice { Entry: var page }) return;
+        PagesPopup.IsOpen = false;
+
+        if (page.SessionId is { } id && _rows.TryGetValue(id, out var row))
+        {
+            if (row.Pane is not null) Activate(row.Pane, row.Name);
+            else
+            {
+                var cwd = Directory.Exists(row.Folder) ? row.Folder : _folder;
+                StartPane(SessionLauncher.Plan(AgentFor(row.Agent), LaunchMode.Resume, cwd, row.SessionId), row.Name);
+            }
+        }
+        if (_active is { } pane)
+        {
+            pane.ShowPage(page.Path);
+            pane.FocusTerminal();
+        }
+        else System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.Path) { UseShellExecute = true })?.Dispose();
     }
 
     // ------------------------------------------------------------ screenshots
