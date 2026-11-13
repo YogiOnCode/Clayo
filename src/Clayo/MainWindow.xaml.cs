@@ -1527,13 +1527,13 @@ public partial class MainWindow : Window
         PageMenu.Items.Clear();
         if (_active is not { } pane) return;
 
-        var add = new MenuItem { Header = "New page", InputGestureText = "/page" };
+        var add = new MenuItem { Header = "Make a page now", InputGestureText = "/page" };
         add.Click += PageChip_Click;
         PageMenu.Items.Add(add);
         var mode = new MenuItem
         {
-            Header = "Page mode", IsCheckable = true, IsChecked = pane.PageMode,
-            ToolTip = "Tells the session once: offer a page when a reply is clearer as one, and make it when you say yes."
+            Header = "Offer pages when useful", IsCheckable = true, IsChecked = pane.PageMode,
+            ToolTip = "The session keeps answering in chat. When a reply would be clearer as a page, it asks \"Want this as a page?\" and makes one only if you say yes."
         };
         mode.Click += (_, _) => { pane.SetPageMode(!pane.PageMode); ShowPageChip(); pane.FocusTerminal(); };
         PageMenu.Items.Add(mode);

@@ -486,7 +486,7 @@
               <Button x:Name="PageArrow"
                       Style="{StaticResource QuietButton}"
                       BorderThickness="0" Padding="4,5"
-                      ToolTip="This session's pages, and Page mode"
+                      ToolTip="This session's pages, and whether it offers them"
                       AutomationProperties.Name="Pages menu"
                       Click="PageArrow_Click">
                 <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="8" VerticalAlignment="Center" />
