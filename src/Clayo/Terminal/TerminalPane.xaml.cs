@@ -275,6 +275,7 @@ public partial class TerminalPane : UserControl
                 StartPty(
                     (short)(msg.TryGetProperty("cols", out var c) ? c.GetInt32() : 80),
                     (short)(msg.TryGetProperty("rows", out var r) ? r.GetInt32() : 24));
+                if (_pageWaiting is { } waiting) ShowPage(waiting);
                 break;
 
             case "i":
@@ -282,6 +283,16 @@ public partial class TerminalPane : UserControl
                 {
                     var keys = Convert.FromBase64String(b64);
                     _keyAt = DateTime.UtcNow;
+                    // Enter on a line that is /page: the page prompt goes in its place.
+                    if (keys is [(byte)'\r'] && _line.Text is { } line && PagePrompt.Rewrite(line, OwnPageOpen) is { } prompt)
+                    {
+                        PageFolder.Setup(WorkingDirectory);
+                        _pty.Write(new string('\x7f', new System.Globalization.StringInfo(line).LengthInTextElements));
+                        _line.Type(keys);
+                        Send(prompt);
+                        break;
+                    }
+                    _line.Type(keys);
                     if (Answers(keys))
                     {
                         _answered = true;
@@ -375,6 +386,47 @@ public partial class TerminalPane : UserControl
 
     /// <summary>Pastes into the prompt, without Enter: what to ask about it is yours to add.</summary>
     public void Paste(string text) => _pty.Write(Encoding.UTF8.GetBytes(Pasted(text)));
+
+    // The line at the prompt, as far as the keys tell (TypedLine).
+    private readonly TypedLine _line = new();
+
+    // The open page, when it is one of this pane's own project: the page a /page may be about.
+    private string? OwnPageOpen =>
+        PageOpen is { } open && open.StartsWith(Path.Combine(WorkingDirectory, ".clayo", "pages"), StringComparison.OrdinalIgnoreCase) ? open : null;
+
+    /// <summary>Types /page at the prompt, unsent: what the page should show is yours to add.</summary>
+    public void TypePage()
+    {
+        var keys = Encoding.UTF8.GetBytes(PagePrompt.Command + " ");
+        _line.Type(keys);
+        _pty.Write(keys);
+    }
+
+    /// <summary>
+    /// Types a prompt and sends it. Enter follows a moment later: Codex takes keys that arrive
+    /// in one burst for a paste, and an Enter inside it for a new line.
+    /// </summary>
+    private void Send(string prompt)
+    {
+        _pty.Write(prompt);
+        var enter = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        enter.Tick += (_, _) =>
+        {
+            enter.Stop();
+            if (!_closed) _pty.Write("\r");
+        };
+        enter.Start();
+    }
+
+    /// <summary>The session was asked to offer pages (PagePrompt.ModeOn). Per session, not saved.</summary>
+    public bool PageMode { get; private set; }
+
+    public void SetPageMode(bool on)
+    {
+        PageMode = on;
+        if (on) PageFolder.Setup(WorkingDirectory);
+        Send(on ? PagePrompt.ModeOn : PagePrompt.ModeOff);
+    }
 
     private bool _started;
 
@@ -644,6 +696,7 @@ public partial class TerminalPane : UserControl
     private const long PageLimit = 5 * 1024 * 1024;
 
     private (string Path, DateTime At) _pageShown;
+    private string? _pageWaiting;
 
     /// <summary>
     /// Shows a page an agent wrote in the viewer, in the doc's place, or shows it again if it
@@ -652,6 +705,8 @@ public partial class TerminalPane : UserControl
     /// </summary>
     public void ShowPage(string path)
     {
+        // A pane opened to show this page (the Pages list): its terminal isn't up yet.
+        if (!_started) { _pageWaiting = path; return; }
         var at = File.GetLastWriteTimeUtc(path);
         if (PageOpen == path && _pageShown == (path, at)) return;
         _pageShown = (path, at);

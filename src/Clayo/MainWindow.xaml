@@ -19,6 +19,8 @@
 
   <Window.Resources>
     <local:BrushKeyConverter x:Key="BrushKey" />
+    <!-- Pages: a window with a small chart, never a sheet of paper, which is the doc chip's. -->
+    <Geometry x:Key="PageIcon">M1.5,2.5 H14.5 V13.5 H1.5 Z M1.5,5.5 H14.5 M6,5.5 V13.5 M8.5,11 V9.5 M10.5,11 V8 M12.5,11 V9</Geometry>
   </Window.Resources>
 
   <Grid>
@@ -260,6 +262,68 @@
               HorizontalAlignment="Left" Margin="0,0,0,12"
               Visibility="Collapsed"
               Click="Update_Click" />
+      <!-- Every page from every session. A list until the Pages view exists (docs/PAGES.md, P5). -->
+      <Button x:Name="PagesButton"
+              Style="{StaticResource QuietButton}"
+              BorderThickness="0" Padding="7,5" Margin="-7,0,0,10"
+              HorizontalAlignment="Left"
+              ToolTip="Pages from every session"
+              Click="Pages_Click">
+        <StackPanel Orientation="Horizontal">
+          <Path Data="{StaticResource PageIcon}" Width="16" Height="16"
+                StrokeThickness="1.2" StrokeLineJoin="Round"
+                Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+          <TextBlock Text="Pages" Margin="8,0,0,0" FontSize="12.5" VerticalAlignment="Center" />
+          <TextBlock x:Name="PagesCount" Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center"
+                     Foreground="{StaticResource TextFaint}" />
+        </StackPanel>
+      </Button>
+      <Popup x:Name="PagesPopup"
+             PlacementTarget="{Binding ElementName=PagesButton}"
+             Placement="Top"
+             AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="False">
+        <Border Background="{StaticResource RaisedBg}"
+                BorderBrush="{StaticResource Hairline}" BorderThickness="1"
+                CornerRadius="5" Padding="4" Margin="0,0,0,6"
+                MinWidth="290" MaxWidth="420">
+          <StackPanel>
+            <TextBlock x:Name="PagesHint"
+                       Foreground="{StaticResource TextFaint}"
+                       FontSize="10.5" Margin="7,4,7,6" />
+            <ListBox x:Name="PagesList"
+                     Background="Transparent" BorderThickness="0"
+                     ItemContainerStyle="{StaticResource FolderItem}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     SelectionChanged="PagesList_Selected">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Age}"
+                               Foreground="{StaticResource TextFaint}"
+                               FontSize="10.5" Margin="12,0,0,0" VerticalAlignment="Center" />
+                    <StackPanel>
+                      <TextBlock Text="{Binding Title}"
+                                 Foreground="{StaticResource TextPrimary}"
+                                 FontSize="12"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Sub}"
+                                 Foreground="{StaticResource TextFaint}"
+                                 FontSize="10.5" Margin="0,1,0,0"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                    Margin="4,5,4,0" />
+            <Button Content="Open Pages view…"
+                    Style="{StaticResource QuietButton}"
+                    Margin="4,7,4,2" HorizontalAlignment="Stretch"
+                    IsEnabled="False" />
+          </StackPanel>
+        </Border>
+      </Popup>
       <DockPanel LastChildFill="False">
         <Button x:Name="NewButton" Content="New session" Tag="&#xE710;"
                 Style="{StaticResource AccentButton}"
@@ -404,17 +468,33 @@
                     Click="DocChip_Click">
               <TextBlock Text="&#xF000;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
             </Button>
-            <Button x:Name="PageChip"
-                    Style="{StaticResource QuietButton}"
-                    BorderThickness="0" Padding="7,5" Margin="0,0,2,0"
-                    Visibility="Collapsed"
-                    AutomationProperties.Name="Pages the session made"
-                    Click="PageChip_Click">
-              <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
-              <Button.ContextMenu>
-                <ContextMenu x:Name="PageMenu" Opened="PageMenu_Opened" />
-              </Button.ContextMenu>
-            </Button>
+            <!-- Page: the main part types /page at the prompt, the arrow opens the session's
+                 pages and Page mode. Shown whenever a pane is open. -->
+            <StackPanel x:Name="PageButton" Orientation="Horizontal" Margin="0,0,2,0" Visibility="Collapsed">
+              <Button x:Name="PageChip"
+                      Style="{StaticResource QuietButton}"
+                      BorderThickness="0" Padding="7,5,4,5"
+                      AutomationProperties.Name="Make a page"
+                      Click="PageChip_Click">
+                <StackPanel Orientation="Horizontal">
+                  <Path Data="{StaticResource PageIcon}" Width="16" Height="16"
+                        StrokeThickness="1.2" StrokeLineJoin="Round"
+                        Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                  <TextBlock x:Name="PageCount" Margin="5,0,0,0" FontSize="11" VerticalAlignment="Center" Visibility="Collapsed" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="PageArrow"
+                      Style="{StaticResource QuietButton}"
+                      BorderThickness="0" Padding="4,5"
+                      ToolTip="This session's pages, and Page mode"
+                      AutomationProperties.Name="Pages menu"
+                      Click="PageArrow_Click">
+                <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="8" VerticalAlignment="Center" />
+                <Button.ContextMenu>
+                  <ContextMenu x:Name="PageMenu" Placement="Bottom" Opened="PageMenu_Opened" />
+                </Button.ContextMenu>
+              </Button>
+            </StackPanel>
             <Button x:Name="ImagesChip"
                     Style="{StaticResource QuietButton}"
                     BorderThickness="0" Padding="7,5"

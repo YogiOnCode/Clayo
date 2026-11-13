@@ -37,6 +37,9 @@ Copy one from `.clayo/templates/` to `.clayo/pages/<name>.html`, then fill it in
 
 An answer that fits in a few lines stays in chat. Don't make a page for it.
 
+Asked to offer pages (Page mode): answer in chat as usual and end with one line, "Want this
+as a page?". Make the page only after a yes.
+
 ## 3. Components
 
 A page is `<main class="page">` holding a `<header>` and `<section>`s. Use these classes;
@@ -145,7 +148,8 @@ A page should take about a minute. What makes it slow is writing more than you n
   Never hard-code a colour: it breaks the other theme.
 - No inline `style=""` for layout, no custom JavaScript for anything in section 3 or 4.
 - Write the file in one go. Don't read `clayo-page.css` or `clayo-page.js`.
-- Asked to change a page you made: edit that file. Don't make a new one.
+- Asked to change a page, the one you made or the one named as open: edit that file. Don't
+  make a new one.
 
 ## 7. Check
 
