@@ -45,6 +45,8 @@
   #md iframe { flex: 1; width: 100%; border: 0; background: #14171c; }
   /* One frame at a time: the doc's, or the page's. */
   #md[data-kind="page"] #mdframe, #md:not([data-kind="page"]) #pageframe { display: none; }
+  /* Export is a page's, Present a deck's. */
+  #md:not([data-kind="page"]) #pageexport, #md:not([data-deck="1"]) #pagepresent { display: none; }
 </style>
 </head>
 <body>
@@ -53,6 +55,8 @@
   <div id="mdgrip" title="Drag to resize"></div>
   <div class="bar">
     <span id="mdname"></span>
+    <button id="pagepresent" title="Full screen. Arrow keys move between slides, Esc leaves.">▶ Present</button>
+    <button id="pageexport" title="Save it as a PDF or a PNG">Export</button>
     <button id="mdsplit" title="Half and half">◧ Split</button>
     <button id="mdfull" title="Fill the pane">⛶ Full</button>
     <button id="mdclose" title="Back to the terminal">✕</button>
@@ -186,7 +190,7 @@
           showDoc(msg.name, msg.d);
           break;
         case "page":                    // show a page, or show it again after it changed
-          showPage(msg.name, msg.d);
+          showPage(msg.name, msg.d, msg.deck);
           break;
         case "mdclose":
           closeDoc(false);
@@ -298,7 +302,8 @@
   // Where you were in the page, as it reports it: this page cannot look inside the frame.
   let pagePlace = { name: "", y: 0, slide: 0 };
 
-  function showPage(name, html) {
+  function showPage(name, html, deck) {
+    md.dataset.deck = deck ? "1" : "";
     // The same page again keeps its place; a different one starts at the top.
     if (name !== pagePlace.name) pagePlace = { name: name, y: 0, slide: 0 };
     mdName.textContent = name;
@@ -340,6 +345,9 @@
     document.body.classList.remove("dragging");
   });
 
+  // Both are the host's to do: a save dialog, a window over the screen.
+  document.getElementById("pageexport").addEventListener("click", function () { send({ t: "export" }); });
+  document.getElementById("pagepresent").addEventListener("click", function () { send({ t: "present" }); });
   mdSplit.addEventListener("click", function () { setMode("split"); });
   mdFull.addEventListener("click", function () { setMode("full"); });
   document.getElementById("mdclose").addEventListener("click", function () { closeDoc(true); });

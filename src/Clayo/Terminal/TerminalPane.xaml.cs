@@ -328,6 +328,16 @@ public partial class TerminalPane : UserControl
                 PageOpen = null;
                 break;
 
+            case "export":
+                if (PageOpen is { } toExport) ShowExportMenu(toExport);
+                break;
+
+            case "present":
+                if (PageOpen is { } toPresent && Window.GetWindow(this) is { } owner)
+                    try { new PresentWindow(PageHtml.Seal(File.ReadAllText(toPresent))).ShowOver(owner); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                break;
+
             case "tags":
                 Tags = (msg.TryGetProperty("d", out var tg) ? tg.GetString() ?? "" : "")
                     .Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -712,11 +722,14 @@ public partial class TerminalPane : UserControl
         _pageShown = (path, at);
 
         string html;
+        bool deck = false;
         try
         {
             html = new FileInfo(path).Length > PageLimit
                 ? PageNote($"{Path.GetFileName(path)} is too big to show here.")
-                : PageHtml.Seal(File.ReadAllText(path));
+                : File.ReadAllText(path);
+            deck = PageHtml.IsDeck(html);
+            html = PageHtml.Seal(html);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -724,7 +737,44 @@ public partial class TerminalPane : UserControl
         }
         PageOpen = path;
         DocOpen = false;
-        Post(new { t = "page", name = Path.GetFileName(path), d = html });
+        Post(new { t = "page", name = Path.GetFileName(path), d = html, deck });
+    }
+
+    /// <summary>Export's two choices, where the mouse is: the button is in the page, a menu is a window over it.</summary>
+    private void ShowExportMenu(string page)
+    {
+        var menu = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        foreach (var (label, kind) in new[] { ("PDF", PageExportKind.Pdf), ("PNG image", PageExportKind.Png) })
+        {
+            var item = new MenuItem { Header = label };
+            item.Click += async (_, _) => await Export(page, kind);
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    private async Task Export(string page, PageExportKind kind)
+    {
+        var ext = kind == PageExportKind.Pdf ? "pdf" : "png";
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = $"Save the page as {ext.ToUpperInvariant()}",
+            FileName = string.Concat(PageIndex.TitleOf(page).Split(Path.GetInvalidFileNameChars())),
+            DefaultExt = ext,
+            Filter = $"{ext.ToUpperInvariant()}|*.{ext}"
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+        try
+        {
+            var files = await PageExport.Run(page, dialog.FileName, kind);
+            // Shown where it landed: for a deck's PNGs that is a folder of them.
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{files[0]}\"")?.Dispose();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+                                      or System.Runtime.InteropServices.COMException or WebView2RuntimeNotFoundException)
+        {
+            MessageBox.Show(Window.GetWindow(this)!, $"Couldn't export the page: {e.Message}", "Clayo", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private static string PageNote(string text) =>

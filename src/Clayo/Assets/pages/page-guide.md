@@ -175,3 +175,6 @@ It also prints two screenshots. Open the 390 one only if a FAIL is about layout.
 the check a second time unless you changed more than the lines it named.
 
 Then reply with one line saying what the page shows. Clayo opens it by itself.
+
+Asked for a PDF of a page: `clayo-page .clayo/pages/<name>.html --pdf <file.pdf>`. A deck
+comes out one slide per page.

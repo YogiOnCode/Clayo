@@ -34,6 +34,12 @@ public static partial class PageHtml
     [GeneratedRegex(@"\b(href|src)(\s*=\s*)([""'])(?:\./)?(clayo-page\.(?:css|js))\3", RegexOptions.IgnoreCase)]
     private static partial Regex AssetLink();
 
+    [GeneratedRegex(@"<main[^>]*\bclass\s*=\s*[""'][^""']*\bdeck\b", RegexOptions.IgnoreCase)]
+    private static partial Regex DeckMain();
+
+    /// <summary>Whether the page is a slide deck: its main is a .deck.</summary>
+    public static bool IsDeck(string html) => DeckMain().IsMatch(html);
+
     /// <summary>
     /// The page with the policy as the first thing in it, straight after the doctype, where the
     /// browser makes it the first element of the head whatever the page's own markup says: a
