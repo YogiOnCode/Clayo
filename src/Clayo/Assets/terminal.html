@@ -46,7 +46,7 @@
   /* One frame at a time: the doc's, or the page's. */
   #md[data-kind="page"] #mdframe, #md:not([data-kind="page"]) #pageframe { display: none; }
   /* Export is a page's, Present a deck's. */
-  #md:not([data-kind="page"]) #pageexport, #md:not([data-deck="1"]) #pagepresent { display: none; }
+  #md:not([data-kind="page"]) #pageexport, #md:not([data-kind="page"]) #pageshare, #md:not([data-deck="1"]) #pagepresent { display: none; }
 </style>
 </head>
 <body>
@@ -57,6 +57,7 @@
     <span id="mdname"></span>
     <button id="pagepresent" title="Full screen. Arrow keys move between slides, Esc leaves.">▶ Present</button>
     <button id="pageexport" title="Save it as a PDF or a PNG">Export</button>
+    <button id="pageshare" title="Save a copy that opens anywhere, offline">Share</button>
     <button id="mdsplit" title="Half and half">◧ Split</button>
     <button id="mdfull" title="Fill the pane">⛶ Full</button>
     <button id="mdclose" title="Back to the terminal">✕</button>
@@ -348,6 +349,7 @@
   // Both are the host's to do: a save dialog, a window over the screen.
   document.getElementById("pageexport").addEventListener("click", function () { send({ t: "export" }); });
   document.getElementById("pagepresent").addEventListener("click", function () { send({ t: "present" }); });
+  document.getElementById("pageshare").addEventListener("click", function () { send({ t: "share" }); });
   mdSplit.addEventListener("click", function () { setMode("split"); });
   mdFull.addEventListener("click", function () { setMode("full"); });
   document.getElementById("mdclose").addEventListener("click", function () { closeDoc(true); });
