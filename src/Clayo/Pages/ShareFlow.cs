@@ -108,6 +108,8 @@ public static class ShareFlow
             var html = await PageBundle.Make(source, PageTheme.CurrentCss(),
                 Path.Combine(AppContext.BaseDirectory, "Assets", "pages"), PageBundle.FetchCached);
             var file = Path.GetFileName(page);
+            // Small enough for gistpreview, which shows changes within a minute or two; else githack.
+            var live = GitHubGist.FitsLive(html);
             bool updated = false;
             if (share is not null)
             {
@@ -118,12 +120,17 @@ public static class ShareFlow
             if (share is null)
             {
                 var (id, gistOwner) = await GitHubGist.Create(login.Token, file, html);
-                share = new PageShare(id, gistOwner, file);
+                share = new PageShare(id, gistOwner, file, live);
                 Shares.Set(page, share);
             }
+            // A page that grew past the limit moves to githack, and back; an old share moves on its first update.
+            else if (share.Live != live) Shares.Set(page, share = share with { Live = live });
 
             var copied = Copy(share.Url);
-            if (Ask(owner, $"{(copied ? "Link copied" : "Link")}:\n{share.Url}\n\n{(updated ? "The gist now holds this version, but the link can keep showing the old one for a while: the preview service (githack) keeps its own copy. " : "")}Open it?",
+            var note = live ? "" : updated
+                ? "The gist now holds this version, but the link can keep showing the old one for a while: the preview service (githack) keeps its own copy. "
+                : "Pages with diagrams use a link that can take a while to update or go away. ";
+            if (Ask(owner, $"{(copied ? "Link copied" : "Link")}:\n{share.Url}\n\n{note}Open it?",
                     MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(share.Url) { UseShellExecute = true })?.Dispose();
         }
@@ -136,13 +143,16 @@ public static class ShareFlow
     }
 
     /// <summary>
-    /// Deletes the page's gist. True when it is gone. githack keeps serving its copy for a
-    /// while after (measured: 20+ minutes), and the confirm says so.
+    /// Deletes the page's gist. True when it is gone. A live link stops within a minute or two;
+    /// githack keeps serving its copy for a while after (measured: 20+ minutes), and the
+    /// confirm says so.
     /// </summary>
     public static async Task<bool> Unshare(Window? owner, string page, bool ask)
     {
         if (Shares.Get(page) is not { } share) return true;
-        if (ask && Ask(owner, $"Remove the public link? Clayo deletes the gist on GitHub. The link itself can keep working for a while: the preview service (githack) keeps its own copy.\n\n{share.Url}",
+        var after = share.Live ? "The link stops working within a minute or two."
+            : "The link itself can keep working for a while: the preview service (githack) keeps its own copy.";
+        if (ask && Ask(owner, $"Remove the public link? Clayo deletes the gist on GitHub. {after}\n\n{share.Url}",
                 MessageBoxButton.OKCancel) != MessageBoxResult.OK) return false;
         try
         {

@@ -109,8 +109,9 @@ Codex.
     `gh` or Git GitHub login, after asking once; **Settings › Pages › Public links ›
     Forget** makes it ask again.
   - **Update public link** sends the new version to the same link. **Remove public link…**
-    deletes the gist. The preview service keeps its own copy for a while, so an update or a
-    removal can take some time to show.
+    deletes the gist. The link shows an update, or stops working, within a minute or two.
+    Pages with diagrams are too large for that link and use another preview service, which
+    keeps its own copy for a while, so there an update or a removal can take some time to show.
 
 ## What Clayo reads
 
