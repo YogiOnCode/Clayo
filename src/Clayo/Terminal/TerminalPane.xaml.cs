@@ -754,13 +754,14 @@ public partial class TerminalPane : UserControl
         foreach (var (label, kind) in new[] { ("PDF", PageExportKind.Pdf), ("PNG image", PageExportKind.Png) })
         {
             var item = new MenuItem { Header = label };
-            item.Click += async (_, _) => await Export(page, kind);
+            item.Click += async (_, _) => await Export(Window.GetWindow(this), page, kind);
             menu.Items.Add(item);
         }
         menu.IsOpen = true;
     }
 
-    private async Task Export(string page, PageExportKind kind)
+    /// <summary>Asks where to save the page as a PDF or PNG, writes it, and shows it in Explorer.</summary>
+    public static async Task Export(Window? owner, string page, PageExportKind kind)
     {
         var ext = kind == PageExportKind.Pdf ? "pdf" : "png";
         var dialog = new Microsoft.Win32.SaveFileDialog
@@ -770,7 +771,7 @@ public partial class TerminalPane : UserControl
             DefaultExt = ext,
             Filter = $"{ext.ToUpperInvariant()}|*.{ext}"
         };
-        if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+        if (dialog.ShowDialog(owner) != true) return;
         try
         {
             var files = await PageExport.Run(page, dialog.FileName, kind);
@@ -780,7 +781,7 @@ public partial class TerminalPane : UserControl
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
                                       or System.Runtime.InteropServices.COMException or WebView2RuntimeNotFoundException)
         {
-            MessageBox.Show(Window.GetWindow(this)!, $"Couldn't export the page: {e.Message}", "Clayo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(owner!, $"Couldn't export the page: {e.Message}", "Clayo", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

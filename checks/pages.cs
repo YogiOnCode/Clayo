@@ -183,6 +183,60 @@ try
     Check("  from the file too", new PageIndex(json).Count, 1);
     File.WriteAllText(json, "not json");
     Check("a broken index reads as empty", new PageIndex(json).Count, 0);
+
+    // The Pages view (P5): a scan finds pages written outside Clayo; filter, sort, remove.
+    var scanned = new PageIndex(Path.Combine(dir, "scan.json"));
+    scanned.Record([mine], plain, "s1", "Claude");
+    var outside = Path.Combine(clayo, "pages", "outside.html");
+    File.WriteAllText(outside, "<title>Written outside</title><main class=\"deck\"></main>");
+    scanned.Scan([plain, plain, Path.Combine(dir, "no-such-project")]);
+    var all = scanned.Recent(int.MaxValue);
+    Check("scan: a page written outside Clayo is found", all.Count, 2);
+    var found = all.First(p => p.Path == outside);
+    Check("  with no session or agent", (found.SessionId, found.Agent, found.Project), ((string?)null, "", plain));
+    Check("  a deck is known as one", (found.Deck, all.First(p => p.Path == mine).Deck), (true, false));
+    scanned.Scan([plain]);
+    Check("  a second scan adds nothing", scanned.Recent(int.MaxValue).Count, 2);
+
+    var t = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc);
+    PageEntry E(string name, string project, string agent, string? session, int created, int changed, bool deck = false) =>
+        new(name, name, project, session, agent, t.AddDays(created), t.AddDays(changed), deck);
+    PageEntry[] fixture =
+    [
+        E("Beta", @"C:\a\web", "Claude", "s1", 1, 5),
+        E("alpha", @"C:\b\api", "Codex", "s2", 2, 3, deck: true),
+        E("Gamma report", @"C:\a\web", "Claude", "s3", 3, 4),
+    ];
+    string Names(PageFilter f) => string.Join(",", PageIndex.Filter(fixture, f).Select(p => p.Title));
+    Check("filter: newest first by default", Names(new()), "Gamma report,alpha,Beta");
+    Check("  last changed", Names(new(Sort: PageSort.Changed)), "Beta,Gamma report,alpha");
+    Check("  name, any case", Names(new(Sort: PageSort.Name)), "alpha,Beta,Gamma report");
+    Check("  project, then last changed", Names(new(Sort: PageSort.Project)), "alpha,Beta,Gamma report");
+    Check("  search in titles", Names(new(Search: "REPORT ")), "Gamma report");
+    Check("  a project, any case", Names(new(Project: @"c:\A\WEB")), "Gamma report,Beta");
+    Check("  an agent", Names(new(Agent: "Codex")), "alpha");
+    Check("  a session", Names(new(SessionId: "s1")), "Beta");
+    Check("  slides only", Names(new(Slides: true)), "alpha");
+    Check("  together: none match", Names(new(Agent: "Codex", Project: @"C:\a\web")), "");
+
+    scanned.Remove([outside.ToUpperInvariant()]);
+    Check("remove: the page leaves the index", scanned.Recent(int.MaxValue).Select(p => p.Path).Single(), mine);
+    Check("  and the file says so", new PageIndex(Path.Combine(dir, "scan.json")).Count, 1);
+
+    // Thumbnails: named from the page, fresh until it changes, pruned with the index.
+    var thumbs = Path.Combine(dir, "thumbs");
+    Directory.CreateDirectory(thumbs);
+    Check("thumb: the name ignores the path's case", PageThumbs.PathFor(mine, thumbs), PageThumbs.PathFor(mine.ToUpperInvariant(), thumbs));
+    Check("  none yet: not fresh", PageThumbs.IsFresh(mine, thumbs), false);
+    File.WriteAllText(PageThumbs.PathFor(mine, thumbs), "png");
+    File.SetLastWriteTimeUtc(PageThumbs.PathFor(mine, thumbs), File.GetLastWriteTimeUtc(mine).AddMinutes(1));
+    Check("  made after the page: fresh", PageThumbs.IsFresh(mine, thumbs), true);
+    File.SetLastWriteTimeUtc(mine, DateTime.UtcNow.AddHours(1));
+    Check("  the page changed since: not", PageThumbs.IsFresh(mine, thumbs), false);
+    File.WriteAllText(PageThumbs.PathFor(outside, thumbs), "png");
+    PageThumbs.Prune([mine], thumbs);
+    Check("  a removed page's picture is pruned, the others kept",
+        (File.Exists(PageThumbs.PathFor(outside, thumbs)), File.Exists(PageThumbs.PathFor(mine, thumbs))), (false, true));
 }
 finally { Directory.Delete(dir, recursive: true); }
 

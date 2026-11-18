@@ -5,9 +5,20 @@ using System.Text.RegularExpressions;
 
 namespace CcxShell.Core;
 
-/// <summary>One page an agent wrote, as the index keeps it. Times are UTC.</summary>
+/// <summary>
+/// One page an agent wrote, as the index keeps it. Times are UTC. SessionId is null and Agent
+/// empty for a page found in a project's folder that no session was seen writing. Deck is
+/// read from the file, not kept.
+/// </summary>
 public sealed record PageEntry(
-    string Path, string Title, string Project, string? SessionId, string Agent, DateTime Created, DateTime Changed);
+    string Path, string Title, string Project, string? SessionId, string Agent, DateTime Created, DateTime Changed, bool Deck = false);
+
+public enum PageSort { Newest, Changed, Name, Project }
+
+/// <summary>What the Pages view shows: a search of titles, the filters (null: any) and the order.</summary>
+public sealed record PageFilter(
+    string Search = "", string? Project = null, string? Agent = null, string? SessionId = null, bool Slides = false,
+    PageSort Sort = PageSort.Newest);
 
 /// <summary>
 /// Every page from every session, in pages.json, so the Pages list can show them with no pane
@@ -54,6 +65,36 @@ public sealed partial class PageIndex
     }
 
     /// <summary>
+    /// Adds the pages in these projects' .clayo/pages that the index doesn't know, such as ones
+    /// written while Clayo was closed: no session, no agent.
+    /// </summary>
+    public void Scan(IEnumerable<string> projects)
+    {
+        int before = _pages.Count;
+        foreach (var project in projects.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var folder = System.IO.Path.Combine(project, ".clayo", "pages");
+            if (!Directory.Exists(folder)) continue;
+            try
+            {
+                foreach (var path in Directory.EnumerateFiles(folder, "*.html"))
+                    if (!_pages.Any(p => Same(p.Path, path)))
+                        _pages.Add(new PageEntry(path, TitleOf(path), project, null, "",
+                            File.GetCreationTimeUtc(path), File.GetLastWriteTimeUtc(path)));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        if (_pages.Count != before) Save();
+    }
+
+    /// <summary>Takes these pages out of the index (their files are deleted by the caller).</summary>
+    public void Remove(IEnumerable<string> paths)
+    {
+        var gone = paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (_pages.RemoveAll(p => gone.Contains(p.Path)) > 0) Save();
+    }
+
+    /// <summary>
     /// The pages last changed, newest first, as their files are now: an edit reaches the
     /// transcript before the file, so the time and title recorded then may be a step behind.
     /// </summary>
@@ -61,9 +102,37 @@ public sealed partial class PageIndex
     {
         int before = _pages.Count;
         _pages = [.. _pages.Where(p => File.Exists(p.Path)).Select(p => p with { Changed = File.GetLastWriteTimeUtc(p.Path) })];
-        var recent = _pages.OrderByDescending(p => p.Changed).Take(max).Select(p => p with { Title = TitleOf(p.Path) }).ToList();
+        var recent = _pages.OrderByDescending(p => p.Changed).Take(max).Select(p => p with { Title = TitleOf(p.Path), Deck = IsDeck(p.Path) }).ToList();
         if (_pages.Count != before) Save();
         return recent;
+    }
+
+    /// <summary>The pages a filter lets through, in its order.</summary>
+    public static IReadOnlyList<PageEntry> Filter(IEnumerable<PageEntry> pages, PageFilter f)
+    {
+        var shown = pages.Where(p =>
+            (f.Search.Length == 0 || p.Title.Contains(f.Search.Trim(), StringComparison.OrdinalIgnoreCase))
+            && (f.Project is null || Same(p.Project, f.Project))
+            && (f.Agent is null || p.Agent == f.Agent)
+            && (f.SessionId is null || p.SessionId == f.SessionId)
+            && (!f.Slides || p.Deck));
+        return f.Sort switch
+        {
+            PageSort.Changed => [.. shown.OrderByDescending(p => p.Changed)],
+            PageSort.Name => [.. shown.OrderBy(p => p.Title, StringComparer.CurrentCultureIgnoreCase)],
+            PageSort.Project => [.. shown.OrderBy(p => ProjectName(p.Project), StringComparer.CurrentCultureIgnoreCase).ThenByDescending(p => p.Changed)],
+            _ => [.. shown.OrderByDescending(p => p.Created)],
+        };
+    }
+
+    /// <summary>The folder's own name, as the sidebar shows a project.</summary>
+    public static string ProjectName(string project) =>
+        System.IO.Path.GetFileName(project.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : project;
+
+    private static bool IsDeck(string path)
+    {
+        try { return PageHtml.IsDeck(File.ReadAllText(path)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
     private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
