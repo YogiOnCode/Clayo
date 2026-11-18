@@ -3,6 +3,10 @@
 A page is one HTML file that Clayo shows beside the terminal: a report, a dashboard, a
 diagram or a slide deck. The design is already done. You write content and data.
 
+To read an existing page, read its `.md` twin (Clayo writes it beside the page; all of them are
+listed in `.clayo/pages/index.md`). `(page open: <name>.md)` at the end of a prompt names the
+page open in Clayo by its twin; a change to it goes in `<name>.html`. Never write a twin.
+
 ## 1. The contract
 
 - One file: `.clayo/pages/<name>.html`. Name in kebab-case from the title

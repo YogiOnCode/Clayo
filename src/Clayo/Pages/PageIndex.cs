@@ -51,18 +51,23 @@ public sealed partial class PageIndex
     /// <summary>The pages whose files are still there.</summary>
     public int Count => _pages.Count(p => File.Exists(p.Path));
 
-    /// <summary>Adds the pages a session wrote, or brings the ones already known up to date.</summary>
+    /// <summary>
+    /// Adds the pages a session wrote, or brings the ones already known up to date, with their
+    /// text twins (PageTwin).
+    /// </summary>
     public void Record(IEnumerable<string> paths, string project, string? sessionId, string agent)
     {
-        foreach (var path in paths.Where(File.Exists))
+        var written = paths.Where(File.Exists).ToList();
+        foreach (var path in written)
         {
             var now = File.GetLastWriteTimeUtc(path);
             int at = _pages.FindIndex(p => Same(p.Path, path));
             var entry = new PageEntry(path, TitleOf(path), project, sessionId, agent, at < 0 ? now : _pages[at].Created, now);
             if (at < 0) _pages.Add(entry);
             else _pages[at] = entry;
+            PageTwin.Update(path);
         }
-        Save();
+        Save(written);
     }
 
     /// <summary>
@@ -71,28 +76,37 @@ public sealed partial class PageIndex
     /// </summary>
     public void Scan(IEnumerable<string> projects)
     {
-        int before = _pages.Count;
+        var found = new List<string>();
         foreach (var project in projects.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var folder = System.IO.Path.Combine(project, ".clayo", "pages");
             if (!Directory.Exists(folder)) continue;
             try
             {
+                // Only the pages: their twins and index.md are .md.
                 foreach (var path in Directory.EnumerateFiles(folder, "*.html"))
                     if (!_pages.Any(p => Same(p.Path, path)))
+                    {
                         _pages.Add(new PageEntry(path, TitleOf(path), project, null, "",
                             File.GetCreationTimeUtc(path), File.GetLastWriteTimeUtc(path)));
+                        PageTwin.Update(path);
+                        found.Add(path);
+                    }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
-        if (_pages.Count != before) Save();
+        if (found.Count > 0) Save(found);
     }
 
-    /// <summary>Takes these pages out of the index (their files are deleted by the caller).</summary>
+    /// <summary>Takes these pages and their twins out of the index (the pages are deleted by the caller).</summary>
     public void Remove(IEnumerable<string> paths)
     {
         var gone = paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (_pages.RemoveAll(p => gone.Contains(p.Path)) > 0) Save();
+        var removed = _pages.Where(p => gone.Contains(p.Path)).Select(p => p.Path).ToList();
+        if (removed.Count == 0) return;
+        _pages.RemoveAll(p => gone.Contains(p.Path));
+        removed.ForEach(PageTwin.Delete);
+        Save(removed);
     }
 
     /// <summary>
@@ -101,10 +115,14 @@ public sealed partial class PageIndex
     /// </summary>
     public IReadOnlyList<PageEntry> Recent(int max)
     {
-        int before = _pages.Count;
+        var gone = _pages.Where(p => !File.Exists(p.Path)).Select(p => p.Path).ToList();
         _pages = [.. _pages.Where(p => File.Exists(p.Path)).Select(p => p with { Changed = File.GetLastWriteTimeUtc(p.Path) })];
         var recent = _pages.OrderByDescending(p => p.Changed).Take(max).Select(p => p with { Title = TitleOf(p.Path), Deck = IsDeck(p.Path) }).ToList();
-        if (_pages.Count != before) Save();
+        if (gone.Count > 0)
+        {
+            gone.ForEach(PageTwin.Delete);
+            Save(gone);
+        }
         return recent;
     }
 
@@ -158,8 +176,11 @@ public sealed partial class PageIndex
         return System.IO.Path.GetFileNameWithoutExtension(path);
     }
 
-    private void Save()
+    // Writes pages.json, and index.md in the folders of the pages that changed (PageTwin).
+    private void Save(IEnumerable<string> changed)
     {
+        foreach (var folder in changed.Select(System.IO.Path.GetDirectoryName).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+            PageTwin.WriteIndex(folder, _pages.Where(p => Same(System.IO.Path.GetDirectoryName(p.Path) ?? "", folder)));
         try
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_file)!);

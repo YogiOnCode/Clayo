@@ -32,12 +32,15 @@ public static class PagePrompt
         if (!IsCommand(line)) return null;
         var text = line[Command.Length..].Trim().TrimEnd('.');
         if (text.Length == 0) text = "a page of what we just discussed";
-        return $"Make a Clayo page as `.clayo/page-guide.md` says{OpenNote(openPage)}: {text}.";
+        return $"Make a Clayo page as `.clayo/page-guide.md` says: {text}.{OpenNote(openPage)}";
     }
 
-    /// <summary>What names the open page: added to the line, or to Claude's /page.</summary>
+    /// <summary>
+    /// What names the open page, by its text twin (PageTwin), at the end of a line: the twin to
+    /// read, beside the page to edit. When to add it is OpenPageNote's call.
+    /// </summary>
     public static string OpenNote(string? openPage) =>
-        openPage is null ? "" : $" (open: `.clayo/pages/{Path.GetFileName(openPage)}`)";
+        openPage is null ? "" : $" (page open: .clayo/pages/{Path.GetFileName(PageTwin.PathOf(openPage))})";
 
     /// <summary>
     /// Claude's own /page, written into the project (PageFolder.ClaudeCommand), so Claude reads
@@ -50,9 +53,36 @@ public static class PagePrompt
         "---\n" +
         "Make a Clayo page as `.clayo/page-guide.md` says: $ARGUMENTS\n\n" +
         "Nothing after the colon: a page of what we just discussed. " +
-        "`(open: <file>)` at the end names the page open in Clayo.\n";
+        "`(page open: <name>.md)` at the end names the page open in Clayo by its text twin: " +
+        "a change to the page goes in the `.html` beside it.\n";
 
     public const string ClaudeMarker = "(written by Clayo)";
+}
+
+/// <summary>
+/// When a line sent names the open page (PagePrompt.OpenNote): the first prompt after the page
+/// is opened or changes, not every one, so the terminal stays quiet; a /page always, so a change
+/// lands on that page. Not a slash command or a shell line (`!`), where it would be an argument.
+/// </summary>
+public sealed class OpenPageNote
+{
+    private (string Page, DateTime Changed)? _named;
+
+    /// <summary>The page was opened again: name it on the next prompt.</summary>
+    public void Forget() => _named = null;
+
+    /// <summary>What to add to this line, sent now with this page open, changed then; else "".</summary>
+    public string For(string line, string? page, DateTime changed)
+    {
+        if (page is null) return "";
+        if (!PagePrompt.IsCommand(line))
+        {
+            var text = line.TrimStart();
+            if (text.Length == 0 || text[0] is '/' or '!' || _named == (page, changed)) return "";
+        }
+        _named = (page, changed);
+        return PagePrompt.OpenNote(page);
+    }
 }
 
 /// <summary>

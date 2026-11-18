@@ -288,10 +288,11 @@ public partial class TerminalPane : UserControl
                     if (keys is [(byte)'\r'] && _line.Text is { } line && PagePrompt.IsCommand(line))
                     {
                         PageFolder.Setup(WorkingDirectory, themeCss: PageTheme.CurrentCss());
+                        var note = OpenNote(line);
                         _line.Type(keys);
                         if (Agent == AgentKind.Claude && PageFolder.ClaudeCommand(WorkingDirectory))
                         {
-                            if (OwnPageOpen is { } open) Send(PagePrompt.OpenNote(open));
+                            if (note.Length > 0) Send(note);
                             else _pty.Write(keys);
                             break;
                         }
@@ -299,6 +300,9 @@ public partial class TerminalPane : UserControl
                         Send(PagePrompt.Rewrite(line, OwnPageOpen)!);
                         break;
                     }
+                    // Any other prompt names the open page's twin, the first time after it opens
+                    // or changes, so "summarise this" finds it. Not while a question is up.
+                    var suffix = keys is [(byte)'\r'] && _line.Text is { } sent && Status != PaneStatus.NeedsInput ? OpenNote(sent) : "";
                     _line.Type(keys);
                     if (Answers(keys))
                     {
@@ -308,7 +312,8 @@ public partial class TerminalPane : UserControl
                         // on either way, and its transcript corrects this from here.
                         if (_turnKnown && Status == PaneStatus.NeedsInput) Status = PaneStatus.Working;
                     }
-                    _pty.Write(keys);
+                    if (suffix.Length > 0) Send(suffix);
+                    else _pty.Write(keys);
                 }
                 break;
 
@@ -414,6 +419,17 @@ public partial class TerminalPane : UserControl
     // The open page, when it is one of this pane's own project: the page a /page may be about.
     private string? OwnPageOpen =>
         PageOpen is { } open && open.StartsWith(Path.Combine(WorkingDirectory, ".clayo", "pages"), StringComparison.OrdinalIgnoreCase) ? open : null;
+
+    private readonly OpenPageNote _openNote = new();
+
+    // What a line sent now adds to name the open page's twin (OpenPageNote), with the twin up to date.
+    private string OpenNote(string line)
+    {
+        if (OwnPageOpen is not { } open) return "";
+        var note = _openNote.For(line, open, File.GetLastWriteTimeUtc(open));
+        if (note.Length > 0) PageTwin.Update(open);
+        return note;
+    }
 
     /// <summary>Types /page at the prompt, unsent: what the page should show is yours to add.</summary>
     public void TypePage()
@@ -731,6 +747,8 @@ public partial class TerminalPane : UserControl
         var at = File.GetLastWriteTimeUtc(path);
         if (PageOpen == path && _pageShown == (path, at)) return;
         _pageShown = (path, at);
+        if (PageOpen != path) _openNote.Forget();
+        PageTwin.Update(path);   // the twin follows the page, as the viewer does
 
         string html;
         bool deck = false;

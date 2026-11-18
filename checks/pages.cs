@@ -321,6 +321,59 @@ try
     Check("  odd types in the file read as nothing", (new PageShares(Path.Combine(dir, "shares.json")).Login, new PageShares(Path.Combine(dir, "shares.json")).All().Count), ((string?)null, 0));
     Check("  a broken entry is skipped", new PageShares(Path.Combine(dir, "shares.json")).All().Count, 0);
     Check("filter: shared only", string.Join(",", PageIndex.Filter([fixture[0], fixture[1] with { Shared = true }], new(Shared: true)).Select(p => p.Title)), "alpha");
+
+    // The text twin (P9, D18): markdown made from the page, for other sessions to read.
+    var fixtures = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "checks", "fixtures");
+    if (!Directory.Exists(fixtures)) fixtures = Path.Combine(Environment.CurrentDirectory, "fixtures");
+    var made = new DateTime(2026, 11, 18, 12, 0, 0);
+    foreach (var name in new[] { "report", "dashboard", "slides" })
+    {
+        var html = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "pages", "templates", name + ".html"));
+        var twin = PageTwin.Make(html, name + ".html", made);
+        Check($"twin: {name}.html matches its fixture", twin, File.ReadAllText(Path.Combine(fixtures, $"twin-{name}.md")).ReplaceLineEndings("\n"));
+        if (name == "report") Console.WriteLine($"      report twin: {twin.Length} of {html.Length} bytes ({100.0 * twin.Length / html.Length:F0}%)");
+    }
+    string Twin(string body) => PageTwin.Make($"<!doctype html><head><title>T</title></head><body>{body}</body>", "t.html", made);
+    Check("  the title first, then the file and when", Twin("<main class=\"page\"><h1>T</h1></main>"), "# T\n\n`.clayo/pages/t.html` · written 2026-11-18 12:00\n\n\n");
+    Check("  a chart gives a data table",
+        Twin("<script type=\"application/json\" class=\"chart\">{\"type\":\"bar\",\"title\":\"Fails\",\"yLabel\":\"n\",\"labels\":[\"auth\",\"api\"],\"series\":[{\"name\":\"a\",\"data\":[4,0]},{\"name\":\"b\",\"data\":[1]}]}</script>")
+            .Contains("**Fails**, a bar chart (n):\n\n|  | a | b |\n|---|---|---|\n| auth | 4 | 1 |\n| api | 0 |  |"), true);
+    Check("  a scatter, a row per point", Twin("<script type=\"application/json\" class=\"chart\">{\"type\":\"scatter\",\"series\":[{\"name\":\"s\",\"data\":[[1,2],[3,4]]}]}</script>")
+        .Contains("|  | x | y |\n|---|---|---|\n| s | 1 | 2 |\n| s | 3 | 4 |"), true);
+    Check("  broken chart JSON is left out", Twin("<p>a</p><script type=\"application/json\" class=\"chart\">{nope</script>").EndsWith("\n\na\n"), true);
+    Check("  Mermaid as a mermaid block", Twin("<pre class=\"mermaid\">\nflowchart LR\n  A --&gt; B\n</pre>").Contains("```mermaid\nflowchart LR\n  A --> B\n```"), true);
+    var deckTwin = Twin("<main class=\"deck\"><section class=\"slide\"><h2>One</h2></section><section class=\"slide\"><h2>Two</h2></section><section class=\"slide\"><h2>Three</h2></section></main>");
+    Check("  a deck: one section per slide", deckTwin.EndsWith("## One\n\n---\n\n## Two\n\n---\n\n## Three\n"), true);
+    Check("  layout as short lines", Twin("<section class=\"kpis\"><div class=\"kpi good\"><b>312</b><span>passed</span></div><div class=\"kpi bad\"><b>4</b><span>failed</span></div></section>")
+        .Contains("\n312 passed · 4 failed\n"), true);
+    Check("  no script, style or image data", Twin("<style>p{}</style><script>var x;</script><p>a <img alt=\"logo\" src=\"data:image/png;base64,AAAA\"></p>").EndsWith("\n\na [image: logo]\n"), true);
+    Check("index.html's twin is not the list", Path.GetFileName(PageTwin.PathOf(@"C:\p\.clayo\pages\index.html")), "index.html.md");
+
+    // The twin and index.md follow the index.
+    var twinDir = Path.Combine(dir, "twin", ".clayo", "pages");
+    Directory.CreateDirectory(twinDir);
+    var one = Path.Combine(twinDir, "one.html");
+    var two = Path.Combine(twinDir, "two.html");
+    File.WriteAllText(one, "<title>First</title><main class=\"page\"><p>hello</p></main>");
+    File.WriteAllText(two, "<title>Second</title>");
+    var twins = new PageIndex(Path.Combine(dir, "twins.json"));
+    twins.Record([one, two], Path.Combine(dir, "twin"), "s1", "Claude");
+    var list = Path.Combine(twinDir, PageTwin.IndexFile);
+    Check("record: the twin is written beside the page", File.Exists(Path.Combine(twinDir, "one.md")) && File.ReadAllText(Path.Combine(twinDir, "one.md")).Contains("\nhello\n"), true);
+    Check("  index.md lists every page", (File.ReadAllText(list).Contains("- First: `one.md` (page `one.html`)"), File.ReadAllText(list).Contains("- Second: `two.md`")), (true, true));
+    File.WriteAllText(one, "<title>First</title><main class=\"page\"><p>changed</p></main>");
+    File.SetLastWriteTimeUtc(one, DateTime.UtcNow.AddMinutes(1));
+    twins.Record([one], Path.Combine(dir, "twin"), "s1", "Claude");
+    Check("  a change rewrites the twin", File.ReadAllText(Path.Combine(twinDir, "one.md")).Contains("\nchanged\n"), true);
+    twins.Scan([Path.Combine(dir, "twin")]);
+    Check("  the scan lists no twin as a page", twins.Recent(int.MaxValue).Count, 2);
+    twins.Remove([two]);
+    Check("remove: the twin goes too", File.Exists(Path.Combine(twinDir, "two.md")), false);
+    Check("  and index.md drops it", File.ReadAllText(list).Contains("Second"), false);
+    File.Delete(one);
+    twins.Recent(10);
+    Check("a page that drops out takes its twin", File.Exists(Path.Combine(twinDir, "one.md")), false);
+    Check("  none left: no index.md", File.Exists(list), false);
 }
 finally { Directory.Delete(dir, recursive: true); }
 
