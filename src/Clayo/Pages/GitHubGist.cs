@@ -19,8 +19,9 @@ public sealed class GitHubException(HttpStatusCode status, string message) : Exc
 }
 
 /// <summary>
-/// A public link to a page (D14): a secret gist with a githack preview. The login is one the
-/// user already has, from gh or git's credential manager; Clayo keeps no token. No WPF.
+/// A public link to a page (D14): a secret gist with a gistpreview or githack preview. The
+/// login is one the user already has, from gh or git's credential manager; Clayo keeps no
+/// token. No WPF.
 /// </summary>
 public static partial class GitHubGist
 {
@@ -35,9 +36,22 @@ public static partial class GitHubGist
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
 
-    /// <summary>The link that shows the gist's file as a page. It follows the gist as it changes.</summary>
-    public static string PreviewUrl(string owner, string id, string file) =>
+    /// <summary>
+    /// The link that shows the gist's file as a page: gistpreview reads the gist from GitHub's
+    /// API on each open, so an update or a removal shows within a minute or two (GitHub caches
+    /// the answer 60 s). It uses the file's content, which the API gives only up to 1 MB.
+    /// </summary>
+    public static string PreviewUrl(string id, string file) =>
+        $"https://gistpreview.github.io/?{id}/{Uri.EscapeDataString(file)}";
+
+    /// <summary>The link for a page too large for PreviewUrl. githack keeps its own copy: updates and removals show late.</summary>
+    public static string CachedPreviewUrl(string owner, string id, string file) =>
         $"https://gist.githack.com/{owner}/{id}/raw/{Uri.EscapeDataString(file)}";
+
+    /// <summary>The largest page, in bytes, that gets PreviewUrl, under the API's 1 MB with room to spare.</summary>
+    public const int LiveMax = 900 * 1024;
+
+    public static bool FitsLive(string html) => Encoding.UTF8.GetByteCount(html) <= LiveMax;
 
     /// <summary>gh's token, else git's saved one for github.com, never a prompt; null when neither has one.</summary>
     public static async Task<GitHubLogin?> FindLogin()

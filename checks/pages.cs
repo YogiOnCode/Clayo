@@ -307,6 +307,12 @@ try
     var again = new PageShares(Path.Combine(dir, "shares.json"));
     Check("  read back", (again.Login, again.Get(mine.ToUpperInvariant())?.GistId), ("gh", Gist));
     Check("  its link", again.Get(mine)!.Url, $"https://gist.githack.com/someone/{Gist}/raw/mine.html");
+    again.Set(mine, new PageShare(Gist, "someone", "my page.html", Live: true));
+    Check("  a live one: gistpreview", new PageShares(Path.Combine(dir, "shares.json")).Get(mine)!.Url, $"https://gistpreview.github.io/?{Gist}/my%20page.html");
+    Check("live: a page at the limit", GitHubGist.FitsLive(new string('a', GitHubGist.LiveMax)), true);
+    Check("  a byte over", GitHubGist.FitsLive(new string('a', GitHubGist.LiveMax - 1) + "é"), false);
+    File.WriteAllText(Path.Combine(dir, "old.json"), "{\"pages\":[{\"page\":\"p\",\"gist\":\"" + Gist + "\",\"owner\":\"o\",\"file\":\"f\"}]}");
+    Check("  a share from before live links is not live", new PageShares(Path.Combine(dir, "old.json")).Get("p")?.Live, false);
     again.Set(outside, new PageShare("../repos/me/proj/git/refs/heads/main", "someone", "x.html"));
     Check("  an id that isn't a gist's is never read back", again.Get(outside), (PageShare?)null);
     Check("  nor sent", GitHubGist.IsGistId("../repos/x"), false);
