@@ -58,11 +58,15 @@ public static partial class PageBundle
         return html;
     }
 
-    // Inside the tag, "</script" or "</style" would end it early.
-    private static string Script(string js) => $"<script>{js.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase)}</script>";
+    // Inside the tag, "</script" or "</style" would end it early, and "<!--" with a "<script"
+    // after it would swallow the markup that follows. Both escapes mean the same in JS strings
+    // and regexes.
+    private static string Script(string js) =>
+        $"<script>{js.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase).Replace("<!--", "<\\!--")}</script>";
     private static string Style(string css) => $"<style>{css.Replace("</style", "<\\/style", StringComparison.OrdinalIgnoreCase)}</style>";
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    // Mermaid, the largest library a page might link, is about 3 MB.
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20), MaxResponseContentBufferSize = 16 * 1024 * 1024 };
 
     /// <summary>A CDN file from the cache, else fetched and kept there; null when it can't be had.</summary>
     public static async Task<string?> FetchCached(string url)

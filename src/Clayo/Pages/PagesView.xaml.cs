@@ -18,6 +18,7 @@ public sealed class PageCard(PageEntry entry, string sub) : INotifyPropertyChang
     public string Title => Entry.Title;
     public string Sub { get; } = sub;
     public string Kind => Entry.Deck ? "Slides" : "Page";
+    public Visibility SharedBadge => Entry.Shared ? Visibility.Visible : Visibility.Collapsed;
 
     private ImageSource? _thumb;
     public ImageSource? Thumb
@@ -65,7 +66,7 @@ public partial class PagesView : UserControl
         _index = index;
         _settings = settings;
         _index.Scan(projects);
-        _all = _index.Recent(int.MaxValue);
+        Reload();
         PageThumbs.Prune(_all.Select(p => p.Path));
 
         _loading = true;
@@ -75,10 +76,18 @@ public partial class PagesView : UserControl
         Fill(AgentBy, "All agents", [(nameof(AgentKind.Claude), "Claude"), (nameof(AgentKind.Codex), "Codex")], settings.PagesAgent);
         Fill(SortBy, null, Enum.GetValues<PageSort>().Select(s => (s.ToString(), "Sort: " + SortLabel(s))), settings.PagesSort.ToString());
         SlidesOnly.IsChecked = settings.PagesSlides;
+        SharedOnly.IsChecked = settings.PagesShared;
         FillSessions();
         _loading = false;
         Shown();
         Cards.Focus();
+    }
+
+    // The index as the files are now, each page marked when it has a public link.
+    private void Reload()
+    {
+        var shared = new PageShares().All();
+        _all = [.. _index.Recent(int.MaxValue).Select(p => p with { Shared = shared.ContainsKey(p.Path) })];
     }
 
     private static string SortLabel(PageSort s) => s switch
@@ -124,6 +133,7 @@ public partial class PagesView : UserControl
             PagesProject = Picked(ProjectBy),
             PagesAgent = Picked(AgentBy),
             PagesSlides = SlidesOnly.IsChecked == true,
+            PagesShared = SharedOnly.IsChecked == true,
             PagesSort = Enum.TryParse<PageSort>(Picked(SortBy), out var sort) ? sort : PageSort.Newest
         };
         if (s != _settings)
@@ -137,7 +147,7 @@ public partial class PagesView : UserControl
     /// <summary>The cards the filters let through; their pictures follow one at a time.</summary>
     private void Shown()
     {
-        var filter = new PageFilter(Search.Text, _settings.PagesProject, _settings.PagesAgent, Picked(SessionBy), _settings.PagesSlides, _settings.PagesSort);
+        var filter = new PageFilter(Search.Text, _settings.PagesProject, _settings.PagesAgent, Picked(SessionBy), _settings.PagesSlides, _settings.PagesSort, _settings.PagesShared);
         var cards = PageIndex.Filter(_all, filter).Select(p => new PageCard(p, SubOf(p))).ToList();
         Cards.ItemsSource = cards;
         Count.Text = cards.Count == _all.Count ? $"{_all.Count}" : $"{cards.Count} of {_all.Count}";
@@ -225,18 +235,35 @@ public partial class PagesView : UserControl
             sub.Click += async (_, _) => await TerminalPane.Export(Window.GetWindow(this), pages[0].Path, kind);
             export.Items.Add(sub);
         }
-        Item("Save a copy…", async () => await TerminalPane.SaveCopy(Window.GetWindow(this), pages[0].Path), one);
+        var share = Item("Share", () => { }, one);
+        foreach (var item in ShareFlow.Items(Window.GetWindow(this), pages[0].Path, () => { Reload(); Shown(); })) share.Items.Add(item);
         Item("Show in Explorer", () => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{pages[0].Path}\"")?.Dispose(), one);
         CardMenu.Items.Add(new Separator());
         Item(one ? "Delete" : $"Delete {pages.Count} pages", () => Delete(pages)).InputGestureText = "Del";
     }
 
-    /// <summary>To the Recycle Bin, after a confirm naming how many.</summary>
-    private void Delete(List<PageEntry> pages)
+    /// <summary>
+    /// To the Recycle Bin, after a confirm naming how many. Pages with a public link ask
+    /// whether to remove the link too; one whose link can't be removed keeps its page.
+    /// </summary>
+    private async void Delete(List<PageEntry> pages)
     {
+        var owner = Window.GetWindow(this)!;
         var what = pages.Count == 1 ? $"\"{pages[0].Title}\"" : $"{pages.Count} pages";
-        if (MessageBox.Show(Window.GetWindow(this)!, $"Move {what} to the Recycle Bin?", "Clayo",
+        if (MessageBox.Show(owner, $"Move {what} to the Recycle Bin?", "Clayo",
                 MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+
+        var shared = pages.Where(p => p.Shared).ToList();
+        if (shared.Count > 0)
+        {
+            var answer = MessageBox.Show(owner,
+                $"{(shared.Count == 1 ? "One has" : $"{shared.Count} of them have")} a public link. Remove the link too, so it stops working?",
+                "Clayo", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Cancel) return;
+            if (answer == MessageBoxResult.Yes)
+                foreach (var page in shared)
+                    if (!await ShareFlow.Unshare(owner, page.Path, ask: false)) pages.Remove(page);
+        }
 
         var gone = new List<string>();
         foreach (var page in pages)
@@ -251,7 +278,7 @@ public partial class PagesView : UserControl
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException) { }
         }
         _index.Remove(gone);
-        _all = _index.Recent(int.MaxValue);
+        Reload();
         Shown();
     }
 }

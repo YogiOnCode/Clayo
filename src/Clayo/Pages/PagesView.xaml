@@ -46,6 +46,9 @@
         <CheckBox x:Name="SlidesOnly" Content="Slides" Style="{StaticResource Tick}"
                   Margin="10,0,0,0" VerticalAlignment="Center"
                   Click="Filter_Changed" />
+        <CheckBox x:Name="SharedOnly" Content="Shared" Style="{StaticResource Tick}"
+                  Margin="10,0,0,0" VerticalAlignment="Center"
+                  Click="Filter_Changed" />
         <ComboBox x:Name="SortBy" Style="{StaticResource TinyCombo}" Margin="10,0,0,0"
                   ItemContainerStyle="{StaticResource TinyComboItem}"
                   SelectionChanged="Filter_Changed" />
@@ -100,6 +103,11 @@
                 <TextBlock Text="{Binding Kind}" FontSize="10.5" Foreground="{StaticResource TextFaint}"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <Image Source="{Binding Thumb}" Stretch="UniformToFill" VerticalAlignment="Top" />
+                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Padding="6,1"
+                        CornerRadius="3" Background="{StaticResource Clay}"
+                        Visibility="{Binding SharedBadge}">
+                  <TextBlock Text="Shared" FontSize="10" Foreground="White" />
+                </Border>
               </Grid>
             </Border>
             <TextBlock Text="{Binding Title}" Margin="0,8,0,0" FontSize="12"
