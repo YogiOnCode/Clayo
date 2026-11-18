@@ -11,31 +11,48 @@ public static class PagePrompt
 {
     public const string Command = "/page";
 
-    public const string ModeOn =
-        "For the rest of this session: when a reply would be clearer as a page (numbers, comparisons, diagrams, " +
-        "anything to present), answer in chat as usual and end with one line: 'Want this as a page?'. " +
-        "Make a Clayo page, following `.clayo/page-guide.md`, only after I say yes.";
+    public const string ModeOn = "Page mode on: offer pages as `.clayo/page-guide.md` says, for the rest of this session.";
 
     public const string ModeOff = "Stop offering pages unless I ask.";
 
     /// <summary>
-    /// The page prompt for a line that is `/page` or starts `/page `, else null: `/pages`, a
-    /// line with anything before the command, and a line carried on with `\` go through as
-    /// typed. openPage is the page the viewer shows, named so a change lands on that file.
+    /// Whether a line is `/page` or starts `/page `: `/pages`, a line with anything before the
+    /// command, and a line carried on with `\` go through as typed.
+    /// </summary>
+    public static bool IsCommand(string line) =>
+        line.StartsWith(Command, StringComparison.Ordinal) && !line.EndsWith('\\') &&
+        (line.Length == Command.Length || char.IsWhiteSpace(line[Command.Length]));
+
+    /// <summary>
+    /// The page prompt for a /page line, else null: short, since the guide says the rest.
+    /// openPage is the page the viewer shows, named so a change lands on that file.
     /// </summary>
     public static string? Rewrite(string line, string? openPage = null)
     {
-        if (!line.StartsWith(Command, StringComparison.Ordinal) || line.EndsWith('\\')) return null;
-        var rest = line[Command.Length..];
-        if (rest.Length > 0 && !char.IsWhiteSpace(rest[0])) return null;
-
-        var text = rest.Trim().TrimEnd('.');
+        if (!IsCommand(line)) return null;
+        var text = line[Command.Length..].Trim().TrimEnd('.');
         if (text.Length == 0) text = "a page of what we just discussed";
-        var open = openPage is null ? "" :
-            $"The page open now is `.clayo/pages/{Path.GetFileName(openPage)}`; if this is a change to it, edit that file, don't make a new one. ";
-        return "Make a Clayo page: read `.clayo/page-guide.md` first (skip if you already have this session). " +
-               $"{open}Then: {text}. Write it to `.clayo/pages/`, check it once, and reply with one line saying what it shows.";
+        return $"Make a Clayo page as `.clayo/page-guide.md` says{OpenNote(openPage)}: {text}.";
     }
+
+    /// <summary>What names the open page: added to the line, or to Claude's /page.</summary>
+    public static string OpenNote(string? openPage) =>
+        openPage is null ? "" : $" (open: `.clayo/pages/{Path.GetFileName(openPage)}`)";
+
+    /// <summary>
+    /// Claude's own /page, written into the project (PageFolder.ClaudeCommand), so Claude reads
+    /// this and the terminal shows only the line you typed. ClaudeMarker marks it as Clayo's.
+    /// </summary>
+    public const string ClaudeCommand =
+        "---\n" +
+        "description: Make a Clayo page (written by Clayo)\n" +
+        "argument-hint: what the page should show\n" +
+        "---\n" +
+        "Make a Clayo page as `.clayo/page-guide.md` says: $ARGUMENTS\n\n" +
+        "Nothing after the colon: a page of what we just discussed. " +
+        "`(open: <file>)` at the end names the page open in Clayo.\n";
+
+    public const string ClaudeMarker = "(written by Clayo)";
 }
 
 /// <summary>

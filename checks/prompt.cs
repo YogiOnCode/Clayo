@@ -118,10 +118,9 @@ void Same(string name, object? got, object? want)
     if (!ok) fail++;
     Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}  got={got ?? "null"} want={want ?? "null"}");
 }
-const string Head = "Make a Clayo page: read `.clayo/page-guide.md` first (skip if you already have this session). ";
-const string Tail = " Write it to `.clayo/pages/`, check it once, and reply with one line saying what it shows.";
-Same("/page x is rewritten", PagePrompt.Rewrite("/page the test results"), Head + "Then: the test results." + Tail);
-Same("/page alone: what we just discussed", PagePrompt.Rewrite("/page"), Head + "Then: a page of what we just discussed." + Tail);
+const string Head = "Make a Clayo page as `.clayo/page-guide.md` says";
+Same("/page x is rewritten", PagePrompt.Rewrite("/page the test results"), Head + ": the test results.");
+Same("/page alone: what we just discussed", PagePrompt.Rewrite("/page"), Head + ": a page of what we just discussed.");
 Same("/page and a space: the same", PagePrompt.Rewrite("/page "), PagePrompt.Rewrite("/page"));
 Same("/pages is not", PagePrompt.Rewrite("/pages"), null);
 Same("a space before it: not", PagePrompt.Rewrite(" /page x"), null);
@@ -129,7 +128,9 @@ Same("text before it: not", PagePrompt.Rewrite("x /page"), null);
 Same("a line carried on with \\: not", PagePrompt.Rewrite("/page x\\"), null);
 Same("with a page open, the prompt names it",
     PagePrompt.Rewrite("/page make the title shorter", @"C:\proj\.clayo\pages\test-results.html"),
-    Head + "The page open now is `.clayo/pages/test-results.html`; if this is a change to it, edit that file, don't make a new one. Then: make the title shorter." + Tail);
+    Head + " (open: `.clayo/pages/test-results.html`): make the title shorter.");
+Same("Claude: the open page goes on the end of the line", PagePrompt.OpenNote(@"C:\proj\.clayo\pages\a.html"), " (open: `.clayo/pages/a.html`)");
+Same("  none open: nothing", PagePrompt.OpenNote(null), "");
 
 // The line at the prompt, from the keys alone.
 string? Typed(params string[] keys)
