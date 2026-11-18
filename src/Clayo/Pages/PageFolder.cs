@@ -35,9 +35,11 @@ public static class PageFolder
     /// Puts what an agent needs to make a page into the project's .clayo folder: the guide, the
     /// templates, and beside the pages the stylesheet, script and libraries they link, so a page
     /// also opens straight in a browser. A file is copied when it is missing or Clayo's is
-    /// newer. The pages themselves are never touched.
+    /// newer. The stylesheet is Clayo's with the theme after it (PageTheme), written again when
+    /// either changes, so the browser shows what the viewer does. The pages themselves are
+    /// never touched.
     /// </summary>
-    public static void Setup(string projectFolder, string? assets = null)
+    public static void Setup(string projectFolder, string? assets = null, string themeCss = "")
     {
         assets ??= Path.Combine(AppContext.BaseDirectory, "Assets", "pages");
         var clayo = Path.Combine(projectFolder, ".clayo");
@@ -46,7 +48,17 @@ public static class PageFolder
             foreach (var file in Directory.EnumerateFiles(assets, "*", SearchOption.AllDirectories))
             {
                 var name = Path.GetRelativePath(assets, file);
+                if (name.StartsWith("themes" + Path.DirectorySeparatorChar)) continue;   // Clayo's to apply
                 var to = Path.Combine(clayo, name.Contains(Path.DirectorySeparatorChar) || name == "page-guide.md" ? name : Path.Combine("pages", name));
+                if (name == "clayo-page.css")
+                {
+                    var sheet = File.ReadAllText(file);
+                    if (themeCss.Length > 0) sheet += "\n/* The theme picked in Clayo's settings. */\n" + themeCss;
+                    if (File.Exists(to) && File.ReadAllText(to) == sheet) continue;
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.WriteAllText(to, sheet);
+                    continue;
+                }
                 if (File.Exists(to) && File.GetLastWriteTimeUtc(to) >= File.GetLastWriteTimeUtc(file)) continue;
                 Directory.CreateDirectory(Path.GetDirectoryName(to)!);
                 File.Copy(file, to, overwrite: true);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Automation;
@@ -7,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using Rectangle = System.Windows.Shapes.Rectangle;
 using CcxShell.Core;
 
 namespace CcxShell;
@@ -38,6 +40,8 @@ public partial class SettingsPane : UserControl
             AddChoice(ThemeChoices, theme, theme.ToString());
         foreach (var step in ClayoSettings.ReserveSteps)
             AddChoice(ReserveSteps, step, step == 0 ? "Off" : $"{step}%");
+        foreach (var theme in PageTheme.All)
+            PageThemeCards.Children.Add(ThemeCard(theme));
         BuildAskCards();
         Chevron(OwnChevron);
     }
@@ -79,6 +83,7 @@ public partial class SettingsPane : UserControl
         ShotKeySwitch.IsChecked = settings.ScreenshotHotkey;
         ShotOfferSwitch.IsChecked = settings.ScreenshotOffer;
         ShowShots(shotKeyTaken);
+        Choose(PageThemeCards, settings.PageThemeId);
         UpdateCheckSwitch.IsChecked = settings.UpdateCheck;
         UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
         ShowUpdate(newer);
@@ -148,6 +153,87 @@ public partial class SettingsPane : UserControl
         ShotKeyText.Text = _settings.ScreenshotHotkey && shotKeyTaken
             ? "Another app has Ctrl+Alt+S, so the shortcut is off. Close that app's shortcut, then switch this off and on."
             : "Take a screenshot (Win+Shift+S), then press Ctrl+Alt+S: the island asks which session it is for.";
+    }
+
+    // ---- Pages: a card per theme, with a small picture of it drawn from its own tokens ----
+
+    private RadioButton ThemeCard(PageTheme theme)
+    {
+        var tokens = PageTheme.Tokens(theme.Id);
+        var pictures = new StackPanel { Orientation = Orientation.Horizontal };
+        pictures.Children.Add(ThemePicture(tokens, dark: false));
+        pictures.Children.Add(ThemePicture(tokens, dark: true));
+
+        var body = new StackPanel { Width = 210 };
+        body.Children.Add(pictures);
+        body.Children.Add(new TextBlock
+        {
+            Text = theme.Name, FontSize = 12.5, FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("TextPrimary"), Margin = new Thickness(0, 9, 0, 2)
+        });
+        body.Children.Add(new TextBlock { Text = theme.About, Style = (Style)FindResource("RowText"), TextWrapping = TextWrapping.Wrap });
+
+        var card = new RadioButton { Style = (Style)FindResource("ThemeCard"), GroupName = PageThemeCards.Name, Tag = theme.Id, Content = body };
+        AutomationProperties.SetName(card, $"{theme.Name}. {theme.About}");
+        card.Click += PageTheme_Click;
+        return card;
+    }
+
+    /// <summary>A title slide over a corner of a report, in one scheme: enough to tell the themes apart.</summary>
+    private FrameworkElement ThemePicture(IReadOnlyDictionary<string, string> tokens, bool dark)
+    {
+        Brush B(string token) => PageTheme.Colour(tokens, token, dark) is { } hex
+            ? (Brush)new BrushConverter().ConvertFromString(hex)!
+            : Brushes.Transparent;
+        var heading = new FontFamily(PageTheme.Value(tokens, "--font-heading").Replace("\"", ""));
+        double radius = double.TryParse(PageTheme.Value(tokens, "--radius").Replace("px", ""), CultureInfo.InvariantCulture, out var px)
+            ? Math.Min(px, 14) / 2.5 : 3;
+
+        var title = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        title.Children.Add(new TextBlock
+        {
+            Text = "Title", FontFamily = heading, FontSize = 13, FontWeight = FontWeights.Bold,
+            Foreground = B("--title-text"), HorizontalAlignment = HorizontalAlignment.Center
+        });
+        title.Children.Add(new Rectangle { Width = 44, Height = 2, Fill = B("--title-muted"), Margin = new Thickness(0, 4, 0, 0) });
+        var slide = new Grid { Height = 56, Background = B("--title-bg") };
+        slide.Children.Add(title);
+        slide.Children.Add(new Rectangle { Height = 4, VerticalAlignment = VerticalAlignment.Bottom, Fill = B("--slide-accent") });
+
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = "Report", FontFamily = heading, FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = B("--heading") });
+        text.Children.Add(new Rectangle { Width = 34, Height = 2, Fill = B("--muted"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 0) });
+        text.Children.Add(new Rectangle { Width = 22, Height = 2, Fill = B("--accent"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 3, 0, 0) });
+        var bars = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        foreach (var (token, height) in new[] { ("--c1", 24.0), ("--c2", 14.0), ("--c3", 19.0) })
+            bars.Children.Add(new Rectangle { Width = 7, Height = height, Fill = B(token), Margin = new Thickness(2, 0, 0, 0), VerticalAlignment = VerticalAlignment.Bottom });
+        var inside = new Grid();
+        inside.Children.Add(text);
+        inside.Children.Add(bars);
+        var report = new Border
+        {
+            Background = B("--bg"), Padding = new Thickness(6),
+            Child = new Border
+            {
+                Background = B("--surface"), BorderBrush = B("--border"), BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(radius), Padding = new Thickness(6, 5, 6, 5), Child = inside
+            }
+        };
+
+        var both = new StackPanel { Width = 100 };
+        both.Children.Add(slide);
+        both.Children.Add(report);
+        return new Border
+        {
+            BorderBrush = (Brush)FindResource("Hairline"), BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 0, dark ? 0 : 6, 0), Child = both
+        };
+    }
+
+    private void PageTheme_Click(object sender, RoutedEventArgs e)
+    {
+        _settings = _settings with { PageThemeId = (string)((RadioButton)sender).Tag };
+        SettingsChanged?.Invoke(_settings);
     }
 
     private void UpdateCheck_Click(object sender, RoutedEventArgs e)
@@ -555,17 +641,18 @@ public partial class SettingsPane : UserControl
     private void Nav_Checked(object sender, RoutedEventArgs e)
     {
         // Checked fires while InitializeComponent is still building the pages.
-        if (PageGeneral is null || PageStatus is null || PageSecurity is null || PageIsland is null) return;
+        if (PageGeneral is null || PageStatus is null || PageSecurity is null || PageIsland is null || PagePages is null) return;
         PageGeneral.Visibility = NavGeneral.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageSecurity.Visibility = NavSecurity.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageIsland.Visibility = NavIsland.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PagePages.Visibility = NavPages.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Opens setup, then puts the check back on the page still showing.</summary>
     private void Agents_Checked(object sender, RoutedEventArgs e)
     {
-        (PageStatus.IsVisible ? NavStatus : PageSecurity.IsVisible ? NavSecurity : PageIsland.IsVisible ? NavIsland : NavGeneral).IsChecked = true;
+        (PageStatus.IsVisible ? NavStatus : PageSecurity.IsVisible ? NavSecurity : PageIsland.IsVisible ? NavIsland : PagePages.IsVisible ? NavPages : NavGeneral).IsChecked = true;
         SetupRequested?.Invoke();
     }
 

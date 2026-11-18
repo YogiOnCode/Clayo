@@ -28,13 +28,14 @@ public static class PageExport
     /// Writes the export and returns its files. A PDF, or the PNG of a page, is the one file
     /// `to`; the PNGs of a deck go in a folder named as `to` without its extension.
     /// </summary>
-    public static async Task<IReadOnlyList<string>> Run(string file, string to, PageExportKind kind)
+    /// <param name="themeCss">The theme to export it in; null is the one picked in Settings.</param>
+    public static async Task<IReadOnlyList<string>> Run(string file, string to, PageExportKind kind, string? themeCss = null)
     {
         // Printed and captured as a document of its own, not in the viewer's frame: a frame
         // prints as one clipped box. It keeps the page's seal, loads from a folder holding
         // nothing else, may go nowhere, and no one listens to it but for "ready".
         var temp = Directory.CreateTempSubdirectory("clayo-export").FullName;
-        File.WriteAllText(Path.Combine(temp, "page.html"), PageHtml.Seal(File.ReadAllText(file)));
+        File.WriteAllText(Path.Combine(temp, "page.html"), PageHtml.Seal(File.ReadAllText(file), themeCss ?? PageTheme.CurrentCss()));
 
         var userData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CcxShell", "WebView2-check");

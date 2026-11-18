@@ -322,9 +322,13 @@ public partial class MainWindow : Window
         {
             // On checks right away; off forgets what an earlier check found (CheckForUpdate).
             bool updateCheckChanged = s.UpdateCheck != _settings.UpdateCheck;
+            bool pageThemeChanged = s.PageThemeId != _settings.PageThemeId;
             _settings = s;
             if (updateCheckChanged) _ = CheckForUpdate();
             s.Save(ClayoSettings.DefaultPath);
+            // After the save: a page reads the theme from the file, as clayo-page does.
+            if (pageThemeChanged)
+                foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.ShowPageTheme();
             AskRules.SyncCodex(s, AskRules.CodexHome);
             ShowStatusBar();
             WarnReserve();

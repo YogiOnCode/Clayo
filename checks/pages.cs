@@ -48,6 +48,33 @@ foreach (var other in new[]
 })
     Check($"left alone: {other}", PageHtml.Seal(other).EndsWith(">" + other), true);
 
+// A theme goes in after Clayo's stylesheet and before anything the page styles itself (P12).
+const string Theme = ":root {\n  --accent: red;\n}\n";
+var own = page.Replace("</head>", "<style>h1 { color: blue; }</style>\n</head>");
+var themed = PageHtml.Seal(own, Theme);
+const string Link = "<link rel=\"stylesheet\" href=\"https://ccx.assets/pages/clayo-page.css\">";
+Check("a theme comes straight after the stylesheet link", themed.Contains(Link + "<style>:root {   --accent: red; } </style>"), true);
+Check("  before the page's own style", themed.IndexOf("--accent: red") < themed.IndexOf("color: blue"), true);
+Check("  on one line, so the page's line numbers stay", themed.Split('\n').Length, PageHtml.Seal(own).Split('\n').Length);
+Check("  and can't close its own tag", PageHtml.Seal(own, "a{}</style><script>x()</script>").Contains("a{}<\\/style><script>x()<\\/script></style>"), true);
+Check("a page with no link gets no theme", PageHtml.Seal("<!doctype html><link rel=\"stylesheet\" href=\"other.css\"><h1>hi</h1>", Theme).Contains("--accent"), false);
+Check("the default theme adds nothing", PageHtml.Seal(own, PageTheme.Css(PageTheme.Default)), PageHtml.Seal(own));
+Check("nor does a name that is not a theme", PageTheme.Css("../../secret"), "");
+foreach (var theme in PageTheme.All.Where(t => t.Id != PageTheme.Default))
+{
+    var css = PageTheme.Css(theme.Id);
+    Check($"{theme.Id}: tokens only, one short rule",
+        css.Split('\n').Length <= 40 && System.Text.RegularExpressions.Regex.IsMatch(css, @"^/\*[^*]*\*/\s*:root \{(\s*--[\w-]+:[^;{}]+;)+\s*\}\s*$"), true);
+    var tokens = PageTheme.Tokens(theme.Id);
+    Check("  with a colour for every part of a card, light and dark",
+        new[] { "--bg", "--surface", "--border", "--heading", "--muted", "--accent", "--c1", "--title-bg", "--title-text" }
+            .All(t => PageTheme.Colour(tokens, t, false) is not null && PageTheme.Colour(tokens, t, true) is not null), true);
+}
+var basic = PageTheme.Tokens(PageTheme.Default);
+Check("the default's deck tokens are the page's own", (PageTheme.Colour(basic, "--title-bg", true), PageTheme.Colour(basic, "--title-text", false)),
+    (PageTheme.Colour(basic, "--bg", true), PageTheme.Colour(basic, "--heading", false)));
+Check("  and it has no band", PageTheme.Colour(basic, "--slide-accent", false), null);
+
 // A deck is a page whose main is a .deck: the viewer offers Present for it.
 Check("a deck", PageHtml.IsDeck("<body><main class=\"deck\"><section class=\"slide\">"), true);
 Check("  with other classes", PageHtml.IsDeck("<main id=m class='wide deck dark'>"), true);
@@ -83,6 +110,9 @@ try
     Directory.CreateDirectory(Path.Combine(assets, "templates"));
     File.WriteAllText(Path.Combine(assets, "page-guide.md"), "guide 1");
     File.WriteAllText(Path.Combine(assets, "clayo-page.css"), "css");
+    File.WriteAllText(Path.Combine(assets, "clayo-page.js"), "js");
+    Directory.CreateDirectory(Path.Combine(assets, "themes"));
+    File.WriteAllText(Path.Combine(assets, "themes", "swiss.css"), "swiss");
     File.WriteAllText(Path.Combine(assets, "templates", "report.html"), "report");
     var clayo = Path.Combine(plain, ".clayo");
     PageFolder.Setup(plain, assets);
@@ -93,11 +123,21 @@ try
     File.WriteAllText(mine, "<title> Test &amp; results </title>");
     File.WriteAllText(Path.Combine(assets, "page-guide.md"), "guide 2");
     File.SetLastWriteTimeUtc(Path.Combine(assets, "page-guide.md"), DateTime.UtcNow.AddMinutes(1));
-    File.WriteAllText(Path.Combine(clayo, "pages", "clayo-page.css"), "edited");
-    File.SetLastWriteTimeUtc(Path.Combine(clayo, "pages", "clayo-page.css"), DateTime.UtcNow.AddMinutes(1));
-    PageFolder.Setup(plain, assets);
+    Check("setup: the themes stay Clayo's", Directory.Exists(Path.Combine(clayo, "themes")), false);
+    File.WriteAllText(Path.Combine(clayo, "pages", "clayo-page.js"), "edited");
+    File.SetLastWriteTimeUtc(Path.Combine(clayo, "pages", "clayo-page.js"), DateTime.UtcNow.AddMinutes(1));
+    PageFolder.Setup(plain, assets, Theme);
     Check("setup again: a newer guide replaces the old", File.ReadAllText(Path.Combine(clayo, "page-guide.md")), "guide 2");
-    Check("  a copy that is not older is left", File.ReadAllText(Path.Combine(clayo, "pages", "clayo-page.css")), "edited");
+    Check("  a copy that is not older is left", File.ReadAllText(Path.Combine(clayo, "pages", "clayo-page.js")), "edited");
+    var sheet = Path.Combine(clayo, "pages", "clayo-page.css");
+    Check("  with a theme: the stylesheet ends with it", File.ReadAllText(sheet).StartsWith("css\n") && File.ReadAllText(sheet).EndsWith(Theme), true);
+    var written = File.GetLastWriteTimeUtc(sheet);
+    PageFolder.Setup(plain, assets, Theme);
+    Check("  the same theme again: not written again", File.GetLastWriteTimeUtc(sheet), written);
+    PageFolder.Setup(plain, assets, ":root { --accent: blue; }");
+    Check("  another theme: written again", File.ReadAllText(sheet).EndsWith(":root { --accent: blue; }"), true);
+    PageFolder.Setup(plain, assets);
+    Check("  the default again: Clayo's stylesheet alone", File.ReadAllText(sheet), "css");
     Check("  a page is never touched", File.ReadAllText(mine), "<title> Test &amp; results </title>");
 
     // The index of every page.

@@ -45,9 +45,9 @@ if (!Directory.Exists(fixtures)) fixtures = Path.Combine(Environment.CurrentDire
 var dir = Directory.CreateTempSubdirectory("clayo-pagecheck").FullName;
 try
 {
-    PageCheckResult Run(string name)
+    PageCheckResult Run(string name, string themeCss = "")
     {
-        var (result, failure) = PageCheck.Check(Path.Combine(fixtures, name), dir);
+        var (result, failure) = PageCheck.Check(Path.Combine(fixtures, name), dir, themeCss);
         Check($"{name}: checked", failure, null);
         return result ?? new PageCheckResult(name, 0, 0, [], [], [], []);
     }
@@ -65,11 +65,20 @@ try
     Check("a deck: its slides counted", deck.Slides, 2);
     Check("  and the slide that is too full named", string.Join("|", deck.Overflow), "slide 2: its content doesn't fit the slide");
 
+    // Themes (P12): every layout of a deck fits and loads nothing it may not, in each of them.
+    foreach (var theme in PageTheme.All)
+    {
+        var css = PageTheme.Css(theme.Id);
+        Check($"{theme.Id}: its file is there", css.Length > 0, theme.Id != PageTheme.Default);
+        var layouts = Run("page-deck-layouts.html", css);
+        Check($"  a deck in it: nothing found", $"{layouts.Errors.Count} {layouts.Blocked.Count} {layouts.Overflow.Count} {layouts.Slides}", "0 0 0 6");
+    }
+
     // Export (P6): a deck one slide per 16:9 PDF page or one PNG per slide, a page on A4 or as one image.
     string[] Export(string name, string to, PageExportKind kind)
     {
         var (files, failure) = PageCheck.OnOwnThread(
-            () => PageExport.Run(Path.Combine(fixtures, name), Path.Combine(dir, to), kind), TimeSpan.FromSeconds(40));
+            () => PageExport.Run(Path.Combine(fixtures, name), Path.Combine(dir, to), kind, themeCss: ""), TimeSpan.FromSeconds(40));
         Check($"{name} to {to}: exported", failure, null);
         return [.. files ?? []];
     }

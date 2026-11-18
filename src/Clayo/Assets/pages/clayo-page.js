@@ -239,6 +239,15 @@
     if (!slides.length) return;
     var at = 0;
 
+    // A quiet line at the foot of the slides between: the deck's title and the slide's number.
+    Array.prototype.forEach.call(slides, function (s, i) {
+      if (/\b(title|section|closing)\b/.test(s.className)) return;
+      var foot = s.appendChild(document.createElement("footer"));
+      foot.className = "slide-foot";
+      foot.appendChild(document.createElement("span")).textContent = document.title;
+      foot.appendChild(document.createElement("span")).textContent = i + 1;
+    });
+
     var nav = document.createElement("nav");
     nav.className = "deck-nav";
     nav.innerHTML = '<button type="button" aria-label="Previous slide">‹</button><span></span>' +

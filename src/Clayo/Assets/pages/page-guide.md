@@ -85,8 +85,12 @@ they work on a phone and in light and dark.
 Slides: `<main class="deck">` with one `<section class="slide">` each, 16:9. Layouts:
 `slide title` (opening), `slide` (heading and bullets), `slide split` (two columns: put
 exactly two children in it), `slide big-number` (`<b>42%</b>` and a `.lead`), `slide quote`
-(`<blockquote>` and `<cite>`). Everything above works inside a slide. A slide doesn't
-scroll: at most 4 bullets, or one chart, or one table of 5 rows.
+(`<blockquote>` and `<cite>`),
+`slide section` (an `<h2>` that opens a part of the deck),
+`slide three` (an `<h2>`, then three `<div>`s side by side),
+`slide closing` (an `<h2>` and a `.lead` to end on).
+Everything above works inside a slide. A slide doesn't scroll: at most 4 bullets, or one
+chart, or one table of 5 rows.
 
 ## 4. Charts and diagrams
 

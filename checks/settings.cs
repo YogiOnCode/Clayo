@@ -43,6 +43,14 @@ try
     Check("screenshot settings load back", ClayoSettings.Load(path), shots);
 
     // Update checks (docs/VERSION.md D3): on by default, off kept.
+    // The page theme (docs/PAGES.md, D21): one of the shipped ones, else the default.
+    File.WriteAllText(path, """{"pageTheme":"swiss"}""");
+    Check("a page theme is kept", ClayoSettings.Load(path).PageThemeId, "swiss");
+    (defaults with { PageThemeId = "aurora" }).Save(path);
+    Check("  and loads back", ClayoSettings.Load(path).PageThemeId, "aurora");
+    File.WriteAllText(path, """{"pageTheme":"../x"}""");
+    Check("a name that is not a theme is the default", ClayoSettings.Load(path).PageThemeId, PageTheme.Default);
+
     Check("update checks are on by default", defaults.UpdateCheck, true);
     File.WriteAllText(path, """{"statusHeader":false}""");
     Check("no updateCheck key is on", ClayoSettings.Load(path).UpdateCheck, true);

@@ -121,8 +121,9 @@ public static class PageCheck
     }
 
     /// <summary>Checks one page. A null result comes with why it could not be checked.</summary>
-    public static (PageCheckResult? Result, string? Failure) Check(string file, string outDir) =>
-        OnOwnThread(() => Render(file, outDir), GiveUp);
+    /// <param name="themeCss">The theme to show it in; null is the one picked in Settings.</param>
+    public static (PageCheckResult? Result, string? Failure) Check(string file, string outDir, string? themeCss = null) =>
+        OnOwnThread(() => Render(file, outDir, themeCss ?? PageTheme.CurrentCss()), GiveUp);
 
     /// <summary>Runs off-screen work to its end on a thread of its own. A null result comes with why.</summary>
     public static (T? Result, string? Failure) OnOwnThread<T>(Func<Task<T>> start, TimeSpan giveUp) where T : class
@@ -151,10 +152,10 @@ public static class PageCheck
         return done;
     }
 
-    private static async Task<PageCheckResult> Render(string file, string outDir)
+    private static async Task<PageCheckResult> Render(string file, string outDir, string themeCss)
     {
         var html = File.ReadAllText(file);
-        var page = PageHtml.Seal(html);
+        var page = PageHtml.Seal(html, themeCss);
         // Straight after the policy, so it is running before anything of the page's.
         int at = page.IndexOf('>', page.IndexOf("Content-Security-Policy", StringComparison.Ordinal)) + 1;
         // On one line, so the line numbers in the page's own errors stay the file's.
