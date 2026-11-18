@@ -55,6 +55,9 @@ switching windows.
   show as a small icon in the pane header: hover for thumbnails, click for full size. When a
   session writes a `.md` in its folder, a doc icon opens it rendered, beside the terminal or
   over it, and follows its edits. Works with Claude Code and Codex.
+- **Pages.** Type `/page` and a session makes a report, dashboard, diagram or slide deck that
+  shows beside the terminal. Present it, export it as PDF or PNG, or share it as one file or
+  a public link. See [Pages](docs/AGENTS.md#pages).
 - **Status at a glance.** Each pane's header shows model, branch and diff, context and
   effort. The sidebar footer shows your 5-hour and 7-day limits, drawn as Numbers, Bars,
   Rings or Chips, and the island warns you once when you get near one.

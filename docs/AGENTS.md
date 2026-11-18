@@ -70,6 +70,48 @@ Press **Locate…** on the agent's row in the setup window and pick its `claude.
 `codex.cmd`. Otherwise Clayo looks on your PATH, then in the folders the installers above
 use (and `%LOCALAPPDATA%\Microsoft\WinGet\Links`).
 
+## Pages
+
+Ask a session for a page and it makes one: a report, a dashboard, a diagram or a slide deck,
+as an HTML file shown beside the terminal like a markdown doc. Works with Claude Code and
+Codex.
+
+- **Ask for one.** Type `/page <what you want>` in a pane, or `/page` alone for a page of
+  what you just discussed. The **Page** button in the pane header types `/page ` for you.
+  In Claude you see only your `/page` line; Codex gets one short line.
+- **Change one.** With a page open, `/page make the title shorter` edits that page instead
+  of making a new one.
+- **Offer pages when useful.** In the Page button's menu. The session keeps answering in
+  chat and, when a reply would be clearer as a page, asks "Want this as a page?". It makes
+  one only if you say yes. Per session.
+- **Where they live.** `<project>/.clayo/pages/<name>.html`, beside the guide and
+  templates Clayo copies into `.clayo/`. Clayo adds `.clayo/` to `.git/info/exclude`, so git
+  ignores it. In Claude, `/page` is a project command in `.claude/commands/page.md`, also
+  excluded; a `page.md` of your own is never overwritten. A page also opens straight in a
+  browser.
+- **What a page can do.** Text, tables, charts, Mermaid diagrams and slides, light and dark.
+  **What it can't:** it runs sealed off, so it can't reach Clayo, your files or the network.
+  Links ask before they open in your browser.
+- **Slides.** A deck gets ← →, a slide counter and **▶ Present** (full screen, Esc to leave).
+- **Export.** **Export › PDF / PNG** in the viewer bar. A deck exports one slide per PDF page,
+  or one PNG per slide.
+- **Themes.** **Settings › Pages** picks one of five looks. Every page follows, old and new,
+  on screen, in Present and in exports.
+- **The Pages view.** **Pages** at the bottom of the sidebar shows every page from every
+  session. Search, filter by project, agent, session, Shared or Slides, and sort. Right-click
+  a page (or a selection) to open it, go to its session, export, share, show it in Explorer,
+  or delete it (to the Recycle Bin).
+- **Share.** **Share** in the viewer bar or on a card:
+  - **Save a copy…** writes one file with everything inlined. It opens anywhere, offline.
+  - **Create public link…** puts the page in a secret GitHub gist and copies a preview
+    link. Anyone with the link can view it. Clayo first checks the page for tokens, keys,
+    local paths and internal hosts, and lists what it finds before you confirm. It uses your
+    `gh` or Git GitHub login, after asking once; **Settings › Pages › Public links ›
+    Forget** makes it ask again.
+  - **Update public link** sends the new version to the same link. **Remove public link…**
+    deletes the gist. The preview service keeps its own copy for a while, so an update or a
+    removal can take some time to show.
+
 ## What Clayo reads
 
 - Claude Code sessions: `%USERPROFILE%\.claude\projects`
