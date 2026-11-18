@@ -128,9 +128,31 @@ Same("text before it: not", PagePrompt.Rewrite("x /page"), null);
 Same("a line carried on with \\: not", PagePrompt.Rewrite("/page x\\"), null);
 Same("with a page open, the prompt names it",
     PagePrompt.Rewrite("/page make the title shorter", @"C:\proj\.clayo\pages\test-results.html"),
-    Head + " (open: `.clayo/pages/test-results.html`): make the title shorter.");
-Same("Claude: the open page goes on the end of the line", PagePrompt.OpenNote(@"C:\proj\.clayo\pages\a.html"), " (open: `.clayo/pages/a.html`)");
+    Head + ": make the title shorter. (page open: .clayo/pages/test-results.md)");
+Same("the open page goes on the end of the line, by its twin", PagePrompt.OpenNote(@"C:\proj\.clayo\pages\a.html"), " (page open: .clayo/pages/a.md)");
 Same("  none open: nothing", PagePrompt.OpenNote(null), "");
+
+// The open page's twin is named on the first prompt after it opens or changes (P9), not on every one.
+{
+    const string Open = @"C:\proj\.clayo\pages\a.html";
+    const string Note = " (page open: .clayo/pages/a.md)";
+    var t0 = new DateTime(2026, 11, 18, 9, 0, 0, DateTimeKind.Utc);
+    var note = new OpenPageNote();
+    Same("twin: no page open, nothing", note.For("hello", null, t0), "");
+    Same("  the first prompt gets it", note.For("summarise this", Open, t0), Note);
+    Same("  the next doesn't", note.For("and shorter", Open, t0), "");
+    Same("  a change to the page brings it back", note.For("again", Open, t0.AddSeconds(5)), Note);
+    Same("  a slash command never", new OpenPageNote().For("/model", Open, t0), "");
+    Same("  nor a shell line or an empty one", (new OpenPageNote().For("!ls", Open, t0), new OpenPageNote().For("  ", Open, t0)), ("", ""));
+    note.Forget();
+    Same("  opened again: named again", note.For("hi", Open, t0.AddSeconds(5)), Note);
+    var cmd = new OpenPageNote();
+    Same("  /page always, once", cmd.For("/page x", Open, t0) + cmd.For("/page y", Open, t0), Note + Note);
+    Same("  and the prompt after it doesn't repeat it", cmd.For("thanks", Open, t0), "");
+    Same("/page gets one suffix, not two",
+        PagePrompt.Rewrite("/page x", Open)!.Split("(page open:").Length - 1, 1);
+    Same("Claude's /page says what the suffix means", PagePrompt.ClaudeCommand.Contains("(page open: <name>.md)") && PagePrompt.ClaudeCommand.Contains(".html"), true);
+}
 
 // The line at the prompt, from the keys alone.
 string? Typed(params string[] keys)
