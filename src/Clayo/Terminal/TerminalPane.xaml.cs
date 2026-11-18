@@ -764,13 +764,11 @@ public partial class TerminalPane : UserControl
         menu.IsOpen = true;
     }
 
-    /// <summary>Share's choices, where the mouse is. A public link comes with P7b.</summary>
+    /// <summary>Share's choices (ShareFlow), where the mouse is.</summary>
     private void ShowShareMenu(string page)
     {
         var menu = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
-        var copy = new MenuItem { Header = "Save a copy…" };
-        copy.Click += async (_, _) => await SaveCopy(Window.GetWindow(this), page);
-        menu.Items.Add(copy);
+        foreach (var item in ShareFlow.Items(Window.GetWindow(this), page)) menu.Items.Add(item);
         menu.IsOpen = true;
     }
 

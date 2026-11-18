@@ -8,17 +8,18 @@ namespace CcxShell.Core;
 /// <summary>
 /// One page an agent wrote, as the index keeps it. Times are UTC. SessionId is null and Agent
 /// empty for a page found in a project's folder that no session was seen writing. Deck is
-/// read from the file, not kept.
+/// read from the file and Shared from PageShares, not kept here.
 /// </summary>
 public sealed record PageEntry(
-    string Path, string Title, string Project, string? SessionId, string Agent, DateTime Created, DateTime Changed, bool Deck = false);
+    string Path, string Title, string Project, string? SessionId, string Agent, DateTime Created, DateTime Changed,
+    bool Deck = false, bool Shared = false);
 
 public enum PageSort { Newest, Changed, Name, Project }
 
 /// <summary>What the Pages view shows: a search of titles, the filters (null: any) and the order.</summary>
 public sealed record PageFilter(
     string Search = "", string? Project = null, string? Agent = null, string? SessionId = null, bool Slides = false,
-    PageSort Sort = PageSort.Newest);
+    PageSort Sort = PageSort.Newest, bool Shared = false);
 
 /// <summary>
 /// Every page from every session, in pages.json, so the Pages list can show them with no pane
@@ -115,7 +116,8 @@ public sealed partial class PageIndex
             && (f.Project is null || Same(p.Project, f.Project))
             && (f.Agent is null || p.Agent == f.Agent)
             && (f.SessionId is null || p.SessionId == f.SessionId)
-            && (!f.Slides || p.Deck));
+            && (!f.Slides || p.Deck)
+            && (!f.Shared || p.Shared));
         return f.Sort switch
         {
             PageSort.Changed => [.. shown.OrderByDescending(p => p.Changed)],

@@ -84,6 +84,7 @@ public partial class SettingsPane : UserControl
         ShotOfferSwitch.IsChecked = settings.ScreenshotOffer;
         ShowShots(shotKeyTaken);
         Choose(PageThemeCards, settings.PageThemeId);
+        ShowGitHub();
         UpdateCheckSwitch.IsChecked = settings.UpdateCheck;
         UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
         ShowUpdate(newer);
@@ -262,6 +263,26 @@ public partial class SettingsPane : UserControl
         Process.Start(new ProcessStartInfo(Updater.ReleaseUrl(Updater.Current)) { UseShellExecute = true })?.Dispose();
 
     private void Update_Click(object sender, RoutedEventArgs e) => UpdateRequested?.Invoke();
+
+    // Which GitHub login public links use (P7). Forgetting it asks again before the next link;
+    // links already made keep working.
+    private void ShowGitHub()
+    {
+        var login = new PageShares().Login;
+        GitHubState.Text = login switch
+        {
+            "gh" => "Public links use your GitHub CLI (gh) login. Forget it and Clayo asks again before the next link.",
+            "git" => "Public links use Git's saved GitHub login. Forget it and Clayo asks again before the next link.",
+            _ => "Not in use. Clayo asks before using your gh or Git login for a page's public link."
+        };
+        ForgetGitHub.Visibility = login is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ForgetGitHub_Click(object sender, RoutedEventArgs e)
+    {
+        new PageShares().Login = null;
+        ShowGitHub();
+    }
 
     // A click anywhere on a row whose Tag is its switch flips the switch, as a click on a
     // label does, and runs the switch's own Click. A click on the switch itself is the

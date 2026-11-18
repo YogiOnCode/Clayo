@@ -242,7 +242,7 @@ try
     var lib = Path.Combine(dir, "lib");
     Directory.CreateDirectory(lib);
     File.WriteAllText(Path.Combine(lib, "clayo-page.css"), ".a { color: red } /* $1 </style> */");
-    File.WriteAllText(Path.Combine(lib, "clayo-page.js"), "var page = '$0 </script>';");
+    File.WriteAllText(Path.Combine(lib, "clayo-page.js"), "var page = '$0 </script>'; var c = '<!--';");
     File.WriteAllText(Path.Combine(lib, "chart.umd.min.js"), "var CHART;");
     File.WriteAllText(Path.Combine(lib, "mermaid.min.js"), "var MERMAID;");
     const string Cdn = "https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js";
@@ -256,6 +256,7 @@ try
     Check("copy: sealed", plainCopy.Contains("Content-Security-Policy"), true);
     Check("  the stylesheet inside, then the theme", plainCopy.IndexOf(".a { color: red }") is > 0 and var at && at < plainCopy.IndexOf("--accent: blue"), true);
     Check("  the script inside", plainCopy.Contains("var page = '$0 <\\/script>';"), true);
+    Check("  an HTML comment opener in it is escaped", plainCopy.Contains("var c = '<\\!--';"), true);
     Check("  nothing linked from Clayo", plainCopy.Contains("ccx.assets/pages/clayo-page"), false);
     Check("  a closing tag in a file can't end its tag early", plainCopy.Contains("/* $1 <\\/style> */"), true);
     Check("  no charts: no Chart.js, no Mermaid", (plainCopy.Contains("CHART"), plainCopy.Contains("MERMAID")), (false, false));
@@ -267,6 +268,59 @@ try
     Check("a CDN script it can get: inside", cdnCopy.Contains("<script>var D3;</script>") && !cdnCopy.Contains(Cdn), true);
     Check("  one it can't: its link kept", cdnCopy.Contains("src=\"https://unpkg.com/x@1.0.0/x.js\""), true);
     Check("  another host: never fetched", fetched.Any(u => u.Contains("example.com")), false);
+
+    // Before a page leaves the PC (P7, D16): each kind is found, on its line.
+    string Found(string text) => string.Join("|", SecretScan.Find(text).Select(f => $"{f.Line}:{f.What}"));
+    Check("scan: a GitHub token", Found("<p>\nghp_" + new string('a', 36)), "2:a GitHub token");
+    Check("  a fine-grained one", Found("github_pat_" + new string('B', 30)), "1:a GitHub token");
+    Check("  an sk- key", Found("key sk-proj-" + new string('x', 30)), "1:an API key (sk-)");
+    Check("  an AWS key", Found("AKIAIOSFODNN7EXAMPLE"), "1:an AWS key");
+    Check("  a Slack token", Found("xoxb-1234567890-abcdef"), "1:a Slack token");
+    Check("  a private key", Found("-----BEGIN OPENSSH PRIVATE KEY-----"), "1:a private key");
+    Check("  KEY=value", Found("DB_PASSWORD=hunter2hunter2"), "1:a KEY=value secret");
+    Check("  a Windows path", Found(@"see C:\Users\yogi\notes.txt"), "1:a local path");
+    Check("  a Mac path", Found("at /Users/yogi/x"), "1:a local path");
+    Check("  localhost and private hosts", Found("http://localhost:3000\n192.168.1.20\nbuild.corp"), "1:an internal host|2:an internal host|3:an internal host");
+    Check("  a path as JS writes it", Found(@"{""dir"":""C:\\Users\\yogi\\x""}"), "1:a local path");
+    Check("  with forward slashes", Found("C:/Users/yogi/x"), "1:a local path");
+    Check("  a network share", Found(@"\\fileserver\team"), "1:a local path");
+    Check("  a Stripe key", Found("sk_live_" + new string('a', 24)), "1:a Stripe key");
+    Check("  a Google key", Found("AIza" + new string('b', 35)), "1:a Google API key");
+    Check("  a JWT", Found("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop"), "1:a JWT");
+    Check("  a bearer header", Found("Authorization: Bearer abcdefghijklmnopqrstuvwxyz"), "1:a bearer token");
+    Check("  a password in a URL", Found("postgres://app:s3cretpw@db.example.com/x"), "1:a password in a URL");
+    var slow = string.Concat(Enumerable.Repeat("a.", 200_000));
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    var slowFound = Found(slow);
+    Check("  a line made to be slow: done fast, and flagged or clean", watch.Elapsed.TotalSeconds < 10 && slowFound is "" or "1:a line too long to check", true);
+    Check("  nothing in plain words", Found("A token of thanks. The secret is good docs. Users/home pages."), "");
+    Check("  a placeholder value is not a secret", Found("API_KEY=<your key>"), "");
+    foreach (var template in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Assets", "pages", "templates"), "*.html"))
+        Check($"  no false hit on {Path.GetFileName(template)}", Found(File.ReadAllText(template)), "");
+
+    // Public links: kept per page, with the login said yes to; the Shared filter.
+    var shares = new PageShares(Path.Combine(dir, "shares.json"));
+    Check("shares: none yet", (shares.Login, shares.Get(mine)), ((string?)null, (PageShare?)null));
+    shares.Login = "gh";
+    const string Gist = "0123456789abcdef0123456789abcdef";
+    shares.Set(mine, new PageShare(Gist, "someone", "mine.html"));
+    var again = new PageShares(Path.Combine(dir, "shares.json"));
+    Check("  read back", (again.Login, again.Get(mine.ToUpperInvariant())?.GistId), ("gh", Gist));
+    Check("  its link", again.Get(mine)!.Url, $"https://gist.githack.com/someone/{Gist}/raw/mine.html");
+    again.Set(outside, new PageShare("../repos/me/proj/git/refs/heads/main", "someone", "x.html"));
+    Check("  an id that isn't a gist's is never read back", again.Get(outside), (PageShare?)null);
+    Check("  nor sent", GitHubGist.IsGistId("../repos/x"), false);
+    again.Set(mine, null);
+    Check("  removed, the login kept", (again.Get(mine), again.Login), ((PageShare?)null, "gh"));
+    var pathDir = Path.Combine(dir, "bin");
+    Directory.CreateDirectory(pathDir);
+    File.WriteAllText(Path.Combine(pathDir, "gh.exe"), "");
+    Check("tools: found on PATH by full path", GitHubGist.OnPath("gh", $".;bin;{pathDir}"), Path.Combine(pathDir, "gh.exe"));
+    Check("  never in a relative folder", GitHubGist.OnPath("gh", $".;bin"), (string?)null);
+    File.WriteAllText(Path.Combine(dir, "shares.json"), "{\"login\":5,\"pages\":[{\"page\":1,\"gist\":\"" + Gist + "\",\"owner\":\"o\",\"file\":\"f\"}]}");
+    Check("  odd types in the file read as nothing", (new PageShares(Path.Combine(dir, "shares.json")).Login, new PageShares(Path.Combine(dir, "shares.json")).All().Count), ((string?)null, 0));
+    Check("  a broken entry is skipped", new PageShares(Path.Combine(dir, "shares.json")).All().Count, 0);
+    Check("filter: shared only", string.Join(",", PageIndex.Filter([fixture[0], fixture[1] with { Shared = true }], new(Shared: true)).Select(p => p.Title)), "alpha");
 }
 finally { Directory.Delete(dir, recursive: true); }
 

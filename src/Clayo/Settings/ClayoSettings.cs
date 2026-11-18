@@ -43,7 +43,8 @@ public sealed record ClayoSettings(
     PageSort PagesSort = PageSort.Newest,
     string? PagesProject = null,
     string? PagesAgent = null,
-    bool PagesSlides = false)
+    bool PagesSlides = false,
+    bool PagesShared = false)
 {
     /// <summary>
     /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
@@ -141,7 +142,8 @@ public sealed record ClayoSettings(
             E("pagesSort", d.PagesSort),
             S("pagesProject"),
             S("pagesAgent") is { } agent && Enum.GetNames<AgentKind>().Contains(agent) ? agent : null,
-            B("pagesSlides", d.PagesSlides));
+            B("pagesSlides", d.PagesSlides),
+            B("pagesShared", d.PagesShared));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -189,6 +191,7 @@ public sealed record ClayoSettings(
                 if (PagesProject is not null) w.WriteString("pagesProject", PagesProject);
                 if (PagesAgent is not null) w.WriteString("pagesAgent", PagesAgent);
                 w.WriteBoolean("pagesSlides", PagesSlides);
+                w.WriteBoolean("pagesShared", PagesShared);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);
