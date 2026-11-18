@@ -37,6 +37,10 @@ public static partial class PageHtml
     [GeneratedRegex(@"<main[^>]*\bclass\s*=\s*[""'][^""']*\bdeck\b", RegexOptions.IgnoreCase)]
     private static partial Regex DeckMain();
 
+    // The stylesheet's link once it points at Clayo's copy.
+    [GeneratedRegex(@"<link\b[^>]*\bhref\s*=\s*([""'])https://ccx\.assets/pages/clayo-page\.css\1[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex StyleLink();
+
     /// <summary>Whether the page is a slide deck: its main is a .deck.</summary>
     public static bool IsDeck(string html) => DeckMain().IsMatch(html);
 
@@ -44,12 +48,18 @@ public static partial class PageHtml
     /// The page with the policy as the first thing in it, straight after the doctype, where the
     /// browser makes it the first element of the head whatever the page's own markup says: a
     /// policy put after a tag the page wrote could be commented out by the page.
+    /// A theme (PageTheme) goes in straight after the link to Clayo's stylesheet: after its
+    /// rules, before any the page wrote. A page that doesn't link the stylesheet gets none.
     /// </summary>
-    public static string Seal(string html)
+    public static string Seal(string html, string themeCss = "")
     {
         var meta = $"<meta http-equiv=\"Content-Security-Policy\" content=\"{Csp}\">";
         int at = Doctype().Match(html) is { Success: true } m ? m.Length : 0;
         html = html[..at] + meta + html[at..];
-        return AssetLink().Replace(html, $"$1$2$3{AssetsUrl}$4$3");
+        html = AssetLink().Replace(html, $"$1$2$3{AssetsUrl}$4$3");
+        if (themeCss.Length == 0 || StyleLink().Match(html) is not { Success: true } link) return html;
+        // On one line, so the line numbers in the page's own errors stay the file's.
+        var style = $"<style>{themeCss.ReplaceLineEndings(" ").Replace("</", "<\\/")}</style>";
+        return html.Insert(link.Index + link.Length, style);
     }
 }

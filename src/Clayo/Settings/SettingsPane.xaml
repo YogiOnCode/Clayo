@@ -171,6 +171,32 @@
       </Setter>
     </Style>
 
+    <!-- A page theme to pick (Pages): a card with a small picture of it, clay when picked. -->
+    <Style x:Key="ThemeCard" TargetType="RadioButton">
+      <Setter Property="Margin" Value="0,0,12,12" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" CornerRadius="8" BorderThickness="1" Padding="10"
+                    BorderBrush="{StaticResource Hairline}" Background="{StaticResource SurfaceBg}">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1E232B" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#24D27556" />
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Clay}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <!-- CC or CX: which agent a row is about. Dim when that agent doesn't get the rule. -->
     <Style x:Key="AgentChip" TargetType="Border">
       <Setter Property="CornerRadius" Value="4" />
@@ -235,6 +261,8 @@
           <RadioButton x:Name="NavAgents" Style="{StaticResource NavItem}" Tag="&#xE99A;" Content="Agents"
                        Checked="Agents_Checked" />
           <RadioButton x:Name="NavIsland" Style="{StaticResource NavItem}" Tag="&#xE7F4;" Content="Island"
+                       Checked="Nav_Checked" />
+          <RadioButton x:Name="NavPages" Style="{StaticResource NavItem}" Tag="&#xE8A1;" Content="Pages"
                        Checked="Nav_Checked" />
         </StackPanel>
       </Border>
@@ -567,6 +595,17 @@
                 </Border>
               </StackPanel>
             </Border>
+          </StackPanel>
+
+          <!-- Pages: the look of the pages agents make (docs/PAGES.md, D21). -->
+          <StackPanel x:Name="PagePages" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Pages" />
+            <TextBlock Style="{StaticResource PageIntro}"
+                       Text="How the pages your agents make look. Every page follows, new or old: beside the terminal, in Present and in a PDF or PNG." />
+
+            <TextBlock Style="{StaticResource GroupLabel}" Margin="0,0,0,8" Text="Theme" />
+            <!-- Filled from PageTheme.All: each card shows the theme light and dark. -->
+            <WrapPanel x:Name="PageThemeCards" AutomationProperties.Name="Page theme" />
           </StackPanel>
         </Grid>
       </ScrollViewer>

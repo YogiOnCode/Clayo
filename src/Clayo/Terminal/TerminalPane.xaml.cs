@@ -286,7 +286,7 @@ public partial class TerminalPane : UserControl
                     // Enter on a line that is /page: the page prompt goes in its place.
                     if (keys is [(byte)'\r'] && _line.Text is { } line && PagePrompt.Rewrite(line, OwnPageOpen) is { } prompt)
                     {
-                        PageFolder.Setup(WorkingDirectory);
+                        PageFolder.Setup(WorkingDirectory, themeCss: PageTheme.CurrentCss());
                         _pty.Write(new string('\x7f', new System.Globalization.StringInfo(line).LengthInTextElements));
                         _line.Type(keys);
                         Send(prompt);
@@ -334,7 +334,7 @@ public partial class TerminalPane : UserControl
 
             case "present":
                 if (PageOpen is { } toPresent && Window.GetWindow(this) is { } owner)
-                    try { new PresentWindow(PageHtml.Seal(File.ReadAllText(toPresent))).ShowOver(owner); }
+                    try { new PresentWindow(PageHtml.Seal(File.ReadAllText(toPresent), PageTheme.CurrentCss())).ShowOver(owner); }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
                 break;
 
@@ -434,7 +434,7 @@ public partial class TerminalPane : UserControl
     public void SetPageMode(bool on)
     {
         PageMode = on;
-        if (on) PageFolder.Setup(WorkingDirectory);
+        if (on) PageFolder.Setup(WorkingDirectory, themeCss: PageTheme.CurrentCss());
         Send(on ? PagePrompt.ModeOn : PagePrompt.ModeOff);
     }
 
@@ -729,7 +729,7 @@ public partial class TerminalPane : UserControl
                 ? PageNote($"{Path.GetFileName(path)} is too big to show here.")
                 : File.ReadAllText(path);
             deck = PageHtml.IsDeck(html);
-            html = PageHtml.Seal(html);
+            html = PageHtml.Seal(html, PageTheme.CurrentCss());
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -775,6 +775,19 @@ public partial class TerminalPane : UserControl
         {
             MessageBox.Show(Window.GetWindow(this)!, $"Couldn't export the page: {e.Message}", "Clayo", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    /// <summary>
+    /// Another theme was picked (Settings › Pages): the stylesheet beside this project's pages
+    /// and the page open here follow at once.
+    /// </summary>
+    public void ShowPageTheme()
+    {
+        if (Directory.Exists(Path.Combine(WorkingDirectory, ".clayo", "pages")))
+            PageFolder.Setup(WorkingDirectory, themeCss: PageTheme.CurrentCss());
+        if (PageOpen is not { } page) return;
+        _pageShown = default;
+        ShowPage(page);
     }
 
     private static string PageNote(string text) =>

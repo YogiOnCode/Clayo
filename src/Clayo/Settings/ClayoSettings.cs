@@ -38,7 +38,8 @@ public sealed record ClayoSettings(
     bool UpdateCheck = true,
     string AskGroupsOn = "",
     string AskOff = "",
-    bool AlsoForCodex = false)
+    bool AlsoForCodex = false,
+    string PageThemeId = PageTheme.Default)
 {
     /// <summary>
     /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
@@ -131,7 +132,8 @@ public sealed record ClayoSettings(
             B("updateCheck", d.UpdateCheck),
             L("askGroupsOn", d.AskGroupsOn),
             L("askOff", d.AskOff),
-            B("alsoForCodex", d.AlsoForCodex));
+            B("alsoForCodex", d.AlsoForCodex),
+            S("pageTheme") is { } theme && PageTheme.All.Any(t => t.Id == theme) ? theme : d.PageThemeId);
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -174,6 +176,7 @@ public sealed record ClayoSettings(
                 foreach (var id in AskOff.Split(',', StringSplitOptions.RemoveEmptyEntries)) w.WriteStringValue(id);
                 w.WriteEndArray();
                 w.WriteBoolean("alsoForCodex", AlsoForCodex);
+                w.WriteString("pageTheme", PageThemeId);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

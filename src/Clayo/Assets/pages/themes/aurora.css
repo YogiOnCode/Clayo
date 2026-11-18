@@ -1,0 +1,19 @@
+/* Aurora: soft violet surfaces, round corners and a violet-to-magenta title slide. */
+:root {
+  --bg: light-dark(#f7f6fd, #12101c);
+  --surface: light-dark(#ffffff, #1a1729);
+  --surface-2: light-dark(#ecebfa, #242038);
+  --text: light-dark(#262338, #cdc9e0);
+  --heading: light-dark(#14112a, #f1effa);
+  --muted: light-dark(#5b5678, #9a94b8);
+  --border: light-dark(#dcd9f0, #302b4a);
+  --accent: light-dark(#5b34d6, #b39dfc);
+  --c1: light-dark(#7d2a5f, #f29bd0);
+  --c4: light-dark(#1f7ae0, #4c94ea);
+  --heading-weight: 700;
+  --radius: 14px;
+  --deck-bg: light-dark(#e3e0f5, #09080f);
+  --title-bg: linear-gradient(135deg, light-dark(#5b34d6, #4a28b8), light-dark(#b0236f, #8f1c5c));
+  --title-text: #ffffff;
+  --title-muted: #e9e0ff;
+}

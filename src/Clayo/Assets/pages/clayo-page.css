@@ -26,6 +26,16 @@
   --mono: "Cascadia Code", ui-monospace, "SF Mono", Consolas, Menlo, monospace;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
   --radius: 8px;
+  --font-heading: var(--font);
+  --heading-weight: 650;
+  /* Decks. The opening, section and closing slides can have a look of their own. */
+  --deck-bg: light-dark(#e4e7ec, #0c0e11);
+  --slide-bg: var(--bg);
+  --slide-text: var(--text);
+  --slide-accent: transparent;
+  --title-bg: var(--slide-bg);
+  --title-text: var(--heading);
+  --title-muted: var(--muted);
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -34,10 +44,10 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 var(--font); overflow-wrap: break-word; }
-h1, h2, h3, h4 { color: var(--heading); line-height: 1.25; margin: 0; text-wrap: balance; }
-h1 { font-size: 28px; font-weight: 650; letter-spacing: -.01em; }
-h2 { font-size: 19px; font-weight: 650; }
-h3 { font-size: 15px; font-weight: 650; }
+h1, h2, h3, h4 { color: var(--heading); font-family: var(--font-heading); line-height: 1.25; margin: 0; text-wrap: balance; }
+h1 { font-size: 28px; font-weight: var(--heading-weight); letter-spacing: -.01em; }
+h2 { font-size: 19px; font-weight: var(--heading-weight); }
+h3 { font-size: 15px; font-weight: var(--heading-weight); }
 h4 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 p, ul, ol, dl, figure, blockquote, pre, table { margin: 0; }
 ul, ol { padding-left: 1.3em; }
@@ -122,9 +132,9 @@ pre.mermaid svg { height: auto; }
 .steps li::before { content: counter(step); position: absolute; left: 0; top: -2px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 650; color: var(--heading); background: var(--surface-2); border: 1px solid var(--border); }
 
 /* ---- Slides: 1em is 1/48 of the slide's width, so a deck scales as one piece ---- */
-body:has(.deck) { background: light-dark(#e4e7ec, #0c0e11); }
+body:has(.deck) { background: var(--deck-bg); }
 .deck { --w: min(100vw, 177.78vh); display: flex; flex-direction: column; align-items: center; gap: var(--s4); }
-.slide { width: var(--w); height: calc(var(--w) * .5625); flex: none; font-size: calc(var(--w) / 48); line-height: 1.45; padding: 3.2em 4em; background: var(--bg); overflow: hidden; display: flex; flex-direction: column; justify-content: center; gap: 1em; }
+.slide { width: var(--w); height: calc(var(--w) * .5625); flex: none; font-size: calc(var(--w) / 48); line-height: 1.45; padding: 3.2em 4em; position: relative; background: var(--slide-bg); color: var(--slide-text); box-shadow: inset 0 .3em 0 var(--slide-accent); overflow: hidden; display: flex; flex-direction: column; justify-content: center; gap: 1em; }
 .slide h1 { font-size: 2.9em; letter-spacing: -.02em; }
 .slide h2 { font-size: 1.9em; }
 .slide h3 { font-size: 1.15em; }
@@ -139,16 +149,24 @@ body:has(.deck) { background: light-dark(#e4e7ec, #0c0e11); }
 .slide .chart-box { flex: 1; height: auto; min-height: 0; }
 .slide pre.mermaid { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
 .slide pre.mermaid svg { max-height: 100%; }
-.slide.title { align-items: center; text-align: center; }
+.slide.title, .slide.section, .slide.closing { background: var(--title-bg); color: var(--title-text); --heading: var(--title-text); --muted: var(--title-muted); box-shadow: inset 0 -.5em 0 var(--slide-accent); }
+.slide.title, .slide.closing { align-items: center; text-align: center; }
 .slide.title h1 { font-size: 3.6em; }
+.slide.section h2, .slide.closing h2 { font-size: 2.9em; letter-spacing: -.02em; }
 .slide.split { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 3em; }
 .slide.split > * { min-width: 0; display: flex; flex-direction: column; gap: 1em; max-height: 100%; }
 .slide.split > figure.chart, .slide.split > pre.mermaid { align-self: stretch; }
+.slide.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center; gap: 1.2em 2em; }
+.slide.three > :is(h2, h4, .lead) { grid-column: 1 / -1; }
+.slide.three > div { display: flex; flex-direction: column; gap: .5em; }
 .slide.big-number { align-items: center; text-align: center; }
 .slide.big-number > b { font-size: 8em; line-height: 1; letter-spacing: -.03em; color: var(--accent); font-variant-numeric: tabular-nums; }
 .slide.quote { padding: 3.2em 7em; }
 .slide.quote blockquote { border: 0; padding: 0; font-size: 2em; line-height: 1.3; color: var(--heading); }
 .slide.quote cite { font-style: normal; color: var(--muted); }
+/* Added by clayo-page.js to the slides between: the deck's title and the slide's number. */
+.slide > .slide-foot { position: absolute; left: 4em; bottom: 1.1em; display: flex; flex-direction: row; gap: .6em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.slide-foot span { font-size: .6em; }
 
 /* With clayo-page.js: one slide at a time. The others stay laid out so charts keep their size. */
 .deck.js { position: fixed; inset: 0; display: block; }
@@ -179,6 +197,6 @@ body:has(.deck) { background: light-dark(#e4e7ec, #0c0e11); }
   .table-wrap { max-height: none; overflow: visible; }
   .table th { position: static; }
   .deck, .deck.js { page: deck; --w: 1280px; position: static; display: block; }
-  .deck .slide, .deck.js .slide { position: static; translate: none; visibility: visible; break-after: page; }
+  .deck .slide, .deck.js .slide { position: relative; inset: auto; translate: none; visibility: visible; break-after: page; }
   .deck-nav { display: none; }
 }

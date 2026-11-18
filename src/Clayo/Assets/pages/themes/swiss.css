@@ -1,0 +1,19 @@
+/* Swiss: black, white and one red. Square corners, heavy headings, an inverted title slide. */
+:root {
+  --bg: light-dark(#ffffff, #0a0a0a);
+  --surface: light-dark(#ffffff, #141414);
+  --surface-2: light-dark(#f1f1f1, #1f1f1f);
+  --text: light-dark(#1a1a1a, #d6d6d6);
+  --heading: light-dark(#000000, #ffffff);
+  --muted: light-dark(#595959, #9c9c9c);
+  --border: light-dark(#cfcfcf, #343434);
+  --accent: light-dark(#c8102e, #ff6b62);
+  --font-heading: "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --heading-weight: 750;
+  --radius: 0px;
+  --deck-bg: light-dark(#dcdcdc, #000000);
+  --slide-accent: light-dark(#c8102e, #ff6b62);
+  --title-bg: light-dark(#0a0a0a, #ffffff);
+  --title-text: light-dark(#ffffff, #000000);
+  --title-muted: light-dark(#bdbdbd, #4a4a4a);
+}

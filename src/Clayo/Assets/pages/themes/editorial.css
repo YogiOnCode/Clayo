@@ -1,0 +1,22 @@
+/* Editorial: warm paper, ink and a wine red, with serif headings, like a printed report. */
+:root {
+  --bg: light-dark(#f7f3ea, #1a1714);
+  --surface: light-dark(#fffdf8, #221e1a);
+  --surface-2: light-dark(#efe8da, #2c2722);
+  --text: light-dark(#2b2620, #d5cdc0);
+  --heading: light-dark(#15110c, #f3ecdf);
+  --muted: light-dark(#665d50, #a2988a);
+  --border: light-dark(#ddd3c0, #3a332c);
+  --accent: light-dark(#8c1d2f, #ec9aa3);
+  --good: light-dark(#146b41, #4cc38a);
+  --c1: light-dark(#a33d0b, #f5a04a);
+  --c2: light-dark(#1f7ae0, #4c94ea);
+  --font-heading: Georgia, "Iowan Old Style", Cambria, "Times New Roman", serif;
+  --heading-weight: 600;
+  --radius: 3px;
+  --deck-bg: light-dark(#e4dccb, #0f0d0b);
+  --slide-accent: light-dark(#8c1d2f, #ec9aa3);
+  --title-bg: light-dark(#8c1d2f, #4a1420);
+  --title-text: light-dark(#fff8ee, #f8eee2);
+  --title-muted: light-dark(#f1d2d3, #d8bcb8);
+}

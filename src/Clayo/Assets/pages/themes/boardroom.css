@@ -1,0 +1,19 @@
+/* Boardroom: navy and white with a gold band, for decks that go to a meeting. */
+:root {
+  --bg: light-dark(#f4f6fa, #0b1220);
+  --surface: light-dark(#ffffff, #111a2c);
+  --surface-2: light-dark(#e6ebf3, #1a2540);
+  --text: light-dark(#1e293b, #c6d0e0);
+  --heading: light-dark(#0b1b3a, #eef2f9);
+  --muted: light-dark(#52607a, #8f9db6);
+  --border: light-dark(#d5dce8, #26334f);
+  --accent: light-dark(#1746a2, #86adff);
+  --font-heading: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --heading-weight: 600;
+  --radius: 4px;
+  --deck-bg: light-dark(#dde3ee, #060a13);
+  --slide-accent: light-dark(#c9982f, #d9b25a);
+  --title-bg: light-dark(#0b1b3a, #16264a);
+  --title-text: #ffffff;
+  --title-muted: #b8c4dc;
+}
