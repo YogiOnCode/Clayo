@@ -3,7 +3,8 @@ using Microsoft.Web.WebView2.Core;
 
 namespace CcxShell.Core;
 
-public enum PageExportKind { Pdf, Png }
+/// <summary>Thumb: the first screen (a deck's first slide), 400 px wide, for the Pages view.</summary>
+public enum PageExportKind { Pdf, Png, Thumb }
 
 /// <summary>
 /// A page as a PDF or PNG, made off-screen the way the check shows it: a page on A4 or as one
@@ -65,10 +66,10 @@ public static class PageExport
             await core.AddScriptToExecuteOnDocumentCreatedAsync(Ready);
 
             // PNGs at twice the size, so they stay sharp when zoomed or shown on a big screen.
-            int scale = kind == PageExportKind.Png ? 2 : 1;
+            double scale = kind switch { PageExportKind.Png => 2, PageExportKind.Thumb => PageThumbs.Width / (double)Width, _ => 1 };
             controller.ShouldDetectMonitorScaleChanges = false;
             controller.RasterizationScale = scale;
-            controller.Bounds = new System.Drawing.Rectangle(0, 0, Width * scale, SlideHeight * scale);
+            controller.Bounds = new System.Drawing.Rectangle(0, 0, (int)(Width * scale), (int)(SlideHeight * scale));
             controller.IsVisible = true;
             core.Navigate(start);
             await Task.WhenAny(ready.Task, Task.Delay(TimeSpan.FromSeconds(10)));
@@ -93,10 +94,16 @@ public static class PageExport
             await core.ExecuteScriptAsync(
                 "var s = document.createElement('style'); s.textContent = '.deck-nav { display: none !important } ::-webkit-scrollbar { display: none }'; document.head.appendChild(s);");
 
+            if (kind == PageExportKind.Thumb)
+            {
+                await Capture(core, to);
+                return [to];
+            }
+
             if (slides == 0)
             {
                 int tall = Math.Clamp(await Number(core, "document.documentElement.scrollHeight"), SlideHeight, TallestPng);
-                controller.Bounds = new System.Drawing.Rectangle(0, 0, Width * scale, tall * scale);
+                controller.Bounds = new System.Drawing.Rectangle(0, 0, (int)(Width * scale), (int)(tall * scale));
                 await Task.Delay(300);
                 await Capture(core, to);
                 return [to];

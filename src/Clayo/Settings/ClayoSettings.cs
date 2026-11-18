@@ -39,7 +39,11 @@ public sealed record ClayoSettings(
     string AskGroupsOn = "",
     string AskOff = "",
     bool AlsoForCodex = false,
-    string PageThemeId = PageTheme.Default)
+    string PageThemeId = PageTheme.Default,
+    PageSort PagesSort = PageSort.Newest,
+    string? PagesProject = null,
+    string? PagesAgent = null,
+    bool PagesSlides = false)
 {
     /// <summary>
     /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
@@ -133,7 +137,11 @@ public sealed record ClayoSettings(
             L("askGroupsOn", d.AskGroupsOn),
             L("askOff", d.AskOff),
             B("alsoForCodex", d.AlsoForCodex),
-            S("pageTheme") is { } theme && PageTheme.All.Any(t => t.Id == theme) ? theme : d.PageThemeId);
+            S("pageTheme") is { } theme && PageTheme.All.Any(t => t.Id == theme) ? theme : d.PageThemeId,
+            E("pagesSort", d.PagesSort),
+            S("pagesProject"),
+            S("pagesAgent") is { } agent && Enum.GetNames<AgentKind>().Contains(agent) ? agent : null,
+            B("pagesSlides", d.PagesSlides));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -177,6 +185,10 @@ public sealed record ClayoSettings(
                 w.WriteEndArray();
                 w.WriteBoolean("alsoForCodex", AlsoForCodex);
                 w.WriteString("pageTheme", PageThemeId);
+                w.WriteString("pagesSort", PagesSort.ToString().ToLowerInvariant());
+                if (PagesProject is not null) w.WriteString("pagesProject", PagesProject);
+                if (PagesAgent is not null) w.WriteString("pagesAgent", PagesAgent);
+                w.WriteBoolean("pagesSlides", PagesSlides);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

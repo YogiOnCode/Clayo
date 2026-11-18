@@ -17,9 +17,6 @@ namespace CcxShell;
 /// <summary>One row in the folder picker: the leaf to read, the full path to launch in.</summary>
 public sealed record FolderChoice(string Name, string FullPath);
 
-/// <summary>One row of the Pages list: a page, whose it is, and how long ago it changed.</summary>
-public sealed record PageChoice(string Title, string Sub, string Age, PageEntry Entry);
-
 /// <summary>
 /// One row in the sidebar. Backed by a transcript, a live pane, or both — a session you
 /// started in this window has a pane immediately and grows a transcript a moment later.
@@ -317,6 +314,15 @@ public partial class MainWindow : Window
         InitializeComponent();
         SettingsView.SetupRequested += () => ShowSetup();
         SettingsView.CloseRequested += HideSettings;
+        PagesView.CloseRequested += HidePages;
+        PagesView.OpenRequested += OpenPage;
+        PagesView.SessionRequested += page => GoToSession(page);
+        PagesView.SessionName = id => _rows.TryGetValue(id, out var row) ? row.Name : null;
+        PagesView.SettingsChanged += s =>
+        {
+            _settings = s;
+            s.Save(ClayoSettings.DefaultPath);
+        };
         SettingsView.UpdateRequested += () => Update_Click(SettingsView, new RoutedEventArgs());
         SettingsView.SettingsChanged += s =>
         {
@@ -1314,8 +1320,9 @@ public partial class MainWindow : Window
 
     private void Activate(TerminalPane pane, string title)
     {
-        // Picking a session, or starting one, is leaving Settings.
+        // Picking a session, or starting one, is leaving Settings or Pages.
         if (SettingsView.IsVisible) HideSettings();
+        if (PagesView.IsVisible) HidePages();
         foreach (UIElement child in PaneHost.Children)
             child.Visibility = ReferenceEquals(child, pane) ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1558,39 +1565,54 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Pages_Click(object sender, RoutedEventArgs e)
+    private void Pages_Click(object sender, RoutedEventArgs e) => ShowPages();
+
+    /// <summary>
+    /// The Pages view takes the terminal side's place, as Settings does. The projects in the
+    /// sidebar are scanned for pages written while Clayo was closed.
+    /// </summary>
+    private void ShowPages()
     {
-        var pages = _pageIndex.Recent(10).Select(p => new PageChoice(
-            p.Title,
-            $"{FolderLeaf(p.Project)} · {(p.Agent == nameof(AgentKind.Codex) ? "CX" : "CC")} · "
-                + (p.SessionId is { } id && _rows.TryGetValue(id, out var row) ? row.Name : "session closed"),
-            SessionRow.AgeOf(p.Changed.ToLocalTime()),
-            p)).ToList();
-        PagesHint.Text = pages.Count > 0 ? "Recent pages, every session" : "No pages yet. Type /page in a session to make one.";
-        PagesList.ItemsSource = pages;
-        PagesList.SelectedIndex = -1;
-        PagesPopup.IsOpen = true;
+        if (SettingsView.IsVisible) HideSettings();
+        ImagesPopup.IsOpen = false;
+        ImageBig.IsOpen = false;
+        PaneHost.Visibility = Visibility.Collapsed;
+        PagesView.Visibility = Visibility.Visible;
+        PagesView.Show(_pageIndex, _settings, _rows.Values.Select(r => r.Folder).Where(Directory.Exists));
+    }
+
+    private void HidePages()
+    {
+        PagesView.Visibility = Visibility.Collapsed;
+        PaneHost.Visibility = Visibility.Visible;
+        ShowPageChip();
+        _active?.FocusTerminal();
     }
 
     /// <summary>
-    /// Opens a page from the list in the viewer of its session's pane, resuming the session if
-    /// it is closed. A page whose session is gone shows in the active pane, or with no pane
-    /// open in the browser: it is a file that opens by itself.
+    /// Opens or focuses the page's session, resuming it if it is closed. False when the
+    /// session is unknown.
     /// </summary>
-    private void PagesList_Selected(object sender, SelectionChangedEventArgs e)
+    private bool GoToSession(PageEntry page)
     {
-        if (PagesList.SelectedItem is not PageChoice { Entry: var page }) return;
-        PagesPopup.IsOpen = false;
-
-        if (page.SessionId is { } id && _rows.TryGetValue(id, out var row))
+        if (page.SessionId is not { } id || !_rows.TryGetValue(id, out var row)) return false;
+        if (row.Pane is not null) Activate(row.Pane, row.Name);
+        else
         {
-            if (row.Pane is not null) Activate(row.Pane, row.Name);
-            else
-            {
-                var cwd = Directory.Exists(row.Folder) ? row.Folder : _folder;
-                StartPane(SessionLauncher.Plan(AgentFor(row.Agent), LaunchMode.Resume, cwd, row.SessionId), row.Name);
-            }
+            var cwd = Directory.Exists(row.Folder) ? row.Folder : _folder;
+            StartPane(SessionLauncher.Plan(AgentFor(row.Agent), LaunchMode.Resume, cwd, row.SessionId), row.Name);
         }
+        return true;
+    }
+
+    /// <summary>
+    /// Opens a page in the viewer of its session's pane. A page whose session is unknown shows
+    /// in the active pane, or with no pane open in the browser: it is a file that opens by itself.
+    /// </summary>
+    private void OpenPage(PageEntry page)
+    {
+        if (PagesView.IsVisible) HidePages();
+        GoToSession(page);
         if (_active is { } pane)
         {
             pane.ShowPage(page.Path);
@@ -1729,6 +1751,7 @@ public partial class MainWindow : Window
     private void ShowSettings()
     {
         if (SettingsView.IsVisible) return;
+        if (PagesView.IsVisible) HidePages();
         ImagesPopup.IsOpen = false;
         ImageBig.IsOpen = false;
         SettingsView.Refresh(_settings, ScreenshotKeyTaken, _updateTo);
@@ -1758,6 +1781,11 @@ public partial class MainWindow : Window
         else if (e.Key == Key.Escape && SettingsView.IsVisible)
         {
             if (!SettingsView.CancelConfirm()) HideSettings();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && PagesView.IsVisible)
+        {
+            HidePages();
             e.Handled = true;
         }
         base.OnPreviewKeyDown(e);

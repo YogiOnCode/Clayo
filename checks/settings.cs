@@ -51,6 +51,14 @@ try
     File.WriteAllText(path, """{"pageTheme":"../x"}""");
     Check("a name that is not a theme is the default", ClayoSettings.Load(path).PageThemeId, PageTheme.Default);
 
+    // The Pages view's filters and sort (docs/PAGES.md, P5).
+    var pagesView = defaults with { PagesSort = PageSort.Name, PagesProject = @"C:\a\web", PagesAgent = "Codex", PagesSlides = true };
+    pagesView.Save(path);
+    Check("the Pages view's filters load back", ClayoSettings.Load(path), pagesView);
+    File.WriteAllText(path, """{"pagesAgent":"gpt","pagesSort":"2"}""");
+    Check("  an agent that isn't one is any, a sort that isn't one newest",
+        (ClayoSettings.Load(path).PagesAgent, ClayoSettings.Load(path).PagesSort), ((string?)null, PageSort.Newest));
+
     Check("update checks are on by default", defaults.UpdateCheck, true);
     File.WriteAllText(path, """{"statusHeader":false}""");
     Check("no updateCheck key is on", ClayoSettings.Load(path).UpdateCheck, true);

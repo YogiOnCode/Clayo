@@ -98,6 +98,12 @@ try
     Check("  and not the same picture twice", File.ReadAllBytes(slidePngs[0]).SequenceEqual(File.ReadAllBytes(slidePngs[1])), false);
     var pagePng = Export("page-clean.html", "clean.png", PageExportKind.Png);
     Check("a page as PNG: one file", pagePng.Length == 1 && new FileInfo(pagePng[0]).Length > 1000, true);
+
+    // The Pages view's picture (P5): the first screen, 400 px wide, 16:9.
+    var thumb = Export("page-deck.html", "thumb.png", PageExportKind.Thumb);
+    var png = File.ReadAllBytes(thumb[0]);
+    int Be(int at) => png[at] << 24 | png[at + 1] << 16 | png[at + 2] << 8 | png[at + 3];
+    Check("a thumbnail: one 400 x 225 PNG", (thumb.Length, Be(16), Be(20)), (1, PageThumbs.Width, 225));
 }
 finally { Directory.Delete(dir, recursive: true); }
 
