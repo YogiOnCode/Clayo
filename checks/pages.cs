@@ -237,6 +237,36 @@ try
     PageThumbs.Prune([mine], thumbs);
     Check("  a removed page's picture is pruned, the others kept",
         (File.Exists(PageThumbs.PathFor(outside, thumbs)), File.Exists(PageThumbs.PathFor(mine, thumbs))), (false, true));
+
+    // Save a copy (P7): one file with everything inside, libraries only when used.
+    var lib = Path.Combine(dir, "lib");
+    Directory.CreateDirectory(lib);
+    File.WriteAllText(Path.Combine(lib, "clayo-page.css"), ".a { color: red } /* $1 </style> */");
+    File.WriteAllText(Path.Combine(lib, "clayo-page.js"), "var page = '$0 </script>';");
+    File.WriteAllText(Path.Combine(lib, "chart.umd.min.js"), "var CHART;");
+    File.WriteAllText(Path.Combine(lib, "mermaid.min.js"), "var MERMAID;");
+    const string Cdn = "https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js";
+    var fetched = new List<string>();
+    Task<string?> Fetch(string url) { fetched.Add(url); return Task.FromResult<string?>(url == Cdn ? "var D3;" : null); }
+    string Bundle(string body) => PageBundle.Make(
+        $"<!doctype html><head><link rel=\"stylesheet\" href=\"clayo-page.css\"></head><body>{body}<script src=\"clayo-page.js\"></script></body>",
+        ":root { --accent: blue; }", lib, Fetch).Result;
+
+    var plainCopy = Bundle("<p>hi</p>");
+    Check("copy: sealed", plainCopy.Contains("Content-Security-Policy"), true);
+    Check("  the stylesheet inside, then the theme", plainCopy.IndexOf(".a { color: red }") is > 0 and var at && at < plainCopy.IndexOf("--accent: blue"), true);
+    Check("  the script inside", plainCopy.Contains("var page = '$0 <\\/script>';"), true);
+    Check("  nothing linked from Clayo", plainCopy.Contains("ccx.assets/pages/clayo-page"), false);
+    Check("  a closing tag in a file can't end its tag early", plainCopy.Contains("/* $1 <\\/style> */"), true);
+    Check("  no charts: no Chart.js, no Mermaid", (plainCopy.Contains("CHART"), plainCopy.Contains("MERMAID")), (false, false));
+    var chartCopy = Bundle("<script type=\"application/json\" class=\"chart\">{}</script>");
+    Check("a chart: Chart.js, before Clayo's script", chartCopy.IndexOf("var CHART;") is > 0 and var c && c < chartCopy.IndexOf("var page"), true);
+    Check("  and still no Mermaid", chartCopy.Contains("MERMAID"), false);
+    Check("a diagram: Mermaid", Bundle("<pre class=\"mermaid\">graph TD</pre>").Contains("var MERMAID;"), true);
+    var cdnCopy = Bundle($"<script src=\"{Cdn}\"></script><script src=\"https://unpkg.com/x@1.0.0/x.js\"></script><script src=\"https://example.com/y.js\"></script>");
+    Check("a CDN script it can get: inside", cdnCopy.Contains("<script>var D3;</script>") && !cdnCopy.Contains(Cdn), true);
+    Check("  one it can't: its link kept", cdnCopy.Contains("src=\"https://unpkg.com/x@1.0.0/x.js\""), true);
+    Check("  another host: never fetched", fetched.Any(u => u.Contains("example.com")), false);
 }
 finally { Directory.Delete(dir, recursive: true); }
 

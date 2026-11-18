@@ -225,6 +225,7 @@ public partial class PagesView : UserControl
             sub.Click += async (_, _) => await TerminalPane.Export(Window.GetWindow(this), pages[0].Path, kind);
             export.Items.Add(sub);
         }
+        Item("Save a copy…", async () => await TerminalPane.SaveCopy(Window.GetWindow(this), pages[0].Path), one);
         Item("Show in Explorer", () => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{pages[0].Path}\"")?.Dispose(), one);
         CardMenu.Items.Add(new Separator());
         Item(one ? "Delete" : $"Delete {pages.Count} pages", () => Delete(pages)).InputGestureText = "Del";

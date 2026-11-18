@@ -339,6 +339,10 @@ public partial class TerminalPane : UserControl
                 if (PageOpen is { } toExport) ShowExportMenu(toExport);
                 break;
 
+            case "share":
+                if (PageOpen is { } toShare) ShowShareMenu(toShare);
+                break;
+
             case "present":
                 if (PageOpen is { } toPresent && Window.GetWindow(this) is { } owner)
                     try { new PresentWindow(PageHtml.Seal(File.ReadAllText(toPresent), PageTheme.CurrentCss())).ShowOver(owner); }
@@ -758,6 +762,43 @@ public partial class TerminalPane : UserControl
             menu.Items.Add(item);
         }
         menu.IsOpen = true;
+    }
+
+    /// <summary>Share's choices, where the mouse is. A public link comes with P7b.</summary>
+    private void ShowShareMenu(string page)
+    {
+        var menu = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        var copy = new MenuItem { Header = "Save a copy…" };
+        copy.Click += async (_, _) => await SaveCopy(Window.GetWindow(this), page);
+        menu.Items.Add(copy);
+        menu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Asks where to save the page as one file that opens anywhere offline (PageBundle), writes
+    /// it, and shows it in Explorer.
+    /// </summary>
+    public static async Task SaveCopy(Window? owner, string page)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save a copy of the page",
+            FileName = string.Concat(PageIndex.TitleOf(page).Split(Path.GetInvalidFileNameChars())),
+            DefaultExt = "html",
+            Filter = "Web page|*.html"
+        };
+        if (dialog.ShowDialog(owner) != true) return;
+        try
+        {
+            var html = await PageBundle.Make(await File.ReadAllTextAsync(page), PageTheme.CurrentCss(),
+                Path.Combine(AppContext.BaseDirectory, "Assets", "pages"), PageBundle.FetchCached);
+            await File.WriteAllTextAsync(dialog.FileName, html);
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"")?.Dispose();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(owner!, $"Couldn't save the copy: {e.Message}", "Clayo", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>Asks where to save the page as a PDF or PNG, writes it, and shows it in Explorer.</summary>

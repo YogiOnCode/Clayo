@@ -99,6 +99,19 @@ try
     var pagePng = Export("page-clean.html", "clean.png", PageExportKind.Png);
     Check("a page as PNG: one file", pagePng.Length == 1 && new FileInfo(pagePng[0]).Length > 1000, true);
 
+    // Save a copy (P7): the dashboard template as one file still draws its charts with nothing
+    // linked, so it loads nothing and says nothing in the console.
+    var assets = Path.Combine(AppContext.BaseDirectory, "Assets", "pages");
+    foreach (var template in new[] { "dashboard", "report", "slides" })
+    {
+        var copy = Path.Combine(dir, $"copy-{template}.html");
+        File.WriteAllText(copy, PageBundle.Make(File.ReadAllText(Path.Combine(assets, "templates", template + ".html")),
+            PageTheme.Css("swiss"), assets, _ => Task.FromResult<string?>(null)).Result);
+        var (copied, why) = PageCheck.Check(copy, dir);
+        Check($"a saved copy of {template}: checked", why, null);
+        Check($"  no errors, nothing blocked", copied is { Errors.Count: 0, Blocked.Count: 0 }, true);
+    }
+
     // The Pages view's picture (P5): the first screen, 400 px wide, 16:9.
     var thumb = Export("page-deck.html", "thumb.png", PageExportKind.Thumb);
     var png = File.ReadAllBytes(thumb[0]);
