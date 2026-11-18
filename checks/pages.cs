@@ -138,6 +138,19 @@ try
     Check("  another theme: written again", File.ReadAllText(sheet).EndsWith(":root { --accent: blue; }"), true);
     PageFolder.Setup(plain, assets);
     Check("  the default again: Clayo's stylesheet alone", File.ReadAllText(sheet), "css");
+
+    // Claude's /page (P14): written once, kept up to date, a user's own never touched.
+    var cmdRepo = Path.Combine(dir, "cmd");
+    Directory.CreateDirectory(Path.Combine(cmdRepo, ".git"));
+    var cmd = Path.Combine(cmdRepo, ".claude", "commands", "page.md");
+    Check("claude /page: new, so not loaded yet", PageFolder.ClaudeCommand(cmdRepo), false);
+    Check("  written", File.ReadAllText(cmd), PagePrompt.ClaudeCommand);
+    Check("  kept out of git", File.ReadAllText(Path.Combine(cmdRepo, ".git", "info", "exclude")), ".claude/commands/page.md\n");
+    Check("  there: used", PageFolder.ClaudeCommand(cmdRepo), true);
+    Check("  an older one of Clayo's is brought up to date", PageFolder.ClaudeCommand(cmdRepo, PagePrompt.ClaudeCommand + "x") && File.ReadAllText(cmd).EndsWith("x"), true);
+    File.WriteAllText(cmd, "my own page command");
+    Check("  a user's own: not used", PageFolder.ClaudeCommand(cmdRepo), false);
+    Check("  and not touched", File.ReadAllText(cmd), "my own page command");
     Check("  a page is never touched", File.ReadAllText(mine), "<title> Test &amp; results </title>");
 
     // The index of every page.

@@ -8,11 +8,11 @@ public static class PageFolder
     private const string Line = ".clayo/";
 
     /// <summary>
-    /// Keeps a project's pages out of git without touching its .gitignore: adds .clayo/ to the
-    /// repo's own .git/info/exclude, which is never committed. Does nothing outside a git repo,
-    /// or when the line is already there.
+    /// Keeps a project's pages out of git without touching its .gitignore: adds .clayo/ (or
+    /// line) to the repo's own .git/info/exclude, which is never committed. Does nothing
+    /// outside a git repo, or when the line is already there.
     /// </summary>
-    public static void HideFromGit(string projectFolder)
+    public static void HideFromGit(string projectFolder, string line = Line)
     {
         try
         {
@@ -23,10 +23,10 @@ public static class PageFolder
 
             var exclude = Path.Combine(dir.FullName, ".git", "info", "exclude");
             var text = File.Exists(exclude) ? File.ReadAllText(exclude) : "";
-            if (text.Split('\n').Any(l => l.Trim() == Line)) return;
+            if (text.Split('\n').Any(l => l.Trim() == line)) return;
 
             Directory.CreateDirectory(Path.GetDirectoryName(exclude)!);
-            File.AppendAllText(exclude, (text.Length == 0 || text.EndsWith('\n') ? "" : "\n") + Line + "\n");
+            File.AppendAllText(exclude, (text.Length == 0 || text.EndsWith('\n') ? "" : "\n") + line + "\n");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
@@ -66,5 +66,30 @@ public static class PageFolder
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         HideFromGit(projectFolder);
+    }
+
+    /// <summary>
+    /// Writes Clayo's /page for Claude into the project (.claude/commands/page.md, kept out of
+    /// git), or brings it up to date. True when it was there already, so the session has it; a
+    /// /page of the user's own is never touched, and gives false.
+    /// </summary>
+    public static bool ClaudeCommand(string projectFolder, string text = PagePrompt.ClaudeCommand)
+    {
+        var file = Path.Combine(projectFolder, ".claude", "commands", "page.md");
+        try
+        {
+            if (File.Exists(file))
+            {
+                var old = File.ReadAllText(file);
+                if (!old.Contains(PagePrompt.ClaudeMarker)) return false;
+                if (old != text) File.WriteAllText(file, text);
+                return true;
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, text);
+            HideFromGit(projectFolder, ".claude/commands/page.md");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        return false;
     }
 }

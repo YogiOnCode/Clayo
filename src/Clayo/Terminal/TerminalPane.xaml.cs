@@ -283,13 +283,20 @@ public partial class TerminalPane : UserControl
                 {
                     var keys = Convert.FromBase64String(b64);
                     _keyAt = DateTime.UtcNow;
-                    // Enter on a line that is /page: the page prompt goes in its place.
-                    if (keys is [(byte)'\r'] && _line.Text is { } line && PagePrompt.Rewrite(line, OwnPageOpen) is { } prompt)
+                    // Enter on a line that is /page. Claude runs Clayo's own /page, so only the
+                    // line shows; otherwise the page prompt goes in its place.
+                    if (keys is [(byte)'\r'] && _line.Text is { } line && PagePrompt.IsCommand(line))
                     {
                         PageFolder.Setup(WorkingDirectory, themeCss: PageTheme.CurrentCss());
-                        _pty.Write(new string('\x7f', new System.Globalization.StringInfo(line).LengthInTextElements));
                         _line.Type(keys);
-                        Send(prompt);
+                        if (Agent == AgentKind.Claude && PageFolder.ClaudeCommand(WorkingDirectory))
+                        {
+                            if (OwnPageOpen is { } open) Send(PagePrompt.OpenNote(open));
+                            else _pty.Write(keys);
+                            break;
+                        }
+                        _pty.Write(new string('\x7f', new System.Globalization.StringInfo(line).LengthInTextElements));
+                        Send(PagePrompt.Rewrite(line, OwnPageOpen)!);
                         break;
                     }
                     _line.Type(keys);
