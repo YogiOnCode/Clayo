@@ -64,7 +64,8 @@ public static class ShareFlow
                 await TerminalPane.SaveCopy(owner, page);
             return null;
         }
-        var user = await GitHubGist.User(login.Token);
+        var (user, canGist) = await GitHubGist.User(login.Token);
+        if (!canGist) { NoGist(owner, login.Source); return null; }
         if (Shares.Login != login.Source)
         {
             var from = login.Source == "gh" ? "the GitHub CLI (gh)" : "Git's saved login";
@@ -73,6 +74,18 @@ public static class ShareFlow
             Shares.Login = login.Source;
         }
         return (login, user);
+    }
+
+    // A login that may not make gists, which GitHub answers with "Not Found": the one command
+    // that fixes it, copied.
+    private static void NoGist(Window? owner, string source)
+    {
+        var (who, fix) = source == "gh"
+            ? ("Your GitHub CLI (gh) login", "gh auth refresh -h github.com -s gist")
+            : ("Git's saved GitHub login", "gh auth login -h github.com -s gist");
+        var copied = Copy(fix);
+        Ask(owner, $"{who} can't make gists, which a public link needs. Run this in a terminal, approve it in the browser, then share again:\n\n{fix}{(copied ? "\n\n(Copied.)" : "")}",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     // GitHub says "not found" for a gist that is another account's, so Clayo only touches a link
@@ -119,7 +132,10 @@ public static class ShareFlow
             }
             if (share is null)
             {
-                var (id, gistOwner) = await GitHubGist.Create(login.Token, file, html);
+                string id, gistOwner;
+                // A token with no scopes to check (fine-grained) that may not make gists.
+                try { (id, gistOwner) = await GitHubGist.Create(login.Token, file, html); }
+                catch (GitHubException e) when (e.Status is HttpStatusCode.NotFound or HttpStatusCode.Forbidden) { NoGist(owner, login.Source); return; }
                 share = new PageShare(id, gistOwner, file, live);
                 Shares.Set(page, share);
             }

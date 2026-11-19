@@ -311,6 +311,10 @@ try
     Check("  a live one: gistpreview", new PageShares(Path.Combine(dir, "shares.json")).Get(mine)!.Url, $"https://gistpreview.github.io/?{Gist}/my%20page.html");
     Check("live: a page at the limit", GitHubGist.FitsLive(new string('a', GitHubGist.LiveMax)), true);
     Check("  a byte over", GitHubGist.FitsLive(new string('a', GitHubGist.LiveMax - 1) + "é"), false);
+    Check("gist scope: a classic token with it can make gists", GitHubGist.CanGist("repo, read:org, gist"), true);
+    Check("  without it: can't", GitHubGist.CanGist("repo, read:org, workflow"), false);
+    Check("  no scopes at all: can't", GitHubGist.CanGist(""), false);
+    Check("  not a classic token (no header): GitHub decides", GitHubGist.CanGist(null), true);
     File.WriteAllText(Path.Combine(dir, "old.json"), "{\"pages\":[{\"page\":\"p\",\"gist\":\"" + Gist + "\",\"owner\":\"o\",\"file\":\"f\"}]}");
     Check("  a share from before live links is not live", new PageShares(Path.Combine(dir, "old.json")).Get("p")?.Live, false);
     again.Set(outside, new PageShare("../repos/me/proj/git/refs/heads/main", "someone", "x.html"));
