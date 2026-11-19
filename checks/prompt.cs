@@ -171,5 +171,12 @@ Same("an arrow key: the line is no longer known", Typed("/page x", "\u001b[D"), 
 Same("  until it is sent", Typed("/page x", "\u001b[D", "\r", "/page"), "/page");
 Same("a paste of several lines: not known", Typed("\u001b[200~a\nb\u001b[201~"), null);
 
+// Codex's input box, read off the screen row the cursor is on.
+Same("Codex's row: what follows the ›", PagePrompt.CodexRow("› /page for module 1   "), "/page for module 1");
+Same("  indented the same", PagePrompt.CodexRow("  ›  /page x"), "/page x");
+Same("  the placeholder is not a /page", PagePrompt.IsCommand(PagePrompt.CodexRow("› Ask Codex to do anything")!), false);
+Same("  a row without the › (a wrapped line, output): unknown", PagePrompt.CodexRow("for module 1"), null);
+Same("  no row: unknown", PagePrompt.CodexRow(null), null);
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;

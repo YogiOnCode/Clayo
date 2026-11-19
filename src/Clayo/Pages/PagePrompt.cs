@@ -24,6 +24,21 @@ public static class PagePrompt
         (line.Length == Command.Length || char.IsWhiteSpace(line[Command.Length]));
 
     /// <summary>
+    /// The line in Codex's input box, from the screen row the cursor is on: what follows its `›`,
+    /// else null. For when the keys can't say (an arrow key, a line Codex kept after an error).
+    /// </summary>
+    public static string? CodexRow(string? row)
+    {
+        var text = row?.TrimStart();
+        return text is ['›', ..] ? text[1..].Trim() : null;
+    }
+
+    /// <summary>
+    /// Clears Codex's input box wherever the caret is: End, then delete to the start.
+    /// </summary>
+    public const string CodexClear = "\x05\x15";
+
+    /// <summary>
     /// The page prompt for a /page line, else null: short, since the guide says the rest.
     /// openPage is the page the viewer shows, named so a change lands on that file.
     /// </summary>

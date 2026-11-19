@@ -356,8 +356,15 @@
 
   // --- terminal -> host -------------------------------------------------
 
+  // Enter carries the row the cursor is on: the agent's input box, read off the screen, for
+  // when the keys alone can't say what is in it (TypedLine).
   term.onData(function (data) {
-    send({ t: "i", d: toBase64(encoder.encode(data)) });
+    const msg = { t: "i", d: toBase64(encoder.encode(data)) };
+    if (data === "\r") {
+      const buf = term.buffer.active, row = buf.getLine(buf.baseY + buf.cursorY);
+      if (row) msg.row = row.translateToString(true);
+    }
+    send(msg);
   });
 
   // Mouse reporting, bracketed paste and friends come through onBinary.
