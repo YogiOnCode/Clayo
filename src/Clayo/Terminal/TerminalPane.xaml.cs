@@ -284,8 +284,13 @@ public partial class TerminalPane : UserControl
                     var keys = Convert.FromBase64String(b64);
                     _keyAt = DateTime.UtcNow;
                     // Enter on a line that is /page. Claude runs Clayo's own /page, so only the
-                    // line shows; otherwise the page prompt goes in its place.
-                    if (keys is [(byte)'\r'] && _line.Text is { } line && PagePrompt.IsCommand(line))
+                    // line shows; otherwise the page prompt goes in its place. Codex's line is read
+                    // off the screen when it can be: it keeps a line it turned down, and an arrow
+                    // key loses the typed one.
+                    var typed = keys is [(byte)'\r'] && Agent == AgentKind.Codex
+                        ? PagePrompt.CodexRow(msg.TryGetProperty("row", out var row) ? row.GetString() : null) ?? _line.Text
+                        : _line.Text;
+                    if (keys is [(byte)'\r'] && typed is { } line && PagePrompt.IsCommand(line))
                     {
                         PageFolder.Setup(WorkingDirectory, themeCss: PageTheme.CurrentCss());
                         var note = OpenNote(line);
@@ -296,7 +301,8 @@ public partial class TerminalPane : UserControl
                             else _pty.Write(keys);
                             break;
                         }
-                        _pty.Write(new string('\x7f', new System.Globalization.StringInfo(line).LengthInTextElements));
+                        _pty.Write(Agent == AgentKind.Codex ? PagePrompt.CodexClear
+                            : new string('\x7f', new System.Globalization.StringInfo(line).LengthInTextElements));
                         Send(PagePrompt.Rewrite(line, OwnPageOpen)!);
                         break;
                     }

@@ -63,9 +63,21 @@ public static partial class GitHubGist
         return token is { Length: > 0 } ? new("git", token) : null;
     }
 
-    /// <summary>The account a token belongs to.</summary>
-    public static async Task<string> User(string token) =>
-        (string)(await Send(HttpMethod.Get, "user", token, null))!["login"]!;
+    /// <summary>The account a token belongs to, and whether the token may make gists (CanGist).</summary>
+    public static async Task<(string Login, bool CanGist)> User(string token)
+    {
+        string? scopes = null;
+        var user = (await Send(HttpMethod.Get, "user", token, null, h => scopes = h.TryGetValues("X-OAuth-Scopes", out var v) ? string.Join(",", v) : null))!;
+        return ((string)user["login"]!, CanGist(scopes));
+    }
+
+    /// <summary>
+    /// Whether a token with these scopes (GitHub's X-OAuth-Scopes) may make gists: a classic token
+    /// needs the gist scope, without which GitHub answers "Not Found". Fine-grained and app tokens
+    /// send no scopes; GitHub decides for those.
+    /// </summary>
+    public static bool CanGist(string? scopes) =>
+        scopes is null || scopes.Split(',').Any(s => s.Trim() == "gist");
 
     /// <summary>A new secret gist holding the page; its id and owner.</summary>
     public static async Task<(string Id, string Owner)> Create(string token, string file, string html)
@@ -103,7 +115,8 @@ public static partial class GitHubGist
 
     private static readonly Uri Api = new("https://api.github.com/");
 
-    private static async Task<JsonNode?> Send(HttpMethod method, string path, string token, JsonObject? body)
+    private static async Task<JsonNode?> Send(HttpMethod method, string path, string token, JsonObject? body,
+        Action<HttpResponseHeaders>? headers = null)
     {
         using var request = new HttpRequestMessage(method, new Uri(Api, path));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -112,6 +125,7 @@ public static partial class GitHubGist
         if (body is not null) request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         using var response = await Http.SendAsync(request);
         var text = await response.Content.ReadAsStringAsync();
+        headers?.Invoke(response.Headers);
         if (!response.IsSuccessStatusCode)
         {
             string? message = null;
