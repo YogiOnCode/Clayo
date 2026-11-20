@@ -50,50 +50,38 @@ public static class ShareFlow
     }
 
     /// <summary>
-    /// The login and its account, once the user said yes to it. Null when there is none or they
-    /// said no; with none, a saved copy may be offered instead.
+    /// The token and its account: Clayo's own sign-in to the Clayo Pages app, which reaches gists
+    /// and nothing else (docs/GITHUB-SIGNIN.md). Never a login the user has for other things (gh,
+    /// git). Not signed in: the sign-in window. Null when they didn't sign in.
     /// </summary>
-    private static async Task<(GitHubLogin Login, string User)?> Login(Window? owner, string page, bool offerCopy)
+    private static async Task<(string Token, string User)?> Login(Window? owner, string page, bool offerCopy)
     {
-        var login = await GitHubGist.FindLogin();
-        if (login is null)
-        {
-            var text = "No GitHub login found on this PC. Sign in with \"gh auth login\" (GitHub CLI) and try again.";
-            if (!offerCopy) Ask(owner, text, MessageBoxButton.OK, MessageBoxImage.Warning);
-            else if (Ask(owner, text + "\n\nSave a copy of the page instead?", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
-                await TerminalPane.SaveCopy(owner, page);
-            return null;
-        }
-        var (user, canGist) = await GitHubGist.User(login.Token);
-        if (!canGist) { NoGist(owner, login.Source); return null; }
-        if (Shares.Login != login.Source)
-        {
-            var from = login.Source == "gh" ? "the GitHub CLI (gh)" : "Git's saved login";
-            if (Ask(owner, $"Use the GitHub account \"{user}\" from {from}?\n\nClayo uses it only to make a secret gist for each page you share, and to delete it when you remove the link.",
-                    MessageBoxButton.YesNo) != MessageBoxResult.Yes) return null;
-            Shares.Login = login.Source;
-        }
-        return (login, user);
+        if (await Own() is { } own) return own;
+        if (new GitHubSignInWindow(owner).ShowDialog() == true && await Own() is { } signedIn) return signedIn;
+        if (offerCopy && Ask(owner, "No public link without signing in. Save a copy of the page instead?", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+            await TerminalPane.SaveCopy(owner, page);
+        return null;
     }
 
-    // A login that may not make gists, which GitHub answers with "Not Found": the one command
-    // that fixes it, copied.
-    private static void NoGist(Window? owner, string source)
+    /// <summary>The sign-in, renewed when it ran out; null when there is none or GitHub no longer takes it.</summary>
+    private static async Task<(string Token, string User)?> Own()
     {
-        var (who, fix) = source == "gh"
-            ? ("Your GitHub CLI (gh) login", "gh auth refresh -h github.com -s gist")
-            : ("Git's saved GitHub login", "gh auth login -h github.com -s gist");
-        var copied = Copy(fix);
-        Ask(owner, $"{who} can't make gists, which a public link needs. Run this in a terminal, approve it in the browser, then share again:\n\n{fix}{(copied ? "\n\n(Copied.)" : "")}",
-            MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (await GitHubSignIn.Current() is not { } token) return null;
+        try { return (token.Access, await GitHubGist.User(token.Access)); }
+        catch (GitHubException e) when (e.Status == HttpStatusCode.Unauthorized) { GitHubSignIn.Forget(); return null; }
     }
+
+    // An account GitHub won't let make gists, which it answers with "Not Found" or "Forbidden".
+    private static void NoGist(Window? owner) =>
+        Ask(owner, "This GitHub account can't make gists. Some company-managed accounts can't. Save a copy of the page instead, or sign in with another account (Settings › Pages › Disconnect).",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
 
     // GitHub says "not found" for a gist that is another account's, so Clayo only touches a link
     // with the account that made it: never a new gist that orphans the old one.
     private static bool OtherAccount(Window? owner, PageShare share, string user)
     {
         if (string.Equals(share.Owner, user, StringComparison.OrdinalIgnoreCase)) return false;
-        Ask(owner, $"This page's link was made with the GitHub account \"{share.Owner}\", but the login on this PC is \"{user}\".\n\nSwitch with \"gh auth switch\" and try again.",
+        Ask(owner, $"This page's link was made with the GitHub account \"{share.Owner}\", but you are signed in as \"{user}\".\n\nDisconnect in Settings › Pages, sign in as \"{share.Owner}\" and try again.",
             MessageBoxButton.OK, MessageBoxImage.Warning);
         return true;
     }
@@ -103,7 +91,7 @@ public static class ShareFlow
     {
         try
         {
-            if (await Login(owner, page, offerCopy: true) is not var (login, user)) return;
+            if (await Login(owner, page, offerCopy: true) is not var (token, user)) return;
             var share = Shares.Get(page);
             if (share is not null && OtherAccount(owner, share, user)) return;
 
@@ -127,15 +115,15 @@ public static class ShareFlow
             if (share is not null)
             {
                 // Same account (checked above), so "not found" means it was deleted on GitHub.
-                try { await GitHubGist.Update(login.Token, share.GistId, share.File, html); updated = true; }
+                try { await GitHubGist.Update(token, share.GistId, share.File, html); updated = true; }
                 catch (GitHubException e) when (e.Status == HttpStatusCode.NotFound) { share = null; }
             }
             if (share is null)
             {
                 string id, gistOwner;
-                // A token with no scopes to check (fine-grained) that may not make gists.
-                try { (id, gistOwner) = await GitHubGist.Create(login.Token, file, html); }
-                catch (GitHubException e) when (e.Status is HttpStatusCode.NotFound or HttpStatusCode.Forbidden) { NoGist(owner, login.Source); return; }
+                // An account GitHub won't let make gists (some company-managed ones).
+                try { (id, gistOwner) = await GitHubGist.Create(token, file, html); }
+                catch (GitHubException e) when (e.Status is HttpStatusCode.NotFound or HttpStatusCode.Forbidden) { NoGist(owner); return; }
                 share = new PageShare(id, gistOwner, file, live);
                 Shares.Set(page, share);
             }
@@ -172,8 +160,8 @@ public static class ShareFlow
                 MessageBoxButton.OKCancel) != MessageBoxResult.OK) return false;
         try
         {
-            if (await Login(owner, page, offerCopy: false) is not var (login, user) || OtherAccount(owner, share, user)) return false;
-            await GitHubGist.Delete(login.Token, share.GistId);
+            if (await Login(owner, page, offerCopy: false) is not var (token, user) || OtherAccount(owner, share, user)) return false;
+            await GitHubGist.Delete(token, share.GistId);
             Shares.Set(page, null);
             return true;
         }
@@ -192,7 +180,7 @@ public static class ShareFlow
         var text = e switch
         {
             GitHubException { Status: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden } g =>
-                $"GitHub didn't accept the login ({g.Message}). Sign in again with \"gh auth login\", with the gist scope. The page is not lost.",
+                $"GitHub didn't accept the login ({g.Message}). Disconnect in Settings › Pages and share again to sign in. The page is not lost.",
             GitHubException g => $"GitHub said: {g.Message}. The page is not lost.",
             IOException or UnauthorizedAccessException => $"Couldn't read the page: {e.Message}",
             InvalidCastException or InvalidOperationException or NullReferenceException or System.Text.Json.JsonException =>

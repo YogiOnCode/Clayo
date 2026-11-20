@@ -14,7 +14,7 @@ public sealed record PageShare(string GistId, string Owner, string File, bool Li
 }
 
 /// <summary>
-/// Which pages have a public link, and which GitHub login the user said yes to (D15), in
+/// Which pages have a public link, in
 /// shares.json beside pages.json. Read fresh on every call, so the viewer and the Pages view
 /// never write over each other. No WPF.
 /// </summary>
@@ -24,13 +24,6 @@ public sealed class PageShares(string? file = null)
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clayo", "shares.json");
 
     private readonly string _file = file ?? DefaultPath;
-
-    /// <summary>"gh" or "git" once the user said yes to using that login; null until then, or after Disconnect.</summary>
-    public string? Login
-    {
-        get => Text(Read(), "login");
-        set { var o = Read(); o["login"] = value; Write(o); }
-    }
 
     public PageShare? Get(string page) =>
         Pages(Read()).FirstOrDefault(s => Same(s.Page, page)).Share;

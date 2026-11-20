@@ -607,17 +607,17 @@
             <!-- Filled from PageTheme.All: each card shows the theme light and dark. -->
             <WrapPanel x:Name="PageThemeCards" AutomationProperties.Name="Page theme" />
 
-            <!-- Public links (P7): the GitHub login the user said yes to, to forget. -->
+            <!-- Public links (P7): the Clayo Pages sign-in, to disconnect. -->
             <TextBlock Style="{StaticResource GroupLabel}" Text="Public links" />
             <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
                     Background="{StaticResource SurfaceBg}">
               <DockPanel Style="{StaticResource Row}">
                 <TextBlock Style="{StaticResource RowIcon}" Text="&#xE71B;" />
-                <Button x:Name="ForgetGitHub" DockPanel.Dock="Right" Content="Forget" Margin="20,0,0,0"
+                <Button x:Name="ForgetGitHub" DockPanel.Dock="Right" Content="Disconnect" Margin="20,0,0,0"
                         Style="{StaticResource GhostButton}" VerticalAlignment="Center"
                         Click="ForgetGitHub_Click" />
                 <StackPanel VerticalAlignment="Center">
-                  <TextBlock Style="{StaticResource RowTitle}" Text="GitHub login" />
+                  <TextBlock Style="{StaticResource RowTitle}" Text="GitHub sign-in" />
                   <TextBlock x:Name="GitHubState" Style="{StaticResource RowText}" />
                 </StackPanel>
               </DockPanel>

@@ -298,37 +298,62 @@ try
     foreach (var template in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Assets", "pages", "templates"), "*.html"))
         Check($"  no false hit on {Path.GetFileName(template)}", Found(File.ReadAllText(template)), "");
 
-    // Public links: kept per page, with the login said yes to; the Shared filter.
+    // Public links: kept per page; the Shared filter.
     var shares = new PageShares(Path.Combine(dir, "shares.json"));
-    Check("shares: none yet", (shares.Login, shares.Get(mine)), ((string?)null, (PageShare?)null));
-    shares.Login = "gh";
+    Check("shares: none yet", shares.Get(mine), (PageShare?)null);
     const string Gist = "0123456789abcdef0123456789abcdef";
     shares.Set(mine, new PageShare(Gist, "someone", "mine.html"));
     var again = new PageShares(Path.Combine(dir, "shares.json"));
-    Check("  read back", (again.Login, again.Get(mine.ToUpperInvariant())?.GistId), ("gh", Gist));
+    Check("  read back", again.Get(mine.ToUpperInvariant())?.GistId, Gist);
     Check("  its link", again.Get(mine)!.Url, $"https://gist.githack.com/someone/{Gist}/raw/mine.html");
     again.Set(mine, new PageShare(Gist, "someone", "my page.html", Live: true));
     Check("  a live one: gistpreview", new PageShares(Path.Combine(dir, "shares.json")).Get(mine)!.Url, $"https://gistpreview.github.io/?{Gist}/my%20page.html");
     Check("live: a page at the limit", GitHubGist.FitsLive(new string('a', GitHubGist.LiveMax)), true);
     Check("  a byte over", GitHubGist.FitsLive(new string('a', GitHubGist.LiveMax - 1) + "é"), false);
-    Check("gist scope: a classic token with it can make gists", GitHubGist.CanGist("repo, read:org, gist"), true);
-    Check("  without it: can't", GitHubGist.CanGist("repo, read:org, workflow"), false);
-    Check("  no scopes at all: can't", GitHubGist.CanGist(""), false);
-    Check("  not a classic token (no header): GitHub decides", GitHubGist.CanGist(null), true);
+
+    // Clayo's own sign-in (docs/GITHUB-SIGNIN.md): GitHub's answers, and the token kept here.
+    var signAt = new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc);
+    System.Text.Json.Nodes.JsonObject J(string json) => System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+    var signed = GitHubSignIn.Answer(J("""{"access_token":"ghu_a","expires_in":28800,"refresh_token":"ghr_r","refresh_token_expires_in":15897600,"token_type":"bearer","scope":""}"""), 5, signAt);
+    Check("sign-in: a token", (signed.Token?.Access, signed.Token?.Refresh, signed.Error), ("ghu_a", "ghr_r", (string?)null));
+    Check("  for 8 hours", signed.Token!.AccessUntil, signAt.AddHours(8));
+    Check("  renewable for 6 months", signed.Token.RefreshUntil, signAt.AddSeconds(15897600));
+    Check("  still waiting for the user", GitHubSignIn.Answer(J("""{"error":"authorization_pending"}"""), 5, signAt), new SignInPoll(null, 5, null));
+    Check("  too fast: GitHub's new interval", GitHubSignIn.Answer(J("""{"error":"slow_down","interval":10}"""), 5, signAt).Interval, 10);
+    Check("  too fast, no interval given: 5 s more", GitHubSignIn.Answer(J("""{"error":"slow_down"}"""), 5, signAt).Interval, 10);
+    Check("  declined: over", GitHubSignIn.Answer(J("""{"error":"access_denied"}"""), 5, signAt).Error, "access_denied");
+    Check("  code ran out: over", GitHubSignIn.Answer(J("""{"error":"expired_token"}"""), 5, signAt).Error, "expired_token");
+    Check("  an answer with neither: over", GitHubSignIn.Answer(J("{}"), 5, signAt).Error, "no_token");
+    var tok = signed.Token;
+    Check("token: fresh just after", tok.Fresh(signAt.AddMinutes(1)), true);
+    Check("  not within 2 minutes of running out", tok.Fresh(signAt.AddHours(8).AddMinutes(-1)), false);
+    Check("  then renewable", tok.Renewable(signAt.AddHours(9)), true);
+    Check("  not after 6 months", tok.Renewable(signAt.AddDays(200)), false);
+    Check("  printed, no token in it", tok.ToString().Contains("ghu_") || tok.ToString().Contains("ghr_"), false);
+    var bin = Path.Combine(dir, "github.bin");
+    var prior = System.Globalization.CultureInfo.CurrentCulture;
+    System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("ar-SA");
+    GitHubSignIn.Save(tok, bin);
+    Check("  saved and read in another calendar's culture", GitHubSignIn.Load(bin), tok);
+    System.Globalization.CultureInfo.CurrentCulture = prior;
+    GitHubSignIn.Forget(bin);
+    Check("token file: none yet", (GitHubSignIn.Load(bin), GitHubSignIn.SignedIn(bin)), ((GitHubToken?)null, false));
+    GitHubSignIn.Save(tok, bin);
+    Check("  read back", GitHubSignIn.Load(bin), tok);
+    Check("  not readable as text", File.ReadAllText(bin).Contains("ghu_a") || File.ReadAllText(bin).Contains("ghr_r"), false);
+    File.WriteAllBytes(bin, [1, 2, 3]);
+    Check("  a damaged file: none", GitHubSignIn.Load(bin), (GitHubToken?)null);
+    GitHubSignIn.Forget(bin);
+    Check("  forgotten", GitHubSignIn.SignedIn(bin), false);
     File.WriteAllText(Path.Combine(dir, "old.json"), "{\"pages\":[{\"page\":\"p\",\"gist\":\"" + Gist + "\",\"owner\":\"o\",\"file\":\"f\"}]}");
     Check("  a share from before live links is not live", new PageShares(Path.Combine(dir, "old.json")).Get("p")?.Live, false);
     again.Set(outside, new PageShare("../repos/me/proj/git/refs/heads/main", "someone", "x.html"));
     Check("  an id that isn't a gist's is never read back", again.Get(outside), (PageShare?)null);
     Check("  nor sent", GitHubGist.IsGistId("../repos/x"), false);
     again.Set(mine, null);
-    Check("  removed, the login kept", (again.Get(mine), again.Login), ((PageShare?)null, "gh"));
-    var pathDir = Path.Combine(dir, "bin");
-    Directory.CreateDirectory(pathDir);
-    File.WriteAllText(Path.Combine(pathDir, "gh.exe"), "");
-    Check("tools: found on PATH by full path", GitHubGist.OnPath("gh", $".;bin;{pathDir}"), Path.Combine(pathDir, "gh.exe"));
-    Check("  never in a relative folder", GitHubGist.OnPath("gh", $".;bin"), (string?)null);
+    Check("  removed", again.Get(mine), (PageShare?)null);
     File.WriteAllText(Path.Combine(dir, "shares.json"), "{\"login\":5,\"pages\":[{\"page\":1,\"gist\":\"" + Gist + "\",\"owner\":\"o\",\"file\":\"f\"}]}");
-    Check("  odd types in the file read as nothing", (new PageShares(Path.Combine(dir, "shares.json")).Login, new PageShares(Path.Combine(dir, "shares.json")).All().Count), ((string?)null, 0));
+    Check("  odd types in the file read as nothing", new PageShares(Path.Combine(dir, "shares.json")).All().Count, 0);
     Check("  a broken entry is skipped", new PageShares(Path.Combine(dir, "shares.json")).All().Count, 0);
     Check("filter: shared only", string.Join(",", PageIndex.Filter([fixture[0], fixture[1] with { Shared = true }], new(Shared: true)).Select(p => p.Title)), "alpha");
 

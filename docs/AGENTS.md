@@ -105,9 +105,10 @@ Codex.
   - **Save a copy…** writes one file with everything inlined. It opens anywhere, offline.
   - **Create public link…** puts the page in a secret GitHub gist and copies a preview
     link. Anyone with the link can view it. Clayo first checks the page for tokens, keys,
-    local paths and internal hosts, and lists what it finds before you confirm. It uses your
-    `gh` or Git GitHub login, after asking once; **Settings › Pages › Public links ›
-    Forget** makes it ask again.
+    local paths and internal hosts, and lists what it finds before you confirm. The first
+    time, you sign in to the **Clayo Pages** GitHub App with a code: it can reach your gists
+    and nothing else. Clayo never uses your `gh` or Git login. **Settings › Pages › Public
+    links › Disconnect** signs out and opens GitHub to revoke it.
   - **Update public link** sends the new version to the same link. **Remove public link…**
     deletes the gist. The link shows an update, or stops working, within a minute or two.
     Pages with diagrams are too large for that link and use another preview service, which
