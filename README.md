@@ -65,7 +65,8 @@ Type `/page` and a session turns the conversation into a **report, dashboard, di
 slide deck**, right beside the terminal. Change it with `/page make the title shorter`.
 Present it full screen, export PDF or PNG, save it as one file that opens offline, or
 **share a public link**. Clayo checks the page for keys, tokens and local paths before it
-leaves your machine, and you can update or remove the link any time. Every page from every
+leaves your machine, and you can update or remove the link any time. Sharing signs in once
+to the **Clayo Pages** GitHub App, which can reach your gists and nothing else. Every page from every
 session lives in one **Pages** view.
 
 ![/page makes a dashboard beside the terminal, then Present and Share › public link](media/pages.gif)

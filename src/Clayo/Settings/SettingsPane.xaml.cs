@@ -264,23 +264,21 @@ public partial class SettingsPane : UserControl
 
     private void Update_Click(object sender, RoutedEventArgs e) => UpdateRequested?.Invoke();
 
-    // Which GitHub login public links use (P7). Forgetting it asks again before the next link;
-    // links already made keep working.
+    // The sign-in public links use (P7, docs/GITHUB-SIGNIN.md). Disconnect deletes it here and
+    // opens GitHub to revoke it. Links already made keep working.
     private void ShowGitHub()
     {
-        var login = new PageShares().Login;
-        GitHubState.Text = login switch
-        {
-            "gh" => "Public links use your GitHub CLI (gh) login. Forget it and Clayo asks again before the next link.",
-            "git" => "Public links use Git's saved GitHub login. Forget it and Clayo asks again before the next link.",
-            _ => "Not in use. Clayo asks before using your gh or Git login for a page's public link."
-        };
-        ForgetGitHub.Visibility = login is null ? Visibility.Collapsed : Visibility.Visible;
+        var signedIn = GitHubSignIn.SignedIn();
+        GitHubState.Text = signedIn
+            ? "Signed in to the Clayo Pages app, which can reach your gists and nothing else. Disconnect signs out here and opens GitHub, where you can revoke it."
+            : "Not signed in. Your first public link asks you to sign in to the Clayo Pages app, which can reach your gists and nothing else.";
+        ForgetGitHub.Visibility = signedIn ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ForgetGitHub_Click(object sender, RoutedEventArgs e)
     {
-        new PageShares().Login = null;
+        GitHubSignIn.Forget();
+        Process.Start(new ProcessStartInfo(GitHubSignIn.AppsPage) { UseShellExecute = true })?.Dispose();
         ShowGitHub();
     }
 

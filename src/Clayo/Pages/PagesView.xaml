@@ -5,6 +5,47 @@
 
   <!-- Every page from every session (docs/PAGES.md, P5). It takes the terminal side's place,
        header included, as Settings does. -->
+  <UserControl.Resources>
+    <!-- A filter tick the size of the TinyCombo beside it: same text, same padding, so the
+         row reads as one line. Tick is the Settings row's, a size larger. -->
+    <Style x:Key="FilterTick" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+      <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="Bd" CornerRadius="4" Padding="7,4" Background="Transparent">
+              <StackPanel Orientation="Horizontal">
+                <Border x:Name="Box" Width="12" Height="12" CornerRadius="3" BorderThickness="1"
+                        BorderBrush="{StaticResource TextFaint}" VerticalAlignment="Center"
+                        SnapsToDevicePixels="True">
+                  <Path x:Name="Mark" Data="M2,5.6 L4.4,8 L9,3" Stroke="{StaticResource Clay}"
+                        StrokeThickness="1.4" Visibility="Hidden" />
+                </Border>
+                <ContentPresenter Margin="6,0,0,0" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RaisedBg}" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                <Setter TargetName="Box" Property="Background" Value="#24D27556" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Clay}" />
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -34,22 +75,22 @@
                AutomationProperties.Name="Search page titles"
                TextChanged="Filter_Changed" />
       <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
-        <ComboBox x:Name="ProjectBy" Style="{StaticResource TinyCombo}"
+        <ComboBox x:Name="ProjectBy" Style="{StaticResource TinyCombo}" VerticalAlignment="Center"
                   ItemContainerStyle="{StaticResource TinyComboItem}"
                   SelectionChanged="Filter_Changed" />
-        <ComboBox x:Name="AgentBy" Style="{StaticResource TinyCombo}" Margin="4,0,0,0"
+        <ComboBox x:Name="AgentBy" Style="{StaticResource TinyCombo}" VerticalAlignment="Center" Margin="4,0,0,0"
                   ItemContainerStyle="{StaticResource TinyComboItem}"
                   SelectionChanged="Filter_Changed" />
-        <ComboBox x:Name="SessionBy" Style="{StaticResource TinyCombo}" Margin="4,0,0,0"
+        <ComboBox x:Name="SessionBy" Style="{StaticResource TinyCombo}" VerticalAlignment="Center" Margin="4,0,0,0"
                   ItemContainerStyle="{StaticResource TinyComboItem}"
                   SelectionChanged="Filter_Changed" />
-        <CheckBox x:Name="SlidesOnly" Content="Slides" Style="{StaticResource Tick}"
-                  Margin="10,0,0,0" VerticalAlignment="Center"
+        <CheckBox x:Name="SlidesOnly" Content="Slides" Style="{StaticResource FilterTick}"
+                  Margin="6,0,0,0"
                   Click="Filter_Changed" />
-        <CheckBox x:Name="SharedOnly" Content="Shared" Style="{StaticResource Tick}"
-                  Margin="10,0,0,0" VerticalAlignment="Center"
+        <CheckBox x:Name="SharedOnly" Content="Shared" Style="{StaticResource FilterTick}"
+                  Margin="2,0,0,0"
                   Click="Filter_Changed" />
-        <ComboBox x:Name="SortBy" Style="{StaticResource TinyCombo}" Margin="10,0,0,0"
+        <ComboBox x:Name="SortBy" Style="{StaticResource TinyCombo}" VerticalAlignment="Center" Margin="10,0,0,0"
                   ItemContainerStyle="{StaticResource TinyComboItem}"
                   SelectionChanged="Filter_Changed" />
       </StackPanel>
