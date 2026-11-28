@@ -23,6 +23,7 @@ Checked with Claude Code 2.1.288 and codex-cli 0.160.0 on Windows 11.
 | Usage limits | In the sidebar footer | In the pane header, for 5-hour and 7-day limits |
 | Island notices (needs you, done) | Yes | Yes |
 | Drop a file on the island | Yes | Yes |
+| Voice input | Yes | Yes |
 
 With both in use, each sidebar row is tagged **CC** or **CX**, and **New session** starts
 the one you picked in setup (or asks each time).
@@ -113,6 +114,28 @@ Codex.
     deletes the gist. The link shows an update, or stops working, within a minute or two.
     Pages with diagrams are too large for that link and use another preview service, which
     keeps its own copy for a while, so there an update or a removal can take some time to show.
+
+## Voice
+
+Speak a prompt instead of typing it. Works with Claude Code and Codex, and your speech is
+turned into text on your PC: nothing you say is sent anywhere or kept.
+
+- **Turn it on.** **Settings › Voice › Voice input**, then **Download** the speech model
+  (640 MB, once). You can close Settings while it downloads; a download you cancel carries on
+  from where it stopped.
+- **In a session.** Press the microphone in the pane's header, speak, press it again. The
+  text lands in the prompt, not sent: read it, fix it, press Enter.
+- **From any app.** **Ctrl+Alt+M** starts listening for the session you used last, and the
+  island shows which one. Press it again, or click the island, to stop. Clayo stays in the
+  background; the island shows what was typed, and a click on it opens the session.
+- **Esc** while listening cancels: nothing is typed. Listening stops by itself after two
+  minutes.
+- **Languages.** The model (Parakeet TDT 0.6B v3) knows 25 European languages and picks
+  the one you speak.
+- **Memory.** The model is loaded when you first speak (a few seconds) and uses about
+  770 MB while loaded. Ten minutes after you last used voice it leaves memory again.
+- **Remove it.** **Settings › Voice › Remove** deletes the model from
+  `%LOCALAPPDATA%\Clayo\models`.
 
 ## What Clayo reads
 
