@@ -312,6 +312,9 @@ public partial class MainWindow : Window
         AskRules.SyncCodex(_settings, AskRules.CodexHome);
         _codex = CodexAgent.ForThisUser(() => _settings.CodexPath);
         InitializeComponent();
+        Voice = new VoiceInput(VoiceModel.DefaultDir, a => Dispatcher.BeginInvoke(a));
+        VoiceSetup = new VoiceSetup(VoiceModel.DefaultDir, a => Dispatcher.BeginInvoke(a));
+        SettingsView.Attach(VoiceSetup, Voice.Unload);
         SettingsView.SetupRequested += () => ShowSetup();
         SettingsView.CloseRequested += HideSettings;
         PagesView.CloseRequested += HidePages;
@@ -341,6 +344,7 @@ public partial class MainWindow : Window
             SettingsApplied?.Invoke(s);
             // The island has just tried for Ctrl+Alt+S; Settings says whether it got it.
             SettingsView.ShowShots(ScreenshotKeyTaken);
+            SettingsView.ShowVoice();
         };
         // Both fire on background threads, for any pane; only the active one's strip shows,
         // and the footer shows the newest limits whichever pane reported them.
@@ -1621,6 +1625,14 @@ public partial class MainWindow : Window
         else System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.Path) { UseShellExecute = true })?.Dispose();
     }
 
+    // ------------------------------------------------------------ voice
+
+    /// <summary>Dictation (src/Clayo/Voice). Nothing starts it yet; Settings lets its model out of memory.</summary>
+    public VoiceInput Voice { get; }
+
+    /// <summary>The speech model's download, for Settings › Voice.</summary>
+    public VoiceSetup VoiceSetup { get; }
+
     // ------------------------------------------------------------ screenshots
 
     /// <summary>
@@ -1877,6 +1889,8 @@ public partial class MainWindow : Window
         _clock.Stop();
         _imagePoll.Stop();
         _imagesHide.Stop();
+        VoiceSetup.Cancel();
+        Voice.Dispose();
         foreach (var pane in PaneHost.Children.OfType<TerminalPane>()) pane.Close();
         base.OnClosing(e);
     }

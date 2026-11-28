@@ -264,6 +264,8 @@
                        Checked="Nav_Checked" />
           <RadioButton x:Name="NavPages" Style="{StaticResource NavItem}" Tag="&#xE8A1;" Content="Pages"
                        Checked="Nav_Checked" />
+          <RadioButton x:Name="NavVoice" Style="{StaticResource NavItem}" Tag="&#xE720;" Content="Voice"
+                       Checked="Nav_Checked" />
         </StackPanel>
       </Border>
 
@@ -621,6 +623,46 @@
                   <TextBlock x:Name="GitHubState" Style="{StaticResource RowText}" />
                 </StackPanel>
               </DockPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- Voice: dictation, on this PC (src/Clayo/Voice). -->
+          <StackPanel x:Name="PageVoice" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Voice" />
+            <TextBlock Style="{StaticResource PageIntro}"
+                       Text="Speak a prompt instead of typing it, in Claude Code and Codex. Your speech is turned into text on this PC: nothing you say is sent anywhere or kept." />
+
+            <TextBlock Style="{StaticResource GroupLabel}" Text="Voice input" />
+            <Border BorderBrush="{StaticResource Hairline}" BorderThickness="1" CornerRadius="8"
+                    Background="{StaticResource SurfaceBg}">
+              <StackPanel>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="7,7,0,0"
+                        Tag="{Binding ElementName=VoiceSwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE720;" />
+                    <CheckBox x:Name="VoiceSwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Voice input" Click="Voice_Click" />
+                    <TextBlock x:Name="VoiceOnState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Voice input" />
+                      <TextBlock Style="{StaticResource RowText}"
+                                 Text="A microphone button in each session's header. Press it, speak, press it again: the text lands in the prompt for you to read and send." />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE896;" />
+                    <Button x:Name="VoiceModelButton" DockPanel.Dock="Right" Margin="20,0,0,0"
+                            Style="{StaticResource GhostButton}" VerticalAlignment="Center"
+                            Click="VoiceModel_Click" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Speech model" />
+                      <TextBlock x:Name="VoiceModelText" Style="{StaticResource RowText}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </StackPanel>
             </Border>
           </StackPanel>
         </Grid>

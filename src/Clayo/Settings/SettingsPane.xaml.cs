@@ -85,6 +85,7 @@ public partial class SettingsPane : UserControl
         ShowShots(shotKeyTaken);
         Choose(PageThemeCards, settings.PageThemeId);
         ShowGitHub();
+        ShowVoice();
         UpdateCheckSwitch.IsChecked = settings.UpdateCheck;
         UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
         ShowUpdate(newer);
@@ -154,6 +155,54 @@ public partial class SettingsPane : UserControl
         ShotKeyText.Text = _settings.ScreenshotHotkey && shotKeyTaken
             ? "Another app has Ctrl+Alt+S, so the shortcut is off. Close that app's shortcut, then switch this off and on."
             : "Take a screenshot (Win+Shift+S), then press Ctrl+Alt+S: the island asks which session it is for.";
+    }
+
+    // ---- Voice: dictation, and the model it needs ----
+
+    private VoiceSetup? _voice;
+    private Action? _voiceUnload;
+
+    /// <summary>MainWindow's model download, and how to let the model out of memory before Remove.</summary>
+    public void Attach(VoiceSetup voice, Action unload)
+    {
+        _voice = voice;
+        _voiceUnload = unload;
+        voice.Changed += ShowVoice;
+    }
+
+    private void Voice_Click(object sender, RoutedEventArgs e)
+    {
+        _settings = _settings with { Voice = VoiceSwitch.IsChecked == true };
+        SettingsChanged?.Invoke(_settings);
+    }
+
+    private void VoiceModel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_voice is not { } voice) return;
+        if (voice.Downloading) voice.Cancel();
+        else if (voice.Ready)
+        {
+            _voiceUnload?.Invoke();
+            voice.Remove();
+        }
+        else voice.Start();
+    }
+
+    /// <summary>The Voice page as things stand: the switch and the model's download.</summary>
+    public void ShowVoice()
+    {
+        VoiceSwitch.IsChecked = _settings.Voice;
+        VoiceOnState.Text = _settings.Voice ? "On" : "Off";
+
+        if (_voice is not { } voice) return;
+        static long Mb(long bytes) => bytes / (1024 * 1024);
+        (VoiceModelButton.Content, VoiceModelText.Text) = voice switch
+        {
+            { Downloading: true } => ("Cancel", $"Downloading… {voice.Done * 100 / voice.Total}% ({Mb(voice.Done)} of {Mb(voice.Total)} MB). You can close Settings meanwhile."),
+            { Ready: true } => ("Remove", $"Ready. {Mb(voice.Total)} MB on this PC; in memory only while you use voice."),
+            { Error: { } error } => ("Try again", error),
+            _ => ("Download", $"Needed once: {Mb(voice.Total)} MB. A download you cancel carries on from where it stopped."),
+        };
     }
 
     // ---- Pages: a card per theme, with a small picture of it drawn from its own tokens ----
@@ -660,18 +709,19 @@ public partial class SettingsPane : UserControl
     private void Nav_Checked(object sender, RoutedEventArgs e)
     {
         // Checked fires while InitializeComponent is still building the pages.
-        if (PageGeneral is null || PageStatus is null || PageSecurity is null || PageIsland is null || PagePages is null) return;
+        if (PageGeneral is null || PageStatus is null || PageSecurity is null || PageIsland is null || PagePages is null || PageVoice is null) return;
         PageGeneral.Visibility = NavGeneral.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = NavStatus.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageSecurity.Visibility = NavSecurity.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageIsland.Visibility = NavIsland.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PagePages.Visibility = NavPages.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageVoice.Visibility = NavVoice.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Opens setup, then puts the check back on the page still showing.</summary>
     private void Agents_Checked(object sender, RoutedEventArgs e)
     {
-        (PageStatus.IsVisible ? NavStatus : PageSecurity.IsVisible ? NavSecurity : PageIsland.IsVisible ? NavIsland : PagePages.IsVisible ? NavPages : NavGeneral).IsChecked = true;
+        (PageStatus.IsVisible ? NavStatus : PageSecurity.IsVisible ? NavSecurity : PageIsland.IsVisible ? NavIsland : PagePages.IsVisible ? NavPages : PageVoice.IsVisible ? NavVoice : NavGeneral).IsChecked = true;
         SetupRequested?.Invoke();
     }
 
