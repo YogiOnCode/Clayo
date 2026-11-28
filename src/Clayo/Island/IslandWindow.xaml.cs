@@ -52,11 +52,17 @@ public partial class IslandWindow : Window
 
     // The screenshot picker (docs/SCREENSHOT.md). Ctrl+Alt+S is registered while the setting is
     // on; 1, 2, 3, N and Esc only while the picker shows (D7), since the island never has focus.
-    private const int ShotKey = 1, PickKeys = 10;
+    private const int ShotKey = 1, VoiceKey = 2, VoiceEsc = 3, PickKeys = 10;
     private static readonly uint[] PickVks = [0x31, 0x32, 0x33, 0x4E, 0x1B];   // 1 2 3 N Esc
     private bool _shotKey, _pickKeys, _offering, _pickAsked;
     private uint _clipSeq;
     private IReadOnlyList<PickChoice> _choices = [];
+
+    // Dictation (src/Clayo/Voice). Ctrl+Alt+M is registered while its setting is on, and Esc
+    // only while the microphone is open: registered, it reaches no other app, and a pane's own
+    // Esc would stop the agent's turn.
+    private bool _voiceKey, _voiceEsc, _listenAsked, _listenEnded;
+    private VoiceState _voiceShown;
 
     /// <summary>What is on screen, so a new note while showing is noticed as a change.</summary>
     private IslandNote? _shown;
@@ -113,6 +119,11 @@ public partial class IslandWindow : Window
         // Keyed by the limit, so a newer warning about it replaces the older one.
         _main.ReserveCrossed += m => _trigger.Notify(new IslandNote(m.Label, $"{m.Label} at {m.Percent}%", NoteKind.Reserve));
         _main.SettingsApplied += ApplyShots;
+        _main.Voice.Changed += OnVoice;
+        _main.VoiceTip += text => _trigger.Notify(new IslandNote(nameof(VoiceInput), text, NoteKind.Tip));
+        // Its own note with the pane to go to, so the pane's "needs you" is not replaced.
+        _main.VoiceTyped += (pane, text) =>
+            _trigger.Notify(new IslandNote(nameof(VoiceInput), $"\u201C{VoiceFlow.Preview(text, 38)}\u201D", NoteKind.Tip) { GoTo = pane });
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -138,7 +149,8 @@ public partial class IslandWindow : Window
         _poseTimer.Stop();
         _restTimer.Stop();
         ReleasePickKeys();
-        ApplyShots(_main.Settings with { ScreenshotHotkey = false, ScreenshotOffer = false });
+        ListenForEsc(false);
+        ApplyShots(_main.Settings with { ScreenshotHotkey = false, ScreenshotOffer = false, Voice = false });
         _glow.Retire();
         base.OnClosed(e);
     }
@@ -176,12 +188,32 @@ public partial class IslandWindow : Window
         _escWasDown = escDown;
 
         var was = _trigger.State;
-        if (was != IslandState.Hidden && escPressed) _trigger.Dismiss();
+        // An open microphone is not dismissed, it is cancelled; Esc is the hotkey's while it is
+        // registered, and this catches it when another app holds that.
+        if (was == IslandState.Listen && escPressed)
+        {
+            // Cancelling runs a tick of its own (OnVoice), which has already dealt with it.
+            _main.Voice.Cancel();
+            was = _trigger.State;
+        }
+        else if (was != IslandState.Hidden && escPressed) _trigger.Dismiss();
         // Here, after `was`, so the picker is seen as a change and slides in.
         if (_pickAsked)
         {
             _pickAsked = false;
             _trigger.Pick(now);
+        }
+        // The same for dictation, both ways: what waited behind it then takes its place
+        // without the pill leaving first.
+        if (_listenAsked)
+        {
+            _listenAsked = false;
+            _trigger.Listen();
+        }
+        if (_listenEnded)
+        {
+            _listenEnded = false;
+            _trigger.EndListen();
         }
 
         // The pill grows downwards with the drop target, so its height is read again on every
@@ -207,7 +239,8 @@ public partial class IslandWindow : Window
         if (was == IslandState.Pick && state != IslandState.Pick) ReleasePickKeys();
 
         // A new note while one shows is a change too: same state, different content.
-        if (state != was || !ReferenceEquals(_trigger.Note, _shown))
+        if (state != was || !ReferenceEquals(_trigger.Note, _shown)
+            || (state == IslandState.Listen && _voiceShown != _main.Voice.State))
         {
             // A note that replaces another stays on the island's monitor rather than following
             // the cursor to another screen.
@@ -312,11 +345,14 @@ public partial class IslandWindow : Window
         bool compact = _trigger.State == IslandState.Compact;
         bool drop = _trigger.State == IslandState.Drop;
         bool pick = _trigger.State == IslandState.Pick;
+        bool listen = _trigger.State == IslandState.Listen;
+        _voiceShown = _main.Voice.State;
+        bool writing = listen && _voiceShown != VoiceState.Listening;
         _shown = note;
         _monitor = monitor;
         _scale = scale;
 
-        double pillWidth = compact ? CompactWidth : note is null && !drop && !pick ? PeekWidth : NoteWidth;
+        double pillWidth = compact ? CompactWidth : note is null && !drop && !pick && !listen ? PeekWidth : NoteWidth;
 
         // Compact shows only the mascot and the dot; the text under it is filled in regardless.
         // The greeting's dot is the warm hello, not the blue of work.
@@ -327,8 +363,19 @@ public partial class IslandWindow : Window
         // Only a pill with nothing under it opens Clayo on a click.
         DropBody.Visibility = drop ? Visibility.Visible : Visibility.Collapsed;
         PickBody.Visibility = pick ? Visibility.Visible : Visibility.Collapsed;
-        Pill.Cursor = drop || pick ? Cursors.Arrow : Cursors.Hand;
-        if (pick)
+        Pill.Cursor = drop || pick || writing ? Cursors.Arrow : Cursors.Hand;
+        MicMark.Visibility = listen && !writing ? Visibility.Visible : Visibility.Collapsed;
+        if (listen)
+        {
+            var name = _main.RecentSessions(int.MaxValue).FirstOrDefault(c => ReferenceEquals(c.Pane, _main.Voice.Target))?.Name ?? "session";
+            HeadName.Text = writing ? "writing" : "listening";
+            HeadRest.Text = $" \u2192 {name}";
+            Sub.Text = writing ? "turning what you said into text"
+                : _voiceKey ? "Ctrl+Alt+M or click to stop \u00B7 Esc to cancel"
+                : "click to stop \u00B7 Esc to cancel";
+            Sub.Visibility = Visibility.Visible;
+        }
+        else if (pick)
         {
             HeadName.Text = "send screenshot";
             HeadRest.Text = " to…";
@@ -374,6 +421,7 @@ public partial class IslandWindow : Window
         _restTimer.Start();
         switch (note?.Kind)
         {
+            case null when listen: Pose(writing ? MascotMove.Idle : MascotMove.Talk); break;
             case null when drop || pick: Pose(MascotMove.Peek); break;
             // The login hello waves until it leaves, a couple of seconds later.
             case null when greeting: Pose(MascotMove.Wave); break;
@@ -388,7 +436,7 @@ public partial class IslandWindow : Window
 
         var light = note?.Kind switch
         {
-            null when compact && !greeting => IslandGlow.Blue,
+            null when compact && !greeting || writing => IslandGlow.Blue,
             null => IslandGlow.Warm,
             NoteKind.NeedsYou => IslandGlow.Blue,
             NoteKind.Done => IslandGlow.Green,
@@ -506,6 +554,12 @@ public partial class IslandWindow : Window
         // A click on the drop target is meant for it, not a way into Clayo; so is one on the
         // picker, whose rows take their own clicks.
         if (_trigger.State is IslandState.Drop or IslandState.Pick) return;
+        // The listening pill is the stop button; Clayo stays where it is.
+        if (_trigger.State == IslandState.Listen)
+        {
+            if (_main.Voice.State == VoiceState.Listening) _main.ToggleVoice();
+            return;
+        }
         var note = _trigger.Note;
         _trigger.Dismiss();
         SlideOut();
@@ -515,7 +569,7 @@ public partial class IslandWindow : Window
         _main.Reveal();
 
         // On the session that asked, not whichever pane was last in front.
-        if (note?.Source is TerminalPane pane) _main.ShowSession(pane);
+        if ((note?.GoTo ?? note?.Source) is TerminalPane pane) _main.ShowSession(pane);
     }
 
     // ------------------------------------------------------------ screenshots
@@ -543,6 +597,20 @@ public partial class IslandWindow : Window
         }
         _main.ScreenshotKeyTaken = s.ScreenshotHotkey && !_shotKey;
 
+        // Dictation's key follows its two switches the same way.
+        bool voice = s.Voice && s.VoiceHotkey;
+        if (voice && !_voiceKey)
+        {
+            _voiceKey = RegisterHotKey(hwnd, VoiceKey, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x4D);   // M
+            if (!_voiceKey) _trigger.Notify(new IslandNote(nameof(VoiceKey), "Ctrl+Alt+M is taken by another app", NoteKind.Tip));
+        }
+        else if (!voice && _voiceKey)
+        {
+            UnregisterHotKey(hwnd, VoiceKey);
+            _voiceKey = false;
+        }
+        _main.VoiceKeyTaken = voice && !_voiceKey;
+
         if (s.ScreenshotOffer && !_offering)
         {
             _clipSeq = GetClipboardSequenceNumber();
@@ -568,9 +636,20 @@ public partial class IslandWindow : Window
 
     private void OnHotkey(int id)
     {
+        if (id == VoiceKey)
+        {
+            _main.ToggleVoice();
+            return;
+        }
+        if (id == VoiceEsc)
+        {
+            _main.Voice.Cancel();
+            return;
+        }
         if (id == ShotKey)
         {
-            if (_trigger.State == IslandState.Pick) return;
+            // Not over an open microphone: both would want Esc.
+            if (_trigger.State is IslandState.Pick or IslandState.Listen) return;
             if (Screenshots.OnClipboard()) StartPick();
             else NoShot();
             return;
@@ -595,9 +674,37 @@ public partial class IslandWindow : Window
         var seq = GetClipboardSequenceNumber();
         if (seq == _clipSeq) return;
         _clipSeq = seq;
-        if (!_offering || _trigger.State == IslandState.Pick || ClayoInFront || IsBusy()
+        if (!_offering || _trigger.State is IslandState.Pick or IslandState.Listen || ClayoInFront || IsBusy()
             || !Screenshots.OnClipboard()) return;
         StartPick();
+    }
+
+    // ------------------------------------------------------------------ voice
+
+    /// <summary>
+    /// Dictation started, went on to transcribing, or ended (VoiceInput.Changed). The island
+    /// shows it from wherever it was started: the pane's mic button or Ctrl+Alt+M.
+    /// </summary>
+    private void OnVoice()
+    {
+        var state = _main.Voice.State;
+        ListenForEsc(state == VoiceState.Listening);
+        if (state == VoiceState.Idle) _listenEnded = _trigger.State == IslandState.Listen || _listenAsked;
+        else if (_trigger.State != IslandState.Listen) _listenAsked = true;
+        // Now, not on the next poll: the key press or click was this moment.
+        Tick(null, EventArgs.Empty);
+    }
+
+    private void ListenForEsc(bool on)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (on && !_voiceEsc) _voiceEsc = RegisterHotKey(hwnd, VoiceEsc, MOD_NOREPEAT, VK_ESCAPE);
+        else if (!on && _voiceEsc)
+        {
+            UnregisterHotKey(hwnd, VoiceEsc);
+            _voiceEsc = false;
+        }
     }
 
     private void StartPick()

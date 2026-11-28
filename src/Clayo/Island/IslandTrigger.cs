@@ -4,9 +4,10 @@ namespace CcxShell.Core;
 /// Compact is the small pill the island shows by itself while a session works: only the mascot
 /// and a status dot, and click-through, so it never stands between you and the tabs under it.
 /// Drop is the "Drop here" target a file drag brings out. Pick asks which session a screenshot
-/// is for (docs/SCREENSHOT.md).
+/// is for (docs/SCREENSHOT.md). Listen is the microphone being open, or what it heard being
+/// turned into text (src/Clayo/Voice).
 /// </summary>
-public enum IslandState { Hidden, Compact, Peek, Notify, Drop, Pick }
+public enum IslandState { Hidden, Compact, Peek, Notify, Drop, Pick, Listen }
 
 /// <summary>
 /// What a session wants you to know. NeedsYou and Error block the session, Done does not.
@@ -17,10 +18,14 @@ public enum NoteKind { NeedsYou, Error, Done, Reserve, Tip }
 
 /// <summary>
 /// One notification. Source is whatever identifies the session to the caller (the pane), or
-/// the limit for a Reserve; the trigger only compares it, so it stays free of WPF.
+/// the limit for a Reserve; the trigger only compares it, so it stays free of WPF. GoTo is
+/// the session a click opens when that is not the Source: a note about a pane that must not
+/// replace the pane's own (what you dictated into it, beside its "needs you").
 /// </summary>
 public sealed record IslandNote(object Source, string Name, NoteKind Kind)
 {
+    public object? GoTo { get; init; }
+
     public bool Urgent => Kind is NoteKind.NeedsYou or NoteKind.Error;
 }
 
@@ -207,8 +212,27 @@ public sealed class IslandTrigger
         _mustLeaveFirst = true;
     }
 
+    /// <summary>
+    /// The microphone is open. You opened it, so like the picker this shows over everything,
+    /// and it stays for as long as the dictation does: an open microphone is never out of
+    /// sight. Notes wait behind it.
+    /// </summary>
+    public void Listen()
+    {
+        Hide();
+        State = IslandState.Listen;
+    }
+
+    /// <summary>The dictation is over. A note that waited shows on the next Update.</summary>
+    public void EndListen()
+    {
+        if (State == IslandState.Listen) Hide();
+    }
+
     public IslandState Update(in IslandInput i)
     {
+        if (State == IslandState.Listen) return State;
+
         if (State == IslandState.Pick)
         {
             if (i.OverIsland) _pickSince = i.NowMs;

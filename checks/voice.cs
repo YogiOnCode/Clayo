@@ -57,6 +57,9 @@ Check("nothing a terminal would act on", VoiceFlow.Clean("run\u001b[2Jthis\u0003
 Check("nothing said", VoiceFlow.Clean(" \n "), "");
 Check("null is nothing said", VoiceFlow.Clean(null), "");
 Check("other languages pass", VoiceFlow.Clean("Grüße aus Köln"), "Grüße aus Köln");
+Check("a short text previews whole", VoiceFlow.Preview("Fix the login test."), "Fix the login test.");
+Check("a long one is cut at a word", VoiceFlow.Preview("please rename the settings page and move the voice switch to the top", 30), "please rename the settings…");
+Check("one long word is cut where it must be", VoiceFlow.Preview(new string('a', 60), 10), new string('a', 10) + "…");
 
 // ---- the model
 var dir = Directory.CreateTempSubdirectory("clayo-voice").FullName;

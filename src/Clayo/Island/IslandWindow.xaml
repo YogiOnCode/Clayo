@@ -39,6 +39,10 @@
         <!-- The compact pill's status dot, in the working glow's blue; it replaces the text. -->
         <Ellipse x:Name="Dot" Width="8" Height="8" Fill="#78A5FF" VerticalAlignment="Center"
                  DockPanel.Dock="Left" Visibility="Collapsed" />
+        <!-- The microphone is open (src/Clayo/Voice). The whole pill is the stop button. -->
+        <TextBlock x:Name="MicMark" Text="&#xE720;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                   Foreground="#FFBA8C" VerticalAlignment="Center" Margin="10,0,0,0"
+                   DockPanel.Dock="Right" Visibility="Collapsed" />
         <StackPanel x:Name="Text" VerticalAlignment="Center">
           <TextBlock x:Name="Head" Foreground="#ECEEF1" FontSize="13" TextTrimming="CharacterEllipsis">
             <Run x:Name="HeadName" Text="clayo" FontWeight="SemiBold" /><Run x:Name="HeadRest" Foreground="#8B919A" />

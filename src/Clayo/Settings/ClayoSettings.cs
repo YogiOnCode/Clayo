@@ -46,7 +46,8 @@ public sealed record ClayoSettings(
     string? PagesAgent = null,
     bool PagesSlides = false,
     bool PagesShared = false,
-    bool Voice = false)
+    bool Voice = false,
+    bool VoiceHotkey = true)
 {
     /// <summary>
     /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
@@ -146,7 +147,8 @@ public sealed record ClayoSettings(
             S("pagesAgent") is { } agent && Enum.GetNames<AgentKind>().Contains(agent) ? agent : null,
             B("pagesSlides", d.PagesSlides),
             B("pagesShared", d.PagesShared),
-            B("voice", d.Voice));
+            B("voice", d.Voice),
+            B("voiceHotkey", d.VoiceHotkey));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -196,6 +198,7 @@ public sealed record ClayoSettings(
                 w.WriteBoolean("pagesSlides", PagesSlides);
                 w.WriteBoolean("pagesShared", PagesShared);
                 w.WriteBoolean("voice", Voice);
+                w.WriteBoolean("voiceHotkey", VoiceHotkey);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

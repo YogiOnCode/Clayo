@@ -42,9 +42,10 @@ try
     shots.Save(path);
     Check("screenshot settings load back", ClayoSettings.Load(path), shots);
 
-    // Voice (src/Clayo/Voice): off until you turn it on.
+    // Voice (src/Clayo/Voice): off until you turn it on, its hotkey ready for when you do.
     Check("voice is off by default", defaults.Voice, false);
-    var voice = defaults with { Voice = true };
+    Check("its hotkey is on by default", defaults.VoiceHotkey, true);
+    var voice = defaults with { Voice = true, VoiceHotkey = false };
     voice.Save(path);
     Check("voice settings load back", ClayoSettings.Load(path), voice);
 

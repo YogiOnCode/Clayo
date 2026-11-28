@@ -103,4 +103,12 @@ public sealed class VoiceFlow
         }
         return clean.ToString();
     }
+
+    /// <summary>The first words of what was typed, for the island: whole words up to max characters.</summary>
+    public static string Preview(string text, int max = 44)
+    {
+        if (text.Length <= max) return text;
+        int cut = text.LastIndexOf(' ', max);
+        return text[..(cut > max / 2 ? cut : max)] + "…";
+    }
 }
