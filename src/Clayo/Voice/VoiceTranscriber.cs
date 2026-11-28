@@ -4,7 +4,7 @@ using SherpaOnnx;
 namespace CcxShell.Core;
 
 /// <summary>
-/// Speech to text on this PC, with nothing sent anywhere: Parakeet TDT 0.6B v3 (int8) through
+/// Speech to text on this PC, with nothing sent anywhere: the model in VoiceModel through
 /// sherpa-onnx, on the CPU. The model is large in memory, so it is loaded at the first take and
 /// let go again once voice has not been used for a while.
 /// </summary>

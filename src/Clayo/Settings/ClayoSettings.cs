@@ -12,7 +12,8 @@ public enum NewSessionAgent { Claude, Codex, Ask }
 /// <summary>
 /// What you chose in Settings, kept in %LOCALAPPDATA%\Clayo\settings.json. Start at login is
 /// not here: it lives in the Run key (LoginStartup). The rest is what the setup window chose
-/// (docs/SETUP.md); until SetupDone, setup shows before the window.
+/// (docs/SETUP.md); until SetupDone, setup shows before the window. Voice is dictation
+/// (src/Clayo/Voice): off until you turn it on, as it needs a 640 MB model downloaded once.
 /// </summary>
 public sealed record ClayoSettings(
     bool StatusHeader = true,
@@ -44,7 +45,8 @@ public sealed record ClayoSettings(
     string? PagesProject = null,
     string? PagesAgent = null,
     bool PagesSlides = false,
-    bool PagesShared = false)
+    bool PagesShared = false,
+    bool Voice = false)
 {
     /// <summary>
     /// Ask before (docs/PERMISSIONS.md, docs/SECURITY.md): AskGroupsOn lists the groups you
@@ -143,7 +145,8 @@ public sealed record ClayoSettings(
             S("pagesProject"),
             S("pagesAgent") is { } agent && Enum.GetNames<AgentKind>().Contains(agent) ? agent : null,
             B("pagesSlides", d.PagesSlides),
-            B("pagesShared", d.PagesShared));
+            B("pagesShared", d.PagesShared),
+            B("voice", d.Voice));
     }
 
     /// <summary>Written beside the file then swapped in, so a crash mid-write loses nothing. Best effort.</summary>
@@ -192,6 +195,7 @@ public sealed record ClayoSettings(
                 if (PagesAgent is not null) w.WriteString("pagesAgent", PagesAgent);
                 w.WriteBoolean("pagesSlides", PagesSlides);
                 w.WriteBoolean("pagesShared", PagesShared);
+                w.WriteBoolean("voice", Voice);
                 w.WriteEndObject();
             }
             File.Move(tmp, path, overwrite: true);

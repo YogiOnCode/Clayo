@@ -42,6 +42,12 @@ try
     shots.Save(path);
     Check("screenshot settings load back", ClayoSettings.Load(path), shots);
 
+    // Voice (src/Clayo/Voice): off until you turn it on.
+    Check("voice is off by default", defaults.Voice, false);
+    var voice = defaults with { Voice = true };
+    voice.Save(path);
+    Check("voice settings load back", ClayoSettings.Load(path), voice);
+
     // Update checks (docs/VERSION.md D3): on by default, off kept.
     // The page theme (docs/PAGES.md, D21): one of the shipped ones, else the default.
     File.WriteAllText(path, """{"pageTheme":"swiss"}""");
