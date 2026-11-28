@@ -1,0 +1,48 @@
+# Voice input downloads its speech model from a repository that is not ours (VoiceModel.Source).
+# If that repository, or the commit Clayo names in it, goes away or changes, Settings › Voice
+# can no longer download the model, and nothing else here would notice. So once a week the real
+# download runs, with the hashes checked and the model loaded once (checks/online/voice-model.cs).
+# A red run means: point VoiceModel at a new source, or host the files ourselves.
+name: Voice model
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays, 06:17 UTC
+  workflow_dispatch:
+  # Also when the source, the hashes or this check change.
+  pull_request:
+    paths:
+      - src/Clayo/Voice/VoiceModel.cs
+      - checks/online/voice-model.cs
+      - .github/workflows/voice-model.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voice-model-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  download:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned to a commit, as a tag can be moved to other code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('src/**/*.csproj', 'checks/*.cs') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Download the model and load it
+        working-directory: checks/online
+        run: dotnet run -c Release voice-model.cs
