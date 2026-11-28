@@ -85,7 +85,7 @@ public partial class SettingsPane : UserControl
         ShowShots(shotKeyTaken);
         Choose(PageThemeCards, settings.PageThemeId);
         ShowGitHub();
-        ShowVoice();
+        ShowVoice(_voiceKeyTaken);
         UpdateCheckSwitch.IsChecked = settings.UpdateCheck;
         UpdateCheckState.Text = settings.UpdateCheck ? "On" : "Off";
         ShowUpdate(newer);
@@ -161,13 +161,14 @@ public partial class SettingsPane : UserControl
 
     private VoiceSetup? _voice;
     private Action? _voiceUnload;
+    private bool _voiceKeyTaken;
 
     /// <summary>MainWindow's model download, and how to let the model out of memory before Remove.</summary>
     public void Attach(VoiceSetup voice, Action unload)
     {
         _voice = voice;
         _voiceUnload = unload;
-        voice.Changed += ShowVoice;
+        voice.Changed += () => ShowVoice(_voiceKeyTaken);
     }
 
     /// <summary>Opens on the Voice page: the mic was pressed with no model here yet.</summary>
@@ -175,7 +176,11 @@ public partial class SettingsPane : UserControl
 
     private void Voice_Click(object sender, RoutedEventArgs e)
     {
-        _settings = _settings with { Voice = VoiceSwitch.IsChecked == true };
+        _settings = _settings with
+        {
+            Voice = VoiceSwitch.IsChecked == true,
+            VoiceHotkey = VoiceKeySwitch.IsChecked == true,
+        };
         SettingsChanged?.Invoke(_settings);
     }
 
@@ -191,11 +196,22 @@ public partial class SettingsPane : UserControl
         else voice.Start();
     }
 
-    /// <summary>The Voice page as things stand: the switch and the model's download.</summary>
-    public void ShowVoice()
+    /// <summary>
+    /// The Voice page as things stand: the switches, the model's download, and whether
+    /// Ctrl+Alt+M could be had. MainWindow calls it again after a change, as for ShowShots.
+    /// </summary>
+    public void ShowVoice(bool keyTaken)
     {
+        _voiceKeyTaken = keyTaken;
         VoiceSwitch.IsChecked = _settings.Voice;
         VoiceOnState.Text = _settings.Voice ? "On" : "Off";
+        VoiceKeySwitch.IsChecked = _settings.VoiceHotkey;
+        VoiceKeyState.Text = _settings.VoiceHotkey ? "On" : "Off";
+        VoiceKeyText.Text = !_settings.Voice
+            ? "From any app, once Voice input is on."
+            : _settings.VoiceHotkey && keyTaken
+                ? "Another app has Ctrl+Alt+M, so the shortcut is off. Close that app's shortcut, then switch this off and on."
+                : "From any app: the island listens, and the text goes to the session you used last. Press again to stop, Esc to cancel.";
 
         if (_voice is not { } voice) return;
         static long Mb(long bytes) => bytes / (1024 * 1024);

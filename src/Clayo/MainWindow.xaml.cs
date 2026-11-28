@@ -357,7 +357,7 @@ public partial class MainWindow : Window
             SettingsApplied?.Invoke(s);
             // The island has just tried for Ctrl+Alt+S; Settings says whether it got it.
             SettingsView.ShowShots(ScreenshotKeyTaken);
-            SettingsView.ShowVoice();
+            SettingsView.ShowVoice(VoiceKeyTaken);
         };
         // Both fire on background threads, for any pane; only the active one's strip shows,
         // and the footer shows the newest limits whichever pane reported them.
@@ -1649,6 +1649,9 @@ public partial class MainWindow : Window
     /// <summary>The speech model's download, for Settings › Voice.</summary>
     public VoiceSetup VoiceSetup { get; }
 
+    /// <summary>Set by the island: another app holds Ctrl+Alt+M. Settings says so.</summary>
+    public bool VoiceKeyTaken { get; set; }
+
     /// <summary>Something to say about a dictation in a few words. The island shows it when Clayo is behind.</summary>
     public event Action<string>? VoiceTip;
 
@@ -1660,9 +1663,9 @@ public partial class MainWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer _micNoteHide = new() { Interval = TimeSpan.FromSeconds(5) };
 
     /// <summary>
-    /// The mic button: starts listening, or stops and types what was said. Without a pane the
-    /// text is for the session used last that is still running. With no model yet, Settings
-    /// opens where it is downloaded.
+    /// The mic button (its pane) or Ctrl+Alt+M (no pane): starts listening, or stops and types
+    /// what was said. Without a pane the text is for the session used last that is still
+    /// running. With no model yet, Settings opens where it is downloaded.
     /// </summary>
     public void ToggleVoice(TerminalPane? pane = null)
     {
@@ -1729,12 +1732,13 @@ public partial class MainWindow : Window
         if (mine) MicButton.Foreground = (Brush)FindResource("Clay");
         else MicButton.ClearValue(ForegroundProperty);
         MicGlyph.Text = mine && Voice.State == VoiceState.Transcribing ? "\uE712" : "\uE720";
-        MicButton.ToolTip = Voice.State == VoiceState.Listening ? "Stop, and type what you said"
+        MicButton.ToolTip = Voice.State == VoiceState.Listening ? "Stop, and type what you said (Esc: type nothing)"
             : Voice.State == VoiceState.Transcribing ? "Turning what you said into text…"
             : !VoiceSetup.Ready ? "Dictate: needs the speech model first. Opens Settings › Voice."
-            : "Dictate: press, speak, press again. The text lands in the prompt, unsent.";
+            : "Dictate: press, speak, press again. The text lands in the prompt, unsent."
+              + (_settings.VoiceHotkey && !VoiceKeyTaken ? "\nFrom any app: Ctrl+Alt+M." : "");
 
-        string note = mine && Voice.State == VoiceState.Listening ? "Listening…"
+        string note = mine && Voice.State == VoiceState.Listening ? "Listening… Esc cancels"
             : mine ? "Writing…"
             : _micSaid ?? "";
         MicNote.Text = note;
@@ -1875,6 +1879,7 @@ public partial class MainWindow : Window
         ImagesPopup.IsOpen = false;
         ImageBig.IsOpen = false;
         SettingsView.Refresh(_settings, ScreenshotKeyTaken, _updateTo);
+        SettingsView.ShowVoice(VoiceKeyTaken);
         PaneHost.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Visible;
         SettingsView.Focus();

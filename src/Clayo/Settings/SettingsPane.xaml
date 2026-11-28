@@ -662,6 +662,20 @@
                     </StackPanel>
                   </DockPanel>
                 </Border>
+                <Border Style="{StaticResource SwitchRow}" CornerRadius="0,0,7,7"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
+                        Tag="{Binding ElementName=VoiceKeySwitch}" MouseLeftButtonUp="SwitchRow_Click">
+                  <DockPanel Style="{StaticResource Row}">
+                    <TextBlock Style="{StaticResource RowIcon}" Text="&#xE765;" />
+                    <CheckBox x:Name="VoiceKeySwitch" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                              AutomationProperties.Name="Dictate with Ctrl+Alt+M" Click="Voice_Click" />
+                    <TextBlock x:Name="VoiceKeyState" Style="{StaticResource SwitchState}" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Style="{StaticResource RowTitle}" Text="Dictate with Ctrl+Alt+M" />
+                      <TextBlock x:Name="VoiceKeyText" Style="{StaticResource RowText}" />
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
               </StackPanel>
             </Border>
           </StackPanel>

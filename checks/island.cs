@@ -651,5 +651,46 @@ Check("busy never shows it",
     Check("pick: and doesn't peek straight back at the edge", Hold(t, rest, 28_050, 29_000), IslandState.Hidden);
 }
 
+// Dictation (src/Clayo/Voice): an open microphone shows for as long as it is open, over
+// everything, and what waited behind it shows after.
+{
+    var away = rest with { CursorY = 500 };
+    var t = new IslandTrigger();
+    t.Listen();
+    Check("listen: shows at once", t.Update(away with { NowMs = 50 }), IslandState.Listen);
+    Check("listen: a busy screen doesn't hide it", t.Update(away with { Busy = true, NowMs = 100 }), IslandState.Listen);
+    Check("listen: Clayo in front doesn't either", t.Update(away with { ClayoActive = true, NowMs = 150 }), IslandState.Listen);
+    Check("listen: a file drag doesn't replace it", Hold(t, rest with { Dragging = true, CursorY = 10 }, 200, 1000), IslandState.Listen);
+    t.Notify(new IslandNote("pane", "api", NoteKind.NeedsYou));
+    Check("listen: a note waits behind it", t.Update(away with { NowMs = 1050 }), IslandState.Listen);
+    Check("listen: still there two minutes on", t.Update(away with { NowMs = 121_000 }), IslandState.Listen);
+    t.Dismiss();
+    t.Listen();
+    t.Notify(new IslandNote("pane", "api", NoteKind.NeedsYou));
+    t.EndListen();
+    Check("listen: over, it goes", t.State, IslandState.Hidden);
+    Check("listen: then the waiting note shows", t.Update(away with { NowMs = 121_050 }), IslandState.Notify);
+}
+{
+    var t = Peeking();
+    t.Listen();
+    Check("listen: takes a peek's place", t.State, IslandState.Listen);
+    t.EndListen();
+    Check("listen: over with nothing waiting, hidden", t.Update(rest with { CursorY = 500, NowMs = 700 }), IslandState.Hidden);
+    t.EndListen();
+    Check("listen: ending twice is nothing", t.State, IslandState.Hidden);
+}
+{
+    // What you dictated is its own note, so it never replaces the session's "needs you".
+    var away = rest with { CursorY = 500 };
+    var pane = new object();
+    var t = new IslandTrigger();
+    t.Notify(new IslandNote(pane, "api", NoteKind.NeedsYou));
+    t.Notify(new IslandNote("voice", "fix the test", NoteKind.Tip) { GoTo = pane });
+    Check("typed: the session's own note still comes first", (t.Update(away with { NowMs = 50 }), t.Note?.Kind), (IslandState.Notify, (NoteKind?)NoteKind.NeedsYou));
+    t.Dismiss();
+    Check("typed: then what was typed, pointing at the session", (t.Update(away with { NowMs = 100 }), t.Note?.GoTo), (IslandState.Notify, (object?)pane));
+}
+
 Console.WriteLine(fail == 0 ? "\nall checks passed" : $"\n{fail} FAILED");
 return fail;
