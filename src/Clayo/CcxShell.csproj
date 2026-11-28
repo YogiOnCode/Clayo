@@ -19,6 +19,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <!-- Voice input (src/Clayo/Voice): the microphone, and speech to text on this PC. The
+         model itself is downloaded once from Settings › Voice, not shipped. -->
+    <PackageReference Include="NAudio.WinMM" Version="3.3.0" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="2.0.1" />
   </ItemGroup>
 
   <ItemGroup>
