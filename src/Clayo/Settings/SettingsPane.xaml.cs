@@ -170,6 +170,9 @@ public partial class SettingsPane : UserControl
         voice.Changed += ShowVoice;
     }
 
+    /// <summary>Opens on the Voice page: the mic was pressed with no model here yet.</summary>
+    public void GoToVoice() => NavVoice.IsChecked = true;
+
     private void Voice_Click(object sender, RoutedEventArgs e)
     {
         _settings = _settings with { Voice = VoiceSwitch.IsChecked == true };

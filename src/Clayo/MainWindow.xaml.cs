@@ -314,6 +314,16 @@ public partial class MainWindow : Window
         InitializeComponent();
         Voice = new VoiceInput(VoiceModel.DefaultDir, a => Dispatcher.BeginInvoke(a));
         VoiceSetup = new VoiceSetup(VoiceModel.DefaultDir, a => Dispatcher.BeginInvoke(a));
+        Voice.Changed += ShowMic;
+        Voice.Heard += (target, text) => SendText((TerminalPane)target, text);
+        Voice.Problem += text => VoiceSay(text);
+        VoiceSetup.Changed += ShowMic;
+        _micNoteHide.Tick += (_, _) =>
+        {
+            _micNoteHide.Stop();
+            _micSaid = null;
+            ShowMic();
+        };
         SettingsView.Attach(VoiceSetup, Voice.Unload);
         SettingsView.SetupRequested += () => ShowSetup();
         SettingsView.CloseRequested += HideSettings;
@@ -341,6 +351,9 @@ public partial class MainWindow : Window
             AskRules.SyncCodex(s, AskRules.CodexHome);
             ShowStatusBar();
             WarnReserve();
+            // Switched off mid-sentence: nothing is typed.
+            if (!s.Voice) Voice.Cancel();
+            ShowMic();
             SettingsApplied?.Invoke(s);
             // The island has just tried for Ctrl+Alt+S; Settings says whether it got it.
             SettingsView.ShowShots(ScreenshotKeyTaken);
@@ -1149,6 +1162,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void ClosePane(TerminalPane pane)
     {
+        // Closed mid-sentence: there is no prompt left to type into.
+        if (ReferenceEquals(Voice.Target, pane)) Voice.Cancel();
         pane.Close();
         PaneHost.Children.Remove(pane);
         // Nothing left to jump to, so a pending note about it would only mislead.
@@ -1345,6 +1360,7 @@ public partial class MainWindow : Window
         ShowImages();
         ShowDocChip();
         ShowPageChip();
+        ShowMic();
         pane.FocusTerminal();
     }
 
@@ -1627,11 +1643,103 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------ voice
 
-    /// <summary>Dictation (src/Clayo/Voice). Nothing starts it yet; Settings lets its model out of memory.</summary>
+    /// <summary>Dictation (src/Clayo/Voice). The island follows its state.</summary>
     public VoiceInput Voice { get; }
 
     /// <summary>The speech model's download, for Settings › Voice.</summary>
     public VoiceSetup VoiceSetup { get; }
+
+    /// <summary>Something to say about a dictation in a few words. The island shows it when Clayo is behind.</summary>
+    public event Action<string>? VoiceTip;
+
+    /// <summary>Dictated text was typed into a session while Clayo was behind. The island says where.</summary>
+    public event Action<TerminalPane, string>? VoiceTyped;
+
+    // What the header says beside the mic for a few seconds: a problem, or where the text went.
+    private string? _micSaid;
+    private readonly System.Windows.Threading.DispatcherTimer _micNoteHide = new() { Interval = TimeSpan.FromSeconds(5) };
+
+    /// <summary>
+    /// The mic button: starts listening, or stops and types what was said. Without a pane the
+    /// text is for the session used last that is still running. With no model yet, Settings
+    /// opens where it is downloaded.
+    /// </summary>
+    public void ToggleVoice(TerminalPane? pane = null)
+    {
+        if (Voice.State != VoiceState.Idle)
+        {
+            Voice.Toggle(Voice.Target!);
+            return;
+        }
+        if (!VoiceSetup.Ready)
+        {
+            Reveal();
+            ShowSettings();
+            SettingsView.GoToVoice();
+            return;
+        }
+        pane ??= RecentSessions(int.MaxValue).FirstOrDefault(c => c.Status != PaneStatus.Exited)?.Pane;
+        if (pane is null || pane.Status == PaneStatus.Exited)
+        {
+            VoiceSay("Open a session first");
+            return;
+        }
+        Voice.Toggle(pane);
+    }
+
+    private void MicButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleVoice(_active);
+        _active?.FocusTerminal();
+    }
+
+    /// <summary>
+    /// Types what was said into that session's prompt, unsent. Clayo stays where it is: said
+    /// from another app, the island tells you where the text went.
+    /// </summary>
+    private void SendText(TerminalPane pane, string text)
+    {
+        if (!PaneHost.Children.Contains(pane) || pane.Status == PaneStatus.Exited)
+        {
+            VoiceSay("That session has closed");
+            return;
+        }
+        pane.TypeText(text + " ");
+        if (!IsActive) VoiceTyped?.Invoke(pane, text);
+        else if (!ReferenceEquals(pane, _active))
+            VoiceSay($"Typed into {_rows.Values.FirstOrDefault(r => ReferenceEquals(r.Pane, pane))?.Name ?? "another session"}", island: false);
+    }
+
+    private void VoiceSay(string text, bool island = true)
+    {
+        _micSaid = text;
+        _micNoteHide.Stop();
+        _micNoteHide.Start();
+        ShowMic();
+        if (island) VoiceTip?.Invoke(text);
+    }
+
+    /// <summary>The header's mic for the active pane: there while Voice is on, clay while this session is listened to.</summary>
+    private void ShowMic()
+    {
+        bool on = _settings.Voice && _active is not null;
+        MicButton.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        bool mine = on && Voice.State != VoiceState.Idle && ReferenceEquals(Voice.Target, _active);
+
+        if (mine) MicButton.Foreground = (Brush)FindResource("Clay");
+        else MicButton.ClearValue(ForegroundProperty);
+        MicGlyph.Text = mine && Voice.State == VoiceState.Transcribing ? "\uE712" : "\uE720";
+        MicButton.ToolTip = Voice.State == VoiceState.Listening ? "Stop, and type what you said"
+            : Voice.State == VoiceState.Transcribing ? "Turning what you said into text…"
+            : !VoiceSetup.Ready ? "Dictate: needs the speech model first. Opens Settings › Voice."
+            : "Dictate: press, speak, press again. The text lands in the prompt, unsent.";
+
+        string note = mine && Voice.State == VoiceState.Listening ? "Listening…"
+            : mine ? "Writing…"
+            : _micSaid ?? "";
+        MicNote.Text = note;
+        MicNote.Visibility = on && note.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     // ------------------------------------------------------------ screenshots
 
