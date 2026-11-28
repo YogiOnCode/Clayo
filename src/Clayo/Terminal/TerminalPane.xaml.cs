@@ -419,6 +419,20 @@ public partial class TerminalPane : UserControl
     /// <summary>Pastes into the prompt, without Enter: what to ask about it is yours to add.</summary>
     public void Paste(string text) => _pty.Write(Encoding.UTF8.GetBytes(Pasted(text)));
 
+    /// <summary>
+    /// Types text at the prompt as if you had, without Enter: what you dictated (VoiceInput),
+    /// for you to read and send. The line and the key time follow, as for your own keys, so
+    /// a spoken /page is still seen and the echo is not taken for work.
+    /// </summary>
+    public void TypeText(string text)
+    {
+        var keys = Encoding.UTF8.GetBytes(text);
+        if (keys.Length == 0) return;
+        _keyAt = DateTime.UtcNow;
+        _line.Type(keys);
+        _pty.Write(keys);
+    }
+
     // The line at the prompt, as far as the keys tell (TypedLine).
     private readonly TypedLine _line = new();
 

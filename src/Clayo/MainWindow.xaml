@@ -449,6 +449,19 @@
                 </Button.ContextMenu>
               </Button>
             </StackPanel>
+            <!-- Voice (src/Clayo/Voice): press, speak, press again, and the text lands in the
+                 prompt, unsent. Shown while Voice is on in Settings; clay while this session is
+                 the one listened to. The note beside it says what is going on, or what went wrong. -->
+            <TextBlock x:Name="MicNote" Margin="4,0,4,0" FontSize="11.5" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextMuted}" Visibility="Collapsed" />
+            <Button x:Name="MicButton"
+                    Style="{StaticResource QuietButton}"
+                    BorderThickness="0" Padding="7,5" Margin="0,0,2,0"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="Dictate"
+                    Click="MicButton_Click">
+              <TextBlock x:Name="MicGlyph" Text="&#xE720;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+            </Button>
             <Button x:Name="ImagesChip"
                     Style="{StaticResource QuietButton}"
                     BorderThickness="0" Padding="7,5"
